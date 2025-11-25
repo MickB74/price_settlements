@@ -5,6 +5,8 @@ import gridstatus
 import patch_gridstatus # Apply monkey patch
 import plotly.express as px
 from datetime import datetime
+import zipfile
+import io
 
 # Page Config
 st.set_page_config(page_title="VPPA Scenario Analyzer", layout="wide")
@@ -388,9 +390,43 @@ if monthly_data:
 # Data Preview
 with st.expander("View Raw Data"):
     if results:
-        # Show data for the last added scenario by default, or allow selection
-        # For simplicity, let's show the last one
-        last_scenario = results[-1]
-        st.markdown(f"**Showing data for: {last_scenario['Scenario']}**")
-        st.dataframe(last_scenario['data'])
+        # Scenario Selection
+        scenario_names = [res['Scenario'] for res in results]
+        selected_scenario_name = st.selectbox("Select Scenario", scenario_names)
+        
+        # Find selected result
+        selected_result = next(res for res in results if res['Scenario'] == selected_scenario_name)
+        df_display = selected_result['data']
+        
+        st.markdown(f"**Showing data for: {selected_scenario_name}**")
+        st.dataframe(df_display)
+        
+        # Download CSV
+        csv = df_display.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name=f"{selected_scenario_name}.csv",
+            mime="text/csv",
+        )
+        
+        st.markdown("---")
+        
+        # Download All as ZIP
+        if st.button("Prepare ZIP of All Scenarios"):
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for res in results:
+                    # Convert to CSV
+                    csv_data = res['data'].to_csv(index=False)
+                    # Add to zip with scenario name as filename (sanitize name if needed)
+                    safe_name = "".join([c for c in res['Scenario'] if c.isalnum() or c in (' ', '-', '_')]).strip()
+                    zf.writestr(f"{safe_name}.csv", csv_data)
+            
+            st.download_button(
+                label="Download All Scenarios (ZIP)",
+                data=zip_buffer.getvalue(),
+                file_name="vppa_scenarios_data.zip",
+                mime="application/zip"
+            )
 
