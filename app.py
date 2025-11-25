@@ -64,7 +64,14 @@ def calculate_scenario(scenario, df_rtm):
     df_hub = df_rtm[df_rtm['Location'] == scenario['hub']].copy()
     
     # Filter by Date (if needed, currently full year)
-    # We could add date range to scenario or global settings
+    if scenario.get('duration') == 'Specific Month':
+        month_map = {
+            "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
+            "July": 7, "August": 8, "September": 9, "October": 10, "November": 11, "December": 12
+        }
+        target_month = month_map.get(scenario.get('month'))
+        if target_month:
+            df_hub = df_hub[df_hub['Time_Central'].dt.month == target_month].copy()
     
     # Generate Profile
     interval_hours = 0.25
@@ -127,6 +134,19 @@ with st.sidebar.form("add_scenario_form"):
     s_hub = st.selectbox("Hub", common_hubs, index=2) # Default HB_WEST
     
     s_tech = st.radio("Technology", ["Solar", "Wind"], index=1)
+    
+    # Duration Selection
+    use_specific_month = st.checkbox("Filter by specific month")
+    s_duration = "Specific Month" if use_specific_month else "Full Year"
+    
+    s_month = st.selectbox("Month", [
+        "January", "February", "March", "April", "May", "June", 
+        "July", "August", "September", "October", "November", "December"
+    ])
+    
+    if not use_specific_month:
+        s_month = None
+    
     s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
     s_strike = st.number_input("Strike Price ($/MWh)", value=30.0, step=1.0)
     
@@ -145,13 +165,19 @@ with st.sidebar.form("add_scenario_form"):
             }
             friendly_hub = hub_map.get(s_hub, s_hub)
             
-            name = f"{s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
+            if s_duration == "Specific Month":
+                name = f"{s_month} {s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
+            else:
+                name = f"{s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
+                
             new_scenario = {
                 "id": datetime.now().isoformat(),
                 "name": name,
                 "year": s_year,
                 "hub": s_hub,
                 "tech": s_tech,
+                "duration": s_duration,
+                "month": s_month,
                 "capacity_mw": s_capacity,
                 "strike_price": s_strike
             }
