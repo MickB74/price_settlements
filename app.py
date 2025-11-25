@@ -12,7 +12,7 @@ import io
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
 
 # Title
-st.title("☀️/💨 VPPA Settlement Estimator")
+st.title("VPPA Settlement Estimator")
 st.markdown("Compare multiple Virtual Power Purchase Agreement (VPPA) scenarios in ERCOT.")
 
 # --- State Management ---
@@ -29,7 +29,6 @@ def get_ercot_data(year):
     # Try loading from local file first
     try:
         if pd.io.common.file_exists(cache_file):
-            # st.info(f"Loading {year} data from local cache...")
             df = pd.read_parquet(cache_file)
             return df
     except Exception as e:
@@ -50,7 +49,6 @@ def get_ercot_data(year):
         # Save to local parquet for future speedups
         try:
             df.to_parquet(cache_file)
-            # st.success(f"Saved {year} data to local cache.")
         except Exception as e:
             st.warning(f"Could not save local cache: {e}")
         
@@ -75,6 +73,19 @@ def calculate_scenario(scenario, df_rtm):
         if target_month:
             df_hub = df_hub[df_hub['Time_Central'].dt.month == target_month].copy()
     
+    # Robustness: Handle empty dataframe
+    if df_hub.empty:
+        # Return empty dataframe with expected columns
+        empty_df = pd.DataFrame(columns=['Time_Central', 'Potential_Gen_MW', 'Strike_Price', 'Settlement_Price', 'Actual_Gen_MW', 
+                                       'Gen_Energy_MWh', 'Curtailed_MWh', 'Settlement_Amount', 'Cumulative_Settlement', 'SPP'])
+        # Ensure correct dtypes
+        for col in empty_df.columns:
+            if col == 'Time_Central':
+                empty_df[col] = pd.to_datetime(empty_df[col])
+            else:
+                empty_df[col] = pd.to_numeric(empty_df[col])
+        return empty_df
+
     # Generate Profile
     interval_hours = 0.25
     capacity_mw = scenario['capacity_mw']
@@ -125,6 +136,8 @@ def calculate_scenario(scenario, df_rtm):
     df_hub['Cumulative_Settlement'] = df_hub['Settlement_Amount'].cumsum()
     
     return df_hub
+
+# ...
 
 # --- Sidebar: Scenario Builder ---
 st.sidebar.header("Scenario Builder")
@@ -255,6 +268,19 @@ progress_bar.empty()
 
 # --- Visualizations ---
 
+# Custom Color Palette based on SustainRound
+# Primary Blue: #0171BB
+COLOR_SEQUENCE = [
+    "#0171BB", # SustainRound Blue
+    "#FFC107", # Amber (Solar)
+    "#4CAF50", # Green (Wind/Sustainability)
+    "#9C27B0", # Purple
+    "#FF5722", # Deep Orange
+    "#607D8B", # Blue Grey
+    "#E91E63", # Pink
+    "#795548", # Brown
+]
+
 # 1. Summary Metrics
 st.subheader("Summary Metrics")
 df_summary = pd.DataFrame(results).drop(columns=["data"])
@@ -308,7 +334,8 @@ if cum_data:
         x='Time_Central', 
         y='Settlement_Amount', 
         color='Scenario',
-        title="Cumulative Settlement Over Time"
+        title="Cumulative Settlement Over Time",
+        color_discrete_sequence=COLOR_SEQUENCE
     )
     fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
     fig_cum.update_xaxes(title="Date", tickformat="%b %Y")
@@ -349,7 +376,8 @@ if monthly_data:
         y='Settlement_Amount', 
         color='Scenario', 
         barmode='group',
-        title="Monthly Net Settlement"
+        title="Monthly Net Settlement",
+        color_discrete_sequence=COLOR_SEQUENCE
     )
     fig_settle.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
     fig_settle.update_xaxes(
@@ -377,7 +405,8 @@ if monthly_data:
         y='Gen_Energy_MWh', 
         color='Scenario', 
         barmode='group',
-        title="Monthly Energy Generation"
+        title="Monthly Energy Generation",
+        color_discrete_sequence=COLOR_SEQUENCE
     )
     fig_gen.update_yaxes(title="Generation (MWh)")
     fig_gen.update_xaxes(
