@@ -9,10 +9,10 @@ import zipfile
 import io
 
 # Page Config
-st.set_page_config(page_title="VPPA Scenario Analyzer", layout="wide")
+st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
 
 # Title
-st.title("☀️/💨 VPPA Scenario Analyzer")
+st.title("☀️/💨 VPPA Settlement Estimator")
 st.markdown("Compare multiple Virtual Power Purchase Agreement (VPPA) scenarios in ERCOT.")
 
 # --- State Management ---

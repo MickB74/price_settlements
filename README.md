@@ -1,4 +1,4 @@
-# VPPA Scenario Analyzer
+# VPPA Settlement Estimator
 
 A Streamlit application for analyzing and comparing Virtual Power Purchase Agreement (VPPA) scenarios in the ERCOT market.
 
