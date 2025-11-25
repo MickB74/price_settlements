@@ -110,8 +110,11 @@ def calculate_scenario(scenario, df_rtm):
     df_hub['Settlement_Price'] = df_hub['SPP'] - strike_price
     
     # Curtailment
-    # Default to "Market Price < 0" logic for now
-    df_hub['Actual_Gen_MW'] = np.where(df_hub['SPP'] < 0, 0.0, df_hub['Potential_Gen_MW'])
+    # Default to "Market Price < 0" logic unless disabled
+    if scenario.get('no_curtailment'):
+        df_hub['Actual_Gen_MW'] = df_hub['Potential_Gen_MW']
+    else:
+        df_hub['Actual_Gen_MW'] = np.where(df_hub['SPP'] < 0, 0.0, df_hub['Potential_Gen_MW'])
     
     # Financials
     df_hub['Gen_Energy_MWh'] = df_hub['Actual_Gen_MW'] * interval_hours
@@ -150,6 +153,9 @@ with st.sidebar.form("add_scenario_form"):
     s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
     s_strike = st.number_input("Strike Price ($/MWh)", value=30.0, step=1.0)
     
+    # Curtailment Option
+    s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)")
+    
     submitted = st.form_submit_button("Add Scenario")
     
     if submitted:
@@ -169,6 +175,9 @@ with st.sidebar.form("add_scenario_form"):
                 name = f"{s_month} {s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
             else:
                 name = f"{s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
+            
+            if s_no_curtailment:
+                name += " [No Curtailment]"
                 
             new_scenario = {
                 "id": datetime.now().isoformat(),
@@ -179,7 +188,8 @@ with st.sidebar.form("add_scenario_form"):
                 "duration": s_duration,
                 "month": s_month,
                 "capacity_mw": s_capacity,
-                "strike_price": s_strike
+                "strike_price": s_strike,
+                "no_curtailment": s_no_curtailment
             }
             st.session_state.scenarios.append(new_scenario)
             st.success(f"Added: {name}")
