@@ -236,7 +236,7 @@ for i, scenario in enumerate(st.session_state.scenarios):
     total_gen = df_res['Gen_Energy_MWh'].sum()
     total_curt = df_res['Curtailed_MWh'].sum()
     avg_price = df_res['SPP'].mean()
-    capture_price = (df_res['SPP'] * df_res['Actual_Gen_MW']).sum() / total_gen if total_gen > 0 else 0
+    capture_price = (df_res['SPP'] * df_res['Gen_Energy_MWh']).sum() / total_gen if total_gen > 0 else 0
     
     results.append({
         "Scenario": scenario['name'],
