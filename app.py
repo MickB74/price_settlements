@@ -194,20 +194,24 @@ with st.sidebar.form("add_scenario_form"):
             if s_no_curtailment:
                 name += " [No Curtailment]"
                 
-            new_scenario = {
-                "id": datetime.now().isoformat(),
-                "name": name,
-                "year": s_year,
-                "hub": s_hub,
-                "tech": s_tech,
-                "duration": s_duration,
-                "month": s_month,
-                "capacity_mw": s_capacity,
-                "strike_price": s_strike,
-                "no_curtailment": s_no_curtailment
-            }
-            st.session_state.scenarios.append(new_scenario)
-            st.success(f"Added: {name}")
+            # Check for duplicates
+            if any(s['name'] == name for s in st.session_state.scenarios):
+                st.error(f"Scenario '{name}' already exists.")
+            else:
+                new_scenario = {
+                    "id": datetime.now().isoformat(),
+                    "name": name,
+                    "year": s_year,
+                    "hub": s_hub,
+                    "tech": s_tech,
+                    "duration": s_duration,
+                    "month": s_month,
+                    "capacity_mw": s_capacity,
+                    "strike_price": s_strike,
+                    "no_curtailment": s_no_curtailment
+                }
+                st.session_state.scenarios.append(new_scenario)
+                st.success(f"Added: {name}")
 
 # Manage Scenarios
 if st.session_state.scenarios:
