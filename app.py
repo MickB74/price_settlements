@@ -149,7 +149,7 @@ with st.sidebar.form("add_scenario_form"):
     # Get hubs (fetch one year to get list if needed, or hardcode common ones)
     # Hardcoding for speed/reliability without fetching data just for dropdown
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"]
-    s_hub = st.selectbox("Hub", common_hubs, index=2) # Default HB_WEST
+    s_hub = st.selectbox("Hub", common_hubs, index=0) # Default HB_NORTH
     
     s_tech = st.radio("Technology", ["Solar", "Wind"], index=1)
     
