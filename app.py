@@ -151,7 +151,7 @@ with st.sidebar.form("add_scenario_form"):
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"]
     s_hub = st.selectbox("Hub", common_hubs, index=0) # Default HB_NORTH
     
-    s_tech = st.radio("Technology", ["Solar", "Wind"], index=1)
+    s_tech = st.radio("Generation Source", ["Solar", "Wind"], index=0)
     
     # Duration Selection
     use_specific_month = st.checkbox("Filter by specific month")
