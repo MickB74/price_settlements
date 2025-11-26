@@ -89,6 +89,10 @@ def calculate_scenario(scenario, df_rtm):
 
     # Generate Profile using TMY Data
     # Note: We use the scenario year to align the TMY data to the correct timestamps
+    interval_hours = 0.25
+    capacity_mw = scenario['capacity_mw']
+    tech = scenario['tech']
+
     try:
         profile_series = fetch_tmy.get_profile_for_year(
             year=scenario['year'],
