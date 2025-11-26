@@ -93,11 +93,26 @@ def calculate_scenario(scenario, df_rtm):
     capacity_mw = scenario['capacity_mw']
     tech = scenario['tech']
 
+    # Hub Locations (Lat, Lon)
+    HUB_LOCATIONS = {
+        "HB_NORTH": (33.9137, -98.4934),   # Wichita Falls
+        "HB_SOUTH": (29.4241, -98.4936),   # San Antonio
+        "HB_WEST": (31.9973, -102.0779),   # Midland
+        "HB_HOUSTON": (29.7604, -95.3698), # Houston
+        "HB_PAN": (35.2220, -101.8313),    # Amarillo
+    }
+    
+    # Default to Abilene if hub not found
+    default_loc = (32.4487, -99.7331)
+    lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
+
     try:
         profile_series = fetch_tmy.get_profile_for_year(
             year=scenario['year'],
             tech=tech,
-            capacity_mw=capacity_mw
+            capacity_mw=capacity_mw,
+            lat=lat,
+            lon=lon
         )
         
         # Align profile with df_hub timestamps
