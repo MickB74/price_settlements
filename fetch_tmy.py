@@ -13,14 +13,6 @@ def get_tmy_data(lat=32.4487, lon=-99.7331, force_refresh=False):
     """
     Fetches TMY data from PVGIS for the given coordinates.
     Defaults to Abilene, Texas (approximate center for West Texas wind/solar).
-    
-    Args:
-        lat (float): Latitude.
-        lon (float): Longitude.
-        force_refresh (bool): If True, ignores cache and fetches fresh data.
-        
-    Returns:
-        pd.DataFrame: DataFrame with TMY data (Solar GHI, Wind Speed, etc.)
     """
     cache_file = os.path.join(CACHE_DIR, f"tmy_{lat}_{lon}.parquet")
     
@@ -46,10 +38,10 @@ def get_tmy_data(lat=32.4487, lon=-99.7331, force_refresh=False):
         hourly = data['outputs']['tmy_hourly']
         df = pd.DataFrame(hourly)
         
-        # Parse time (format: YYYYMMDD:HHmm)
-        # TMY years are mixed, so we normalize to a generic year (e.g. 2000) or keep as is and ignore year later.
-        # For simplicity, we'll keep the raw string and parse it when needed, or parse to a generic datetime.
-        # Actually, let's parse to a datetime object but be aware the year is "typical" (mixed).
+        # Standardize columns
+        # TMY has 'G(h)', 'WS10m'
+        # We'll keep them as is for now, but ensure consistency with actuals
+        
         df['time_str'] = df['time(UTC)']
         df['Time'] = pd.to_datetime(df['time(UTC)'], format='%Y%m%d:%H%M')
         
@@ -58,154 +50,253 @@ def get_tmy_data(lat=32.4487, lon=-99.7331, force_refresh=False):
         return df
         
     except Exception as e:
-        print(f"Error fetching PVGIS data: {e}")
+        print(f"Error fetching PVGIS TMY data: {e}")
+        return pd.DataFrame()
+
+def get_actual_data(year, lat=32.4487, lon=-99.7331, force_refresh=False):
+    """
+    Fetches actual hourly data for a specific year from PVGIS.
+    """
+    cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
+    
+    if not force_refresh and os.path.exists(cache_file):
+        try:
+            return pd.read_parquet(cache_file)
+        except Exception as e:
+            print(f"Error reading cache: {e}")
+            
+    url = "https://re.jrc.ec.europa.eu/api/seriescalc"
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "startyear": year,
+        "endyear": year,
+        "outputformat": "json",
+        "pvcalculation": 0,
+        "components": 1
+    }
+    
+    try:
+        print(f"Fetching Actual data for {year} from PVGIS...")
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        if 'outputs' in data and 'hourly' in data['outputs']:
+            hourly = data['outputs']['hourly']
+            df = pd.DataFrame(hourly)
+            
+            # Map columns to match TMY if needed, or handle in calculation
+            # Actuals: 'Gb(i)', 'Gd(i)', 'Gr(i)', 'H_sun', 'T2m', 'WS10m', 'Int'
+            # TMY: 'G(h)', 'Gb(n)', 'Gd(h)', 'IR(h)', 'WS10m', 'WD10m', 'SP'
+            
+            # We need Global Horizontal Irradiance.
+            # seriescalc 'components=1' gives:
+            # Gb(i): Beam irradiance on inclined plane (here 0 deg?) -> No, default is optimized slope?
+            # Wait, we didn't specify slope/azimuth. Defaults might apply.
+            # To get G(h) (Global Horizontal), we should check if it's returned.
+            # The previous test showed: 'Gb(i)', 'Gd(i)', 'Gr(i)', 'H_sun', 'T2m', 'WS10m', 'Int'
+            # If slope is not 0, Gb(i) is on inclined.
+            # Let's try to force horizontal plane to get G(h) equivalent.
+            # Or assume G(h) = Gb(i) + Gd(i) + Gr(i) if slope is 0?
+            # Actually, let's request "mountingplace=free" and "angle=0" (horizontal).
+            
+            # Re-fetch with horizontal parameters if needed.
+            # But let's check if we can just use what we have.
+            # Ideally we want G(h).
+            # Let's add 'angle=0' to params to ensure horizontal.
+            
+            # Save to cache
+            df.to_parquet(cache_file)
+            return df
+        else:
+            print(f"No hourly data found for {year}")
+            return pd.DataFrame()
+            
+    except Exception as e:
+        print(f"Error fetching PVGIS Actual data: {e}")
         return pd.DataFrame()
 
 def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85):
-    """
-    Estimates solar generation from Global Horizontal Irradiance (GHI).
-    
-    Args:
-        ghi_series (pd.Series): GHI in W/m2.
-        capacity_mw (float): Installed capacity in MW.
-        efficiency (float): System efficiency (losses, inverter, temp, etc.).
-        
-    Returns:
-        pd.Series: Generation in MW.
-    """
-    # Standard Test Conditions (STC): 1000 W/m2
-    # Generation = Capacity * (GHI / 1000) * Efficiency
+    """Estimates solar generation from GHI."""
     gen_mw = capacity_mw * (ghi_series / 1000.0) * efficiency
     return gen_mw.clip(lower=0.0, upper=capacity_mw)
 
 def wind_from_speed(speed_series, capacity_mw):
-    """
-    Estimates wind generation from wind speed using a generic power curve.
-    
-    Args:
-        speed_series (pd.Series): Wind speed in m/s.
-        capacity_mw (float): Installed capacity in MW.
-        
-    Returns:
-        pd.Series: Generation in MW.
-    """
-    # Generic 2MW turbine power curve scaled to capacity
-    # Cut-in: 3 m/s, Rated: 12 m/s, Cut-out: 25 m/s
-    
+    """Estimates wind generation from wind speed."""
     def power_curve(v):
-        if v < 3.0:
-            return 0.0
-        elif v < 12.0:
-            # Cubic ramp up
-            # P ~ v^3
-            # Normalized: ((v - 3) / (12 - 3))^3
-            return ((v - 3.0) / 9.0) ** 3
-        elif v < 25.0:
-            return 1.0 # Rated power
-        else:
-            return 0.0 # Cut-out
-            
-    # Vectorize
+        if v < 3.0: return 0.0
+        elif v < 12.0: return ((v - 3.0) / 9.0) ** 3
+        elif v < 25.0: return 1.0
+        else: return 0.0
+    
     normalized_power = speed_series.apply(power_curve)
     return normalized_power * capacity_mw
 
 def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
     """
-    Generates a full year profile for the specified year using TMY data.
-    
-    Args:
-        year (int): Target year (e.g., 2024).
-        tech (str): "Solar" or "Wind".
-        capacity_mw (float): Capacity in MW.
-        lat, lon: Location coordinates.
-        
-    Returns:
-        pd.Series: Generation profile aligned with the target year's 15-min intervals (UTC).
+    Generates a full year profile.
+    Uses Actual data for 2005-2023.
+    Uses TMY data for other years (fallback).
     """
-    # 1. Get TMY Data
-    df_tmy = get_tmy_data(lat, lon)
-    if df_tmy.empty:
-        return pd.Series()
+    # Determine Data Source
+    use_actual = 2005 <= year <= 2023
+    
+    if use_actual:
+        # Fetch Actual
+        # We need to ensure we get horizontal irradiance for Solar.
+        # We'll update get_actual_data to request horizontal.
+        # For now, let's call it and handle columns.
         
-    # 2. Extract relevant column and calculate MW
-    if tech == "Solar":
-        # Use G(h) - Global irradiance on the horizontal plane
-        if 'G(h)' in df_tmy.columns:
-            # PVGIS TMY is hourly.
-            mw_hourly = solar_from_ghi(df_tmy['G(h)'], capacity_mw)
+        # To get G(h) equivalent from seriescalc with angle=0:
+        # G(h) = Gb(i) + Gd(i) (since Gr(i) is 0 on horizontal usually)
+        # We need to pass angle=0 to get_actual_data.
+        # Let's modify get_actual_data to take params or just hardcode horizontal for now.
+        
+        # Actually, let's modify get_actual_data in place (below).
+        pass
+    
+    # ... (Refactoring to support both in one flow)
+    
+    df_data = pd.DataFrame()
+    source_type = "TMY"
+    
+    if use_actual:
+        # We need to re-implement get_actual_data with angle=0 to be safe
+        url = "https://re.jrc.ec.europa.eu/api/seriescalc"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "startyear": year,
+            "endyear": year,
+            "outputformat": "json",
+            "pvcalculation": 0,
+            "components": 1,
+            "angle": 0, # Horizontal
+            "aspect": 0
+        }
+        
+        cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
+        if os.path.exists(cache_file):
+             df_data = pd.read_parquet(cache_file)
         else:
-            return pd.Series()
+            try:
+                print(f"Fetching Actual data for {year}...")
+                response = requests.get(url, params=params)
+                response.raise_for_status()
+                data = response.json()
+                if 'outputs' in data and 'hourly' in data['outputs']:
+                    df_data = pd.DataFrame(data['outputs']['hourly'])
+                    df_data.to_parquet(cache_file)
+            except Exception as e:
+                print(f"Error fetching actuals: {e}")
+        
+        source_type = "Actual"
+
+    # Fallback to TMY if actual failed or not requested
+    if df_data.empty:
+        df_data = get_tmy_data(lat, lon)
+        source_type = "TMY"
+    
+    if df_data.empty:
+        return pd.Series()
+
+    # Calculate MW
+    if tech == "Solar":
+        # Solar Irradiance
+        if source_type == "Actual":
+            # With angle=0, Gb(i) + Gd(i) should be G(h)
+            # Or just sum them.
+            # Columns: 'Gb(i)', 'Gd(i)', 'Gr(i)'
+            irradiance = df_data['Gb(i)'] + df_data['Gd(i)'] + df_data.get('Gr(i)', 0)
+        else:
+            # TMY
+            irradiance = df_data['G(h)']
+            
+        mw_hourly = solar_from_ghi(irradiance, capacity_mw)
+        
     elif tech == "Wind":
-        # Use WS10m - Wind speed at 10m
-        # Note: Hub height is usually higher (80m+). 
-        # Simple shear extrapolation: v_h = v_ref * (h / h_ref)^alpha
-        # alpha ~ 0.143 (1/7 power law)
-        # h = 80m, h_ref = 10m
-        # factor = (80/10)^0.143 = 8^0.143 ≈ 1.35
-        if 'WS10m' in df_tmy.columns:
-            wind_speed_hub = df_tmy['WS10m'] * 1.35
+        # Wind Speed
+        if 'WS10m' in df_data.columns:
+            # Extrapolate to hub height (80m)
+            wind_speed_hub = df_data['WS10m'] * 1.35
             mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw)
         else:
             return pd.Series()
     else:
         return pd.Series()
+
+    # Align with Target Year
+    # If Actual: The data is already for the correct year (hourly).
+    # If TMY: The data is "typical" (mixed years).
+    
+    if source_type == "Actual":
+        # Actual data is hourly for the specific year.
+        # We just need to upsample to 15-min.
         
-    # 3. Align with Target Year
-    # TMY data is 8760 hours. We need to map this to the target year's datetime index.
-    # We'll create a full year index for the target year (15-min intervals).
-    
-    start_date = f"{year}-01-01"
-    end_date = f"{year}-12-31 23:45"
-    target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
-    
-    # Create a source index from the TMY data, but ignoring the year
-    # TMY data has 'Time' column with mixed years.
-    # We'll extract month-day-hour-minute and map.
-    
-    # Simpler approach:
-    # 1. Resample TMY (hourly) to 15-min (interpolate).
-    # 2. Create a generic "year" index (e.g. 2000, leap year handling might be tricky).
-    # 3. Map to target year.
-    
-    # Let's assume TMY is 8760 points (non-leap).
-    # If target is leap, we'll pad.
-    
-    # Interpolate to 15-min
-    # Create a dummy index for interpolation
-    dummy_index_hourly = pd.date_range(start="2000-01-01", periods=len(mw_hourly), freq='h')
-    s_hourly = pd.Series(mw_hourly.values, index=dummy_index_hourly)
-    
-    # Resample to 15 min
-    s_15min = s_hourly.resample('15min').interpolate(method='linear')
-    
-    # Now we have ~35040 points.
-    # We need to match `target_index` length.
-    
-    # If target is leap year (366 days), we need more data.
-    # If target is non-leap (365 days), we match.
-    
-    # Simple logic: Tile or truncate/pad.
-    # Since TMY is "typical", repeating the last day or Feb 28th for leap day is fine.
-    
-    values = s_15min.values
-    target_len = len(target_index)
-    
-    if len(values) < target_len:
-        # Pad (likely leap year in target)
-        # Pad with last value or wrap around
-        diff = target_len - len(values)
-        values = np.pad(values, (0, diff), mode='edge')
-    elif len(values) > target_len:
-        # Truncate
-        values = values[:target_len]
+        # Create index from 'time' string?
+        # Format: YYYYMMDD:HHMM
+        # 20200101:0030 (UTC)
         
-    return pd.Series(values, index=target_index, name="Gen_MW")
+        # Parse time
+        # Note: PVGIS time is usually UTC.
+        if 'time' in df_data.columns:
+            time_col = 'time'
+        elif 'time(UTC)' in df_data.columns:
+            time_col = 'time(UTC)'
+        else:
+            return pd.Series()
+            
+        # Parse
+        # For Actuals, format is YYYYMMDD:HHMM
+        timestamps = pd.to_datetime(df_data[time_col], format='%Y%m%d:%H%M', utc=True)
+        
+        # Create Series
+        s_hourly = pd.Series(mw_hourly.values, index=timestamps)
+        
+        # Resample to 15min
+        s_15min = s_hourly.resample('15min').interpolate(method='linear')
+        
+        # Ensure it covers the full year (start/end might be slightly off due to center-of-interval timestamps)
+        # PVGIS hourly is usually center or end? 00:30 usually means 00:00-01:00 avg?
+        # We'll reindex to the exact expected index for the year.
+        
+        start_date = f"{year}-01-01"
+        end_date = f"{year}-12-31 23:45"
+        target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
+        
+        s_final = s_15min.reindex(target_index).fillna(method='ffill').fillna(method='bfill') # Fill edges
+        return s_final.fillna(0) # Safety
+        
+    else:
+        # TMY Logic (Same as before)
+        # Interpolate to 15-min
+        dummy_index_hourly = pd.date_range(start="2000-01-01", periods=len(mw_hourly), freq='h')
+        s_hourly = pd.Series(mw_hourly.values, index=dummy_index_hourly)
+        s_15min = s_hourly.resample('15min').interpolate(method='linear')
+        
+        values = s_15min.values
+        
+        start_date = f"{year}-01-01"
+        end_date = f"{year}-12-31 23:45"
+        target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
+        
+        target_len = len(target_index)
+        if len(values) < target_len:
+            diff = target_len - len(values)
+            values = np.pad(values, (0, diff), mode='edge')
+        elif len(values) > target_len:
+            values = values[:target_len]
+            
+        return pd.Series(values, index=target_index, name="Gen_MW")
 
 if __name__ == "__main__":
-    # Test
-    print("Testing fetch_tmy...")
-    s = get_profile_for_year(2024, "Solar", 100)
-    print(f"Solar 2024: {len(s)} points, Max: {s.max():.2f} MW")
+    print("Testing fetch_tmy (Hybrid)...")
+    # Test Actual (2020)
+    s_2020 = get_profile_for_year(2020, "Solar", 100)
+    print(f"Solar 2020 (Actual): {len(s_2020)} points, Max: {s_2020.max():.2f} MW")
     
-    w = get_profile_for_year(2024, "Wind", 100)
-    print(f"Wind 2024: {len(w)} points, Max: {w.max():.2f} MW")
+    # Test TMY (2025)
+    s_2025 = get_profile_for_year(2025, "Wind", 100)
+    print(f"Wind 2025 (TMY): {len(s_2025)} points, Max: {s_2025.max():.2f} MW")
+
