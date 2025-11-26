@@ -7,6 +7,7 @@ import plotly.express as px
 from datetime import datetime
 import zipfile
 import io
+import fetch_tmy # New module for TMY data
 
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
@@ -86,35 +87,31 @@ def calculate_scenario(scenario, df_rtm):
                 empty_df[col] = pd.to_numeric(empty_df[col])
         return empty_df
 
-    # Generate Profile
-    interval_hours = 0.25
-    capacity_mw = scenario['capacity_mw']
-    tech = scenario['tech']
-    
-    times = df_hub['Time_Central']
-    hours = times.dt.hour + times.dt.minute / 60.0
-    
-    if tech == "Solar":
-        day_of_years = times.dt.dayofyear
-        day_length = 12 + 2 * np.sin(2 * np.pi * (day_of_years - 80) / 365)
-        solar_noon = 13.5
-        sunrise = solar_noon - (day_length / 2)
-        sunset = solar_noon + (day_length / 2)
+    # Generate Profile using TMY Data
+    # Note: We use the scenario year to align the TMY data to the correct timestamps
+    try:
+        profile_series = fetch_tmy.get_profile_for_year(
+            year=scenario['year'],
+            tech=tech,
+            capacity_mw=capacity_mw
+        )
         
-        is_daytime = (hours > sunrise) & (hours < sunset)
-        sin_arg = np.pi * (hours - sunrise) / day_length
-        potential_gen = np.where(is_daytime, capacity_mw * np.sin(sin_arg), 0.0)
-        potential_gen = np.maximum(potential_gen, 0.0)
+        # Align profile with df_hub timestamps
+        # df_hub['Time_Central'] is localized to US/Central
+        # profile_series index is UTC. We need to convert to Central to match or reindex.
         
-    elif tech == "Wind":
-        base_signal = np.sin((hours + 4) * 2 * np.pi / 24)
-        normalized_base = (base_signal + 1) / 2
-        scaled_base = 0.2 + 0.6 * normalized_base
-        noise = 0.15 * np.sin(hours * 10)
-        profile = scaled_base + noise
-        profile = np.clip(profile, 0, 1)
-        potential_gen = profile * capacity_mw
+        # Better approach:
+        # 1. Convert profile index to Central
+        profile_central = profile_series.tz_convert('US/Central')
         
+        # 2. Reindex to match df_hub['Time_Central']
+        # This handles any mismatches or missing intervals in RTM data
+        potential_gen = profile_central.reindex(df_hub['Time_Central'], fill_value=0.0).values
+        
+    except Exception as e:
+        st.error(f"Error generating profile for {tech}: {e}")
+        potential_gen = np.zeros(len(df_hub))
+
     df_hub['Potential_Gen_MW'] = potential_gen
     
     # Settlement
@@ -144,7 +141,7 @@ st.sidebar.header("Scenario Builder")
 
 with st.sidebar.form("add_scenario_form"):
     st.subheader("Add New Scenario")
-    s_year = st.selectbox("Year", [2025, 2024, 2023], index=1)
+    s_year = st.selectbox("Year", [2025, 2024, 2023, 2022, 2021, 2020], index=1)
     
     # Get hubs (fetch one year to get list if needed, or hardcode common ones)
     # Hardcoding for speed/reliability without fetching data just for dropdown
