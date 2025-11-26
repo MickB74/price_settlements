@@ -21,7 +21,7 @@ if 'scenarios' not in st.session_state:
     st.session_state.scenarios = []
 
 # --- Data Fetching ---
-@st.cache_data
+@st.cache_data(show_spinner="Fetching data from ERCOT (this may take 1-2 minutes for the first load)...")
 def get_ercot_data(year):
     """Fetches and caches ERCOT RTM data for a given year."""
     # Local cache file path
