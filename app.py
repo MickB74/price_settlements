@@ -195,36 +195,36 @@ with st.sidebar.form("add_scenario_form"):
             "HB_NORTH": "North Hub",
             "HB_SOUTH": "South Hub",
             "HB_WEST": "West Hub",
-                "HB_HOUSTON": "Houston Hub"
+            "HB_HOUSTON": "Houston Hub"
+        }
+        friendly_hub = hub_map.get(s_hub, s_hub)
+        
+        if s_duration == "Specific Month":
+            name = f"{s_month} {s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
+        else:
+            name = f"{s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
+        
+        if s_no_curtailment:
+            name += " [No Curtailment]"
+            
+        # Check for duplicates
+        if any(s['name'] == name for s in st.session_state.scenarios):
+            st.error(f"Scenario '{name}' already exists.")
+        else:
+            new_scenario = {
+                "id": datetime.now().isoformat(),
+                "name": name,
+                "year": s_year,
+                "hub": s_hub,
+                "tech": s_tech,
+                "duration": s_duration,
+                "month": s_month,
+                "capacity_mw": s_capacity,
+                "strike_price": s_strike,
+                "no_curtailment": s_no_curtailment
             }
-            friendly_hub = hub_map.get(s_hub, s_hub)
-            
-            if s_duration == "Specific Month":
-                name = f"{s_month} {s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
-            else:
-                name = f"{s_year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW, Strike {int(s_strike)})"
-            
-            if s_no_curtailment:
-                name += " [No Curtailment]"
-                
-            # Check for duplicates
-            if any(s['name'] == name for s in st.session_state.scenarios):
-                st.error(f"Scenario '{name}' already exists.")
-            else:
-                new_scenario = {
-                    "id": datetime.now().isoformat(),
-                    "name": name,
-                    "year": s_year,
-                    "hub": s_hub,
-                    "tech": s_tech,
-                    "duration": s_duration,
-                    "month": s_month,
-                    "capacity_mw": s_capacity,
-                    "strike_price": s_strike,
-                    "no_curtailment": s_no_curtailment
-                }
-                st.session_state.scenarios.append(new_scenario)
-                st.success(f"Added: {name}")
+            st.session_state.scenarios.append(new_scenario)
+            st.success(f"Added: {name}")
 
 # Manage Scenarios
 if st.session_state.scenarios:
