@@ -378,6 +378,10 @@ for res in results:
     monthly = df_res.groupby('Month_Period')[['Settlement_Amount', 'Gen_Energy_MWh']].sum().reset_index()
     monthly['Scenario'] = res['Scenario']
     monthly['Month_Date'] = monthly['Month_Period'].dt.to_timestamp()
+    
+    # Normalize to 2024 for seasonal comparison
+    monthly['Normalized_Month_Date'] = monthly['Month_Date'].apply(lambda x: x.replace(year=2024))
+    
     monthly_data.append(monthly)
 
 if monthly_data:
@@ -399,17 +403,18 @@ if monthly_data:
 
     fig_settle = px.bar(
         df_monthly, 
-        x='Month_Date', 
+        x='Normalized_Month_Date', 
         y='Settlement_Amount', 
         color='Scenario', 
         barmode='group',
-        title="Monthly Net Settlement",
-        color_discrete_sequence=COLOR_SEQUENCE
+        title="Monthly Net Settlement (Seasonal Comparison)",
+        color_discrete_sequence=COLOR_SEQUENCE,
+        hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
     )
     fig_settle.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
     fig_settle.update_xaxes(
         title="Month", 
-        tickformat="%b %Y", 
+        tickformat="%b", 
         dtick="M1" # Force monthly ticks
     )
     st.plotly_chart(fig_settle, use_container_width=True)
@@ -428,17 +433,18 @@ if monthly_data:
 
     fig_gen = px.bar(
         df_monthly, 
-        x='Month_Date', 
+        x='Normalized_Month_Date', 
         y='Gen_Energy_MWh', 
         color='Scenario', 
         barmode='group',
-        title="Monthly Energy Generation",
-        color_discrete_sequence=COLOR_SEQUENCE
+        title="Monthly Energy Generation (Seasonal Comparison)",
+        color_discrete_sequence=COLOR_SEQUENCE,
+        hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
     )
     fig_gen.update_yaxes(title="Generation (MWh)")
     fig_gen.update_xaxes(
         title="Month", 
-        tickformat="%b %Y", 
+        tickformat="%b", 
         dtick="M1"
     )
     st.plotly_chart(fig_gen, use_container_width=True)
