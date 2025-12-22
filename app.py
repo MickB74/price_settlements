@@ -317,84 +317,84 @@ st.dataframe(
 # Prepare Data for Plotly
 # We need long-format dataframes for Plotly Express
 
-    st.subheader("Cumulative Settlement ($)")
+st.subheader("Cumulative Settlement ($)")
+
+# Insight for Cumulative (using existing data from results)
+# Re-calculate best/worst based on final totals
+final_settlements = {r['Scenario']: r['Net Settlement ($)'] for r in results}
+best_scen = max(final_settlements, key=final_settlements.get)
+best_val = final_settlements[best_scen]
+worst_scen = min(final_settlements, key=final_settlements.get)
+worst_val = final_settlements[worst_scen]
+
+if len(final_settlements) > 1:
+    st.markdown(
+        f"**Insight:** The **{best_scen}** scenario leads with a total settlement of "
+        f"**\${best_val:,.0f}**, while **{worst_scen}** trails at **\${worst_val:,.0f}**."
+    )
+else:
+    st.markdown(
+        f"**Insight:** The **{best_scen}** scenario has a total settlement of **\${best_val:,.0f}**."
+    )
+
+# Initialize Plotly Graph Object for improved flexibility
+fig_cum = go.Figure()
+
+for i, res in enumerate(results):
+    df_res = res['data'].copy()
+    scenario_name = res['Scenario']
+    duration_type = res['duration']
+    color = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
     
-    # Insight for Cumulative (using existing data from results)
-    # Re-calculate best/worst based on final totals
-    final_settlements = {r['Scenario']: r['Net Settlement ($)'] for r in results}
-    best_scen = max(final_settlements, key=final_settlements.get)
-    best_val = final_settlements[best_scen]
-    worst_scen = min(final_settlements, key=final_settlements.get)
-    worst_val = final_settlements[worst_scen]
+    # Resample to daily for cleaner chart
+    daily = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
     
-    if len(final_settlements) > 1:
-        st.markdown(
-            f"**Insight:** The **{best_scen}** scenario leads with a total settlement of "
-            f"**\${best_val:,.0f}**, while **{worst_scen}** trails at **\${worst_val:,.0f}**."
-        )
+    # Normalize to a common year (2024)
+    daily['Normalized_Date'] = daily['Time_Central'].apply(lambda x: x.replace(year=2024))
+    
+    if duration_type == "Specific Month":
+        # Plot as a "Pin" (Marker + Text) at the end of the month
+        last_point = daily.iloc[-1]
+        
+        fig_cum.add_trace(go.Scatter(
+            x=[last_point['Normalized_Date']],
+            y=[last_point['Settlement_Amount']],
+            mode='markers+text',
+            name=scenario_name,
+            marker=dict(color=color, size=12, symbol='circle'),
+            text=[f"${last_point['Settlement_Amount']:,.0f}"],
+            textposition="top center",
+            hovertemplate=f"<b>{scenario_name}</b><br>Month Total: ${{y:,.0f}}<extra></extra>"
+        ))
     else:
-        st.markdown(
-            f"**Insight:** The **{best_scen}** scenario has a total settlement of **\${best_val:,.0f}**."
-        )
+        # Plot as a Line for Full Year
+        fig_cum.add_trace(go.Scatter(
+            x=daily['Normalized_Date'],
+            y=daily['Settlement_Amount'],
+            mode='lines',
+            name=scenario_name,
+            line=dict(color=color, width=3),
+            hovertemplate="<b>%{x|%b %d}</b><br>Cumulative: $%{y:,.0f}<extra></extra>"
+        ))
 
-    # Initialize Plotly Graph Object for improved flexibility
-    fig_cum = go.Figure()
-    
-    for i, res in enumerate(results):
-        df_res = res['data'].copy()
-        scenario_name = res['Scenario']
-        duration_type = res['duration']
-        color = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
-        
-        # Resample to daily for cleaner chart
-        daily = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
-        
-        # Normalize to a common year (2024)
-        daily['Normalized_Date'] = daily['Time_Central'].apply(lambda x: x.replace(year=2024))
-        
-        if duration_type == "Specific Month":
-            # Plot as a "Pin" (Marker + Text) at the end of the month
-            last_point = daily.iloc[-1]
-            
-            fig_cum.add_trace(go.Scatter(
-                x=[last_point['Normalized_Date']],
-                y=[last_point['Settlement_Amount']],
-                mode='markers+text',
-                name=scenario_name,
-                marker=dict(color=color, size=12, symbol='circle'),
-                text=[f"${last_point['Settlement_Amount']:,.0f}"],
-                textposition="top center",
-                hovertemplate=f"<b>{scenario_name}</b><br>Month Total: ${{y:,.0f}}<extra></extra>"
-            ))
-        else:
-            # Plot as a Line for Full Year
-            fig_cum.add_trace(go.Scatter(
-                x=daily['Normalized_Date'],
-                y=daily['Settlement_Amount'],
-                mode='lines',
-                name=scenario_name,
-                line=dict(color=color, width=3),
-                hovertemplate="<b>%{x|%b %d}</b><br>Cumulative: $%{y:,.0f}<extra></extra>"
-            ))
+fig_cum.update_layout(
+    title="Cumulative Settlement Over Time (Seasonal Comparison)",
+    legend_title="Scenario",
+    hovermode="x unified"
+)
 
-    fig_cum.update_layout(
-        title="Cumulative Settlement Over Time (Seasonal Comparison)",
-        legend_title="Scenario",
-        hovermode="x unified"
-    )
-    
-    fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
-    
-    # Format x-axis to show only Month (e.g., Jan, Feb)
-    # Force range to full year (2024)
-    fig_cum.update_xaxes(
-        title="Month", 
-        tickformat="%b",
-        dtick="M1",
-        range=["2024-01-01", "2024-12-31"]
-    )
-    
-    st.plotly_chart(fig_cum, use_container_width=True)
+fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
+
+# Format x-axis to show only Month (e.g., Jan, Feb)
+# Force range to full year (2024)
+fig_cum.update_xaxes(
+    title="Month", 
+    tickformat="%b",
+    dtick="M1",
+    range=["2024-01-01", "2024-12-31"]
+)
+
+st.plotly_chart(fig_cum, use_container_width=True)
 
 # Monthly Data
 monthly_data = []
