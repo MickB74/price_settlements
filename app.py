@@ -325,6 +325,11 @@ for res in results:
     # Resample to daily for cleaner chart
     daily = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
     daily['Scenario'] = res['Scenario']
+    
+    # Normalize to a common year (2024 is a leap year to safe-keep Feb 29)
+    # This allows plotting multiple years on top of each other
+    daily['Normalized_Date'] = daily['Time_Central'].apply(lambda x: x.replace(year=2024))
+    
     cum_data.append(daily)
 
 if cum_data:
@@ -351,14 +356,16 @@ if cum_data:
 
     fig_cum = px.line(
         df_cum, 
-        x='Time_Central', 
+        x='Normalized_Date', 
         y='Settlement_Amount', 
         color='Scenario',
-        title="Cumulative Settlement Over Time",
-        color_discrete_sequence=COLOR_SEQUENCE
+        title="Cumulative Settlement Over Time (Seasonal Comparison)",
+        color_discrete_sequence=COLOR_SEQUENCE,
+        hover_data={"Normalized_Date": False, "Time_Central": "|%b %d, %Y"} # Custom hover
     )
     fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
-    fig_cum.update_xaxes(title="Date", tickformat="%b %Y")
+    # Format x-axis to show only Month (e.g., Jan, Feb)
+    fig_cum.update_xaxes(title="Month", tickformat="%b")
     st.plotly_chart(fig_cum, use_container_width=True)
 
 # Monthly Data
