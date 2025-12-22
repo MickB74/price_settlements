@@ -336,6 +336,8 @@ for i, scenario in enumerate(st.session_state.scenarios):
     # Actually, we normalize monthly charts too.
     monthly_agg = df_res.groupby(['Month', 'Month_Num'], as_index=False)[['Settlement_Amount', 'Gen_Energy_MWh']].sum()
     monthly_agg['Normalized_Month_Date'] = pd.to_datetime(monthly_agg['Month_Num'].astype(str) + "-01-2024", format="%m-%d-%Y")
+    # Restore Month_Date for insight text (using actual year)
+    monthly_agg['Month_Date'] = pd.to_datetime(monthly_agg['Month_Num'].astype(str) + f"-01-{scenario['year']}", format="%m-%d-%Y")
     
     results.append({
         "Scenario": scenario['name'],
