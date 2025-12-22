@@ -22,11 +22,12 @@ if 'scenarios' not in st.session_state:
     st.session_state.scenarios = []
 
 # --- Data Fetching ---
-@st.cache_data(show_spinner="Fetching market data (this may take 1-2 minutes for the first load)...")
-def get_iso_data(market, year):
-    """Fetches and caches ISO RTM data for a given market and year."""
-    # Local cache file path (e.g. ercot_rtm_2024.parquet or miso_rtm_2024.parquet)
-    cache_file = f"{market.lower()}_rtm_{year}.parquet"
+# --- Data Fetching ---
+@st.cache_data(show_spinner="Fetching data from ERCOT (this may take 1-2 minutes for the first load)...")
+def get_ercot_data(year):
+    """Fetches and caches ERCOT RTM data for a given year."""
+    # Local cache file path
+    cache_file = f"ercot_rtm_{year}.parquet"
     
     # Try loading from local file first
     try:
@@ -36,41 +37,16 @@ def get_iso_data(market, year):
     except Exception as e:
         st.warning(f"Could not load local cache: {e}")
 
-    # Fetch from GridStatus if not cached
+    iso = gridstatus.Ercot()
     try:
-        if market == "ERCOT":
-            iso = gridstatus.Ercot()
-            df = iso.get_rtm_spp(year=year)
-        elif market == "MISO":
-            iso = gridstatus.MISO()
-            # MISO Data Fetching
-            # get_rt_lmp does not exist. Use get_lmp.
-            # MISO Real-Time 5-min data for a full year is very large and prone to timeouts.
-            # Using Day-Ahead Hourly for stability and speed in this demo.
-            # If 5-min is strictly required, we would need to batch fetch by month.
-            start_date = f"{year}-01-01"
-            end_date = f"{year}-12-31"
-            
-            # Note: GridStatus might expect 'date' for single day or 'start'/'end' for range
-            try:
-                df = iso.get_lmp(start=start_date, end=end_date, market="DAY_AHEAD_HOURLY", verbose=True)
-            except TypeError:
-                # Fallback if start/end not supported directly (some older versions use date=range?)
-                # But standardized API usually supports start/end. 
-                # Let's try to be robust. 
-                df = iso.get_lmp(start=start_date, end=end_date, market="DAY_AHEAD_HOURLY", verbose=True)
-
-            # Standardize Columns
-            if 'LMP' in df.columns:
-                df = df.rename(columns={'LMP': 'SPP'})
-        else:
-            return pd.DataFrame()
+        # st.spinner is not needed inside cache, but we can use st.status in main app
+        df = iso.get_rtm_spp(year=year)
         
         # Pre-process: Ensure Time is datetime and localized
         if not pd.api.types.is_datetime64_any_dtype(df['Time']):
             df['Time'] = pd.to_datetime(df['Time'], utc=True)
         
-        # Create Central Time column (Both ERCOT and MISO operate in Central mainly)
+        # Create Central Time column
         df['Time_Central'] = df['Time'].dt.tz_convert('US/Central')
         
         # Memory Optimization: Downcast float64 to float32
@@ -87,7 +63,7 @@ def get_iso_data(market, year):
         
         return df
     except Exception as e:
-        st.error(f"Error fetching data for {market} {year}: {e}")
+        st.error(f"Error fetching data for {year}: {e}")
         return pd.DataFrame()
 
 # --- Helper Functions ---
@@ -120,40 +96,18 @@ def calculate_scenario(scenario, df_rtm):
         return empty_df
 
     # Generate Profile using TMY Data
-    interval_hours = 0.25 # Assume 15-min interval for simplicity (MISO is 5-min or hourly? Check later. Assume resampling handled)
-    
-    # MISO might be Hourly data?
-    # If df_rtm has 8760/year rows per hub, it's hourly. Interval is 1.0.
-    # If df_rtm has 35040/year rows per hub, it's 15-min. Interval is 0.25.
-    # Let's detect interval dynamically
-    if len(df_hub) > 0:
-        time_diff = df_hub['Time_Central'].diff().median()
-        if pd.notnull(time_diff):
-            interval_hours = time_diff.total_seconds() / 3600.0
-        else:
-            interval_hours = 1.0 # Default fallback
-            
+    # Note: We use the scenario year to align the TMY data to the correct timestamps
+    interval_hours = 0.25
     capacity_mw = scenario['capacity_mw']
     tech = scenario['tech']
 
     # Hub Locations (Lat, Lon)
-    # Added MISO hubs
     HUB_LOCATIONS = {
-        # ERCOT
         "HB_NORTH": (33.9137, -98.4934),   # Wichita Falls
         "HB_SOUTH": (29.4241, -98.4936),   # San Antonio
         "HB_WEST": (31.9973, -102.0779),   # Midland
         "HB_HOUSTON": (29.7604, -95.3698), # Houston
         "HB_PAN": (35.2220, -101.8313),    # Amarillo
-        # MISO (Approximate Centers)
-        "INDIANA.HUB": (39.7684, -86.1581), # Indianapolis
-        "MICHIGAN.HUB": (42.3314, -83.0458), # Detroit
-        "MINN.HUB": (44.9778, -93.2650),     # Minneapolis
-        "ILLINOIS.HUB": (40.1164, -88.2434), # Champaign
-        "ARKANSAS.HUB": (34.7465, -92.2896), # Little Rock
-        "LOUISIANA.HUB": (30.4583, -91.1403), # Baton Rouge
-        "TEXAS.HUB": (30.1588, -94.00),     # MISO Texas (Beaumont area)
-        "MS.HUB": (32.2988, -90.1848),       # Mississippi (Jackson)
     }
     
     # Default to Abilene if hub not found
@@ -217,11 +171,8 @@ def calculate_scenario(scenario, df_rtm):
 # --- Sidebar: Scenario Builder ---
 st.sidebar.header("Scenario Builder")
 
-# Market Selection (Outside form to trigger update)
-s_market = st.sidebar.selectbox("Market", ["ERCOT", "MISO"], index=0)
-
 with st.sidebar.form("add_scenario_form"):
-    st.subheader(f"Add New {s_market} Scenario")
+    st.subheader("Add New Scenario")
     # --- Batch Selection Logic ---
     
     # Years
@@ -235,25 +186,14 @@ with st.sidebar.form("add_scenario_form"):
         if not s_years:
             st.warning("Please select at least one year.")
 
-    # Hubs (Dynamic based on Market)
-    if s_market == "ERCOT":
-        market_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
-    else: # MISO
-        market_hubs = [
-            "INDIANA.HUB", "MICHIGAN.HUB", "MINN.HUB", "ILLINOIS.HUB", 
-            "ARKANSAS.HUB", "LOUISIANA.HUB", "TEXAS.HUB", "MS.HUB"
-        ]
-        
+    # Hubs
+    common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
     select_all_hubs = st.checkbox("Select All Hubs", value=False)
     if select_all_hubs:
-        s_hubs = market_hubs
-        st.caption(f"Selected: {len(s_hubs)} Hubs")
+        s_hubs = common_hubs
+        st.caption(f"Selected: {', '.join(s_hubs)}")
     else:
-        # Default depends on market to avoid invalid selection
-        # Need to ensure unique key or handle change? 
-        # Actually default just needs to be valid.
-        default_hub = [market_hubs[0]]
-        s_hubs = st.multiselect("Hubs", market_hubs, default=default_hub)
+        s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
         if not s_hubs:
             st.warning("Please select at least one hub.")
     
@@ -292,10 +232,7 @@ with st.sidebar.form("add_scenario_form"):
         else:
             # Helper for friendly names
             hub_map = {
-                "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub",
-                "INDIANA.HUB": "Indiana Hub", "MICHIGAN.HUB": "Michigan Hub", "MINN.HUB": "Minnesota Hub",
-                "ILLINOIS.HUB": "Illinois Hub", "ARKANSAS.HUB": "Arkansas Hub", "LOUISIANA.HUB": "Louisiana Hub",
-                "TEXAS.HUB": "Texas Hub (MISO)", "MS.HUB": "Mississippi Hub"
+                "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
             }
             
             added_count = 0
@@ -315,10 +252,6 @@ with st.sidebar.form("add_scenario_form"):
                         else:
                             name = f"{year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
                         
-                        # Add Market tag if needed or specific details
-                        if s_market == "MISO":
-                            name = f"MISO {name}"
-                            
                         if s_no_curtailment:
                             name += " [No Curtailment]"
                             
@@ -329,8 +262,7 @@ with st.sidebar.form("add_scenario_form"):
                             new_scenario = {
                                 "id": datetime.now().isoformat() + f"_{added_count}",
                                 "name": name,
-                                "market": s_market, # Store Market
-                                "year": year,
+                                "year": year, # Removed 'market'
                                 "hub": hub,
                                 "tech": s_tech,
                                 "duration": s_duration,
@@ -376,8 +308,7 @@ progress_bar = st.progress(0)
 
 for i, scenario in enumerate(st.session_state.scenarios):
     # Fetch Data
-    market = scenario.get('market', 'ERCOT') # Default to ERCOT for older scenarios
-    df_rtm = get_iso_data(market, scenario['year'])
+    df_rtm = get_ercot_data(scenario['year'])
     if df_rtm.empty:
         st.warning(f"Could not fetch data for {scenario['name']}")
         continue
@@ -421,6 +352,10 @@ for i, scenario in enumerate(st.session_state.scenarios):
     progress_bar.progress((i + 1) / len(st.session_state.scenarios))
 
 progress_bar.empty()
+
+# ... (Visualizations Logic is generic, so no changes needed in the middle block) ...
+
+# ... Skip to Data Preview block adjustments manually below ...
 
 # --- Visualizations ---
 
@@ -619,8 +554,7 @@ with st.expander("View Raw Data"):
         selected_scenario_config = next(s for s in st.session_state.scenarios if s['name'] == selected_scenario_name)
         
         # Re-calculate on demand
-        market = selected_scenario_config.get('market', 'ERCOT')
-        df_rtm = get_iso_data(market, selected_scenario_config['year'])
+        df_rtm = get_ercot_data(selected_scenario_config['year'])
         if not df_rtm.empty:
             df_display = calculate_scenario(selected_scenario_config, df_rtm)
             
