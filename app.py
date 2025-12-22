@@ -73,6 +73,12 @@ def get_iso_data(market, year):
         # Create Central Time column (Both ERCOT and MISO operate in Central mainly)
         df['Time_Central'] = df['Time'].dt.tz_convert('US/Central')
         
+        # Memory Optimization: Downcast float64 to float32
+        # Prices and other metrics don't need 64-bit precision
+        float_cols = df.select_dtypes(include=['float64']).columns
+        for col in float_cols:
+            df[col] = pd.to_numeric(df[col], downcast='float')
+        
         # Save to local parquet for future speedups
         try:
             df.to_parquet(cache_file)
@@ -386,6 +392,20 @@ for i, scenario in enumerate(st.session_state.scenarios):
     avg_price = df_res['SPP'].mean()
     capture_price = (df_res['SPP'] * df_res['Gen_Energy_MWh']).sum() / total_gen if total_gen > 0 else 0
     
+    # Calculate Aggregates for Charts (Memory Optimization)
+    # 1. Daily for Cumulative Chart
+    daily_agg = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
+    # Normalize Date for Seasonal Plot
+    daily_agg['Normalized_Date'] = daily_agg['Time_Central'].apply(lambda x: x.replace(year=2024))
+    
+    # 2. Monthly for Bar Charts
+    df_res['Month'] = df_res['Time_Central'].dt.strftime('%b')
+    df_res['Month_Num'] = df_res['Time_Central'].dt.month
+    # Group by Month and Year (to keep unique months if spanning years, though current use case is 1 year)
+    # Actually, we normalize monthly charts too.
+    monthly_agg = df_res.groupby(['Month', 'Month_Num'], as_index=False)[['Settlement_Amount', 'Gen_Energy_MWh']].sum()
+    monthly_agg['Normalized_Month_Date'] = pd.to_datetime(monthly_agg['Month_Num'].astype(str) + "-01-2024", format="%m-%d-%Y")
+    
     results.append({
         "Scenario": scenario['name'],
         "duration": scenario['duration'], # Track duration type for plotting
@@ -394,7 +414,9 @@ for i, scenario in enumerate(st.session_state.scenarios):
         "Curtailed (MWh)": total_curt,
         "Capture Price ($/MWh)": capture_price,
         "Avg Hub Price ($/MWh)": avg_price,
-        "data": df_res # Store full dataframe for plotting
+        # "data": df_res # DROPPED for Memory Savings
+        "daily_agg": daily_agg,
+        "monthly_agg": monthly_agg
     })
     progress_bar.progress((i + 1) / len(st.session_state.scenarios))
 
@@ -417,7 +439,10 @@ COLOR_SEQUENCE = [
 
 # 1. Summary Metrics
 st.subheader("Summary Metrics")
-df_summary = pd.DataFrame(results).drop(columns=["data"])
+# Filter results for display
+display_cols = ["Scenario", "Net Settlement ($)", "Total Gen (MWh)", "Curtailed (MWh)", "Capture Price ($/MWh)", "Avg Hub Price ($/MWh)"]
+df_summary = pd.DataFrame(results)[display_cols]
+
 # Format columns
 st.dataframe(
     df_summary.style.format({
@@ -456,31 +481,27 @@ else:
 fig_cum = go.Figure()
 
 for i, res in enumerate(results):
-    df_res = res['data'].copy()
+    # Use pre-calculated daily aggregate
+    daily = res['daily_agg']
     scenario_name = res['Scenario']
     duration_type = res['duration']
     color = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
     
-    # Resample to daily for cleaner chart
-    daily = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
-    
-    # Normalize to a common year (2024)
-    daily['Normalized_Date'] = daily['Time_Central'].apply(lambda x: x.replace(year=2024))
-    
     if duration_type == "Specific Month":
         # Plot as a "Pin" (Marker + Text) at the end of the month
-        last_point = daily.iloc[-1]
-        
-        fig_cum.add_trace(go.Scatter(
-            x=[last_point['Normalized_Date']],
-            y=[last_point['Settlement_Amount']],
-            mode='markers+text',
-            name=scenario_name,
-            marker=dict(color=color, size=12, symbol='circle'),
-            text=[f"${last_point['Settlement_Amount']:,.0f}"],
-            textposition="top center",
-            hovertemplate=f"<b>{scenario_name}</b><br>Month Total: ${{y:,.0f}}<extra></extra>"
-        ))
+        if not daily.empty:
+            last_point = daily.iloc[-1]
+            
+            fig_cum.add_trace(go.Scatter(
+                x=[last_point['Normalized_Date']],
+                y=[last_point['Settlement_Amount']],
+                mode='markers+text',
+                name=scenario_name,
+                marker=dict(color=color, size=12, symbol='circle'),
+                text=[f"${last_point['Settlement_Amount']:,.0f}"],
+                textposition="top center",
+                hovertemplate=f"<b>{scenario_name}</b><br>Month Total: ${{y:,.0f}}<extra></extra>"
+            ))
     else:
         # Plot as a Line for Full Year
         fig_cum.add_trace(go.Scatter(
@@ -514,18 +535,9 @@ st.plotly_chart(fig_cum, use_container_width=True)
 # Monthly Data
 monthly_data = []
 for res in results:
-    df_res = res['data'].copy()
-    # Group by Month
-    # Use to_period for grouping, but convert back to timestamp for Plotly axis formatting
-    df_res['Month_Period'] = df_res['Time_Central'].dt.to_period('M')
-    monthly = df_res.groupby('Month_Period')[['Settlement_Amount', 'Gen_Energy_MWh']].sum().reset_index()
-    monthly['Scenario'] = res['Scenario']
-    monthly['Month_Date'] = monthly['Month_Period'].dt.to_timestamp()
-    
-    # Normalize to 2024 for seasonal comparison
-    monthly['Normalized_Month_Date'] = monthly['Month_Date'].apply(lambda x: x.replace(year=2024))
-    
-    monthly_data.append(monthly)
+    m_agg = res['monthly_agg'].copy()
+    m_agg['Scenario'] = res['Scenario']
+    monthly_data.append(m_agg)
 
 if monthly_data:
     df_monthly = pd.concat(monthly_data, ignore_index=True)
@@ -599,39 +611,50 @@ with st.expander("View Raw Data"):
         scenario_names = [res['Scenario'] for res in results]
         selected_scenario_name = st.selectbox("Select Scenario", scenario_names)
         
-        # Find selected result
-        selected_result = next(res for res in results if res['Scenario'] == selected_scenario_name)
-        df_display = selected_result['data']
+        st.info("Generating detailed data on demand to save memory...")
         
-        st.markdown(f"**Showing data for: {selected_scenario_name}**")
-        st.dataframe(df_display)
+        # Find selected result metadata
+        # We need to re-find the original scenario config from session_state
+        # because 'results' only has aggregates now.
+        selected_scenario_config = next(s for s in st.session_state.scenarios if s['name'] == selected_scenario_name)
         
-        # Download CSV
-        csv = df_display.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="Download CSV",
-            data=csv,
-            file_name=f"{selected_scenario_name}.csv",
-            mime="text/csv",
-        )
-        
+        # Re-calculate on demand
+        market = selected_scenario_config.get('market', 'ERCOT')
+        df_rtm = get_iso_data(market, selected_scenario_config['year'])
+        if not df_rtm.empty:
+            df_display = calculate_scenario(selected_scenario_config, df_rtm)
+            
+            st.markdown(f"**Showing data for: {selected_scenario_name}**")
+            st.dataframe(df_display.head(1000)) # Limit display rows
+            
+            # Download CSV
+            csv = df_display.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Detailed CSV",
+                data=csv,
+                file_name=f"{selected_scenario_name}.csv",
+                mime="text/csv",
+            )
+        else:
+            st.error("Could not load data.")
+            
         st.markdown("---")
         
-        # Download All as ZIP
-        if st.button("Prepare ZIP of All Scenarios"):
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for res in results:
-                    # Convert to CSV
-                    csv_data = res['data'].to_csv(index=False)
-                    # Add to zip with scenario name as filename (sanitize name if needed)
-                    safe_name = "".join([c for c in res['Scenario'] if c.isalnum() or c in (' ', '-', '_')]).strip()
-                    zf.writestr(f"{safe_name}.csv", csv_data)
+        # Download Summary as Excel
+        if st.button("Prepare Summary Excel"):
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                df_summary.to_excel(writer, sheet_name='Summary', index=False)
+                if monthly_data:
+                    df_monthly.to_excel(writer, sheet_name='Monthly Details', index=False)
+                # We could add daily aggregates too if useful
             
             st.download_button(
-                label="Download All Scenarios (ZIP)",
-                data=zip_buffer.getvalue(),
-                file_name="vppa_scenarios_data.zip",
-                mime="application/zip"
+                label="Download Summary Excel",
+                data=excel_buffer.getvalue(),
+                file_name="vppa_summary_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+            
+            st.info("Note: Detailed ZIP download is disabled to save memory. Use 'View Raw Data' to download specific scenario CSVs.")
 
