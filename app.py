@@ -211,12 +211,12 @@ def calculate_scenario(scenario, df_rtm):
 # --- Sidebar: Scenario Builder ---
 st.sidebar.header("Scenario Builder")
 
+# Market Selection (Outside form to trigger update)
+s_market = st.sidebar.selectbox("Market", ["ERCOT", "MISO"], index=0)
+
 with st.sidebar.form("add_scenario_form"):
-    st.subheader("Add New Scenario")
+    st.subheader(f"Add New {s_market} Scenario")
     # --- Batch Selection Logic ---
-    
-    # Market Selection
-    s_market = st.selectbox("Market", ["ERCOT", "MISO"], index=0)
     
     # Years
     available_years = [2025, 2024, 2023, 2022, 2021, 2020]
@@ -244,6 +244,8 @@ with st.sidebar.form("add_scenario_form"):
         st.caption(f"Selected: {len(s_hubs)} Hubs")
     else:
         # Default depends on market to avoid invalid selection
+        # Need to ensure unique key or handle change? 
+        # Actually default just needs to be valid.
         default_hub = [market_hubs[0]]
         s_hubs = st.multiselect("Hubs", market_hubs, default=default_hub)
         if not s_hubs:
