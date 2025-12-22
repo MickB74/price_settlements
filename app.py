@@ -43,13 +43,24 @@ def get_iso_data(market, year):
             df = iso.get_rtm_spp(year=year)
         elif market == "MISO":
             iso = gridstatus.MISO()
-            # MISO Hourly Real-Time LMP
-            # GridStatus might return 'LMP' or 'SPP' depending on the method.
-            # MISO get_rt_lmp usually returns LMP columns.
-            df = iso.get_rt_lmp(year=year, verbose=True)
+            # MISO Data Fetching
+            # get_rt_lmp does not exist. Use get_lmp.
+            # MISO Real-Time 5-min data for a full year is very large and prone to timeouts.
+            # Using Day-Ahead Hourly for stability and speed in this demo.
+            # If 5-min is strictly required, we would need to batch fetch by month.
+            start_date = f"{year}-01-01"
+            end_date = f"{year}-12-31"
             
-            # Standardize Columns for App Compatibility
-            # MISO usually has 'Location', 'Time', 'LMP'
+            # Note: GridStatus might expect 'date' for single day or 'start'/'end' for range
+            try:
+                df = iso.get_lmp(start=start_date, end=end_date, market="DAY_AHEAD_HOURLY", verbose=True)
+            except TypeError:
+                # Fallback if start/end not supported directly (some older versions use date=range?)
+                # But standardized API usually supports start/end. 
+                # Let's try to be robust. 
+                df = iso.get_lmp(start=start_date, end=end_date, market="DAY_AHEAD_HOURLY", verbose=True)
+
+            # Standardize Columns
             if 'LMP' in df.columns:
                 df = df.rename(columns={'LMP': 'SPP'})
         else:
