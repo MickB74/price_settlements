@@ -218,25 +218,17 @@ with st.sidebar.form("add_scenario_form"):
     
     # Years
     available_years = [2025, 2024, 2023, 2022, 2021, 2020]
-    select_all_years = st.checkbox("Select All Years", value=False)
-    if select_all_years:
-        s_years = available_years
-        st.caption(f"Selected: {', '.join(map(str, s_years))}")
-    else:
-        s_years = st.multiselect("Years", available_years, default=[2025])
-        if not s_years:
-            st.warning("Please select at least one year.")
+    available_years = [2025, 2024, 2023, 2022, 2021, 2020]
+    s_years = st.multiselect("Years", available_years, default=[2025])
+    if not s_years:
+        st.warning("Please select at least one year.")
 
     # Hubs
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
-    select_all_hubs = st.checkbox("Select All Hubs", value=False)
-    if select_all_hubs:
-        s_hubs = common_hubs
-        st.caption(f"Selected: {', '.join(s_hubs)}")
-    else:
-        s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
-        if not s_hubs:
-            st.warning("Please select at least one hub.")
+    common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
+    s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
+    if not s_hubs:
+        st.warning("Please select at least one hub.")
     
     s_tech = st.radio("Generation Source", ["Solar", "Wind", "Custom Upload"], index=0)
     
@@ -271,14 +263,9 @@ with st.sidebar.form("add_scenario_form"):
             "January", "February", "March", "April", "May", "June", 
             "July", "August", "September", "October", "November", "December"
         ]
-        select_all_months = st.checkbox("Select All Months", value=False)
-        if select_all_months:
-            s_months = all_months
-            st.caption("Selected: All Months")
-        else:
-            s_months = st.multiselect("Months", all_months, default=["January"])
-            if not s_months:
-                st.warning("Please select at least one month.")
+        s_months = st.multiselect("Months", all_months, default=["January"])
+        if not s_months:
+            st.warning("Please select at least one month.")
     
     s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
     s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0)
