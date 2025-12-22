@@ -4,6 +4,7 @@ import numpy as np
 import gridstatus
 import patch_gridstatus # Apply monkey patch
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
 import zipfile
 import io
@@ -272,6 +273,7 @@ for i, scenario in enumerate(st.session_state.scenarios):
     
     results.append({
         "Scenario": scenario['name'],
+        "duration": scenario['duration'], # Track duration type for plotting
         "Net Settlement ($)": total_rev,
         "Total Gen (MWh)": total_gen,
         "Curtailed (MWh)": total_curt,
@@ -315,33 +317,17 @@ st.dataframe(
 # Prepare Data for Plotly
 # We need long-format dataframes for Plotly Express
 
-# Cumulative Data
-cum_data = []
-for res in results:
-    df_res = res['data'].copy()
-    # Resample to daily for cleaner chart
-    daily = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
-    daily['Scenario'] = res['Scenario']
-    
-    # Normalize to a common year (2024 is a leap year to safe-keep Feb 29)
-    # This allows plotting multiple years on top of each other
-    daily['Normalized_Date'] = daily['Time_Central'].apply(lambda x: x.replace(year=2024))
-    
-    cum_data.append(daily)
-
-if cum_data:
-    df_cum = pd.concat(cum_data, ignore_index=True)
-    
     st.subheader("Cumulative Settlement ($)")
     
-    # Insight for Cumulative
-    final_vals = df_cum.groupby('Scenario')['Settlement_Amount'].last()
-    best_scen = final_vals.idxmax()
-    best_val = final_vals.max()
-    worst_scen = final_vals.idxmin()
-    worst_val = final_vals.min()
+    # Insight for Cumulative (using existing data from results)
+    # Re-calculate best/worst based on final totals
+    final_settlements = {r['Scenario']: r['Net Settlement ($)'] for r in results}
+    best_scen = max(final_settlements, key=final_settlements.get)
+    best_val = final_settlements[best_scen]
+    worst_scen = min(final_settlements, key=final_settlements.get)
+    worst_val = final_settlements[worst_scen]
     
-    if len(final_vals) > 1:
+    if len(final_settlements) > 1:
         st.markdown(
             f"**Insight:** The **{best_scen}** scenario leads with a total settlement of "
             f"**\${best_val:,.0f}**, while **{worst_scen}** trails at **\${worst_val:,.0f}**."
@@ -351,24 +337,63 @@ if cum_data:
             f"**Insight:** The **{best_scen}** scenario has a total settlement of **\${best_val:,.0f}**."
         )
 
-    fig_cum = px.line(
-        df_cum, 
-        x='Normalized_Date', 
-        y='Settlement_Amount', 
-        color='Scenario',
+    # Initialize Plotly Graph Object for improved flexibility
+    fig_cum = go.Figure()
+    
+    for i, res in enumerate(results):
+        df_res = res['data'].copy()
+        scenario_name = res['Scenario']
+        duration_type = res['duration']
+        color = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
+        
+        # Resample to daily for cleaner chart
+        daily = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
+        
+        # Normalize to a common year (2024)
+        daily['Normalized_Date'] = daily['Time_Central'].apply(lambda x: x.replace(year=2024))
+        
+        if duration_type == "Specific Month":
+            # Plot as a "Pin" (Marker + Text) at the end of the month
+            last_point = daily.iloc[-1]
+            
+            fig_cum.add_trace(go.Scatter(
+                x=[last_point['Normalized_Date']],
+                y=[last_point['Settlement_Amount']],
+                mode='markers+text',
+                name=scenario_name,
+                marker=dict(color=color, size=12, symbol='circle'),
+                text=[f"${last_point['Settlement_Amount']:,.0f}"],
+                textposition="top center",
+                hovertemplate=f"<b>{scenario_name}</b><br>Month Total: ${{y:,.0f}}<extra></extra>"
+            ))
+        else:
+            # Plot as a Line for Full Year
+            fig_cum.add_trace(go.Scatter(
+                x=daily['Normalized_Date'],
+                y=daily['Settlement_Amount'],
+                mode='lines',
+                name=scenario_name,
+                line=dict(color=color, width=3),
+                hovertemplate="<b>%{x|%b %d}</b><br>Cumulative: $%{y:,.0f}<extra></extra>"
+            ))
+
+    fig_cum.update_layout(
         title="Cumulative Settlement Over Time (Seasonal Comparison)",
-        color_discrete_sequence=COLOR_SEQUENCE,
-        hover_data={"Normalized_Date": False, "Time_Central": "|%b %d, %Y"} # Custom hover
+        legend_title="Scenario",
+        hovermode="x unified"
     )
+    
     fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
+    
     # Format x-axis to show only Month (e.g., Jan, Feb)
-    # Force range to full year (2024) to avoid repeated labels on zoomed-in single-month views
+    # Force range to full year (2024)
     fig_cum.update_xaxes(
         title="Month", 
         tickformat="%b",
         dtick="M1",
         range=["2024-01-01", "2024-12-31"]
     )
+    
     st.plotly_chart(fig_cum, use_container_width=True)
 
 # Monthly Data
