@@ -115,7 +115,6 @@ def calculate_scenario(scenario, df_rtm):
     lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
 
     try:
-    try:
         if tech == "Custom Upload":
             # Load Custom CSV
             csv_path = scenario.get('custom_profile_path')
