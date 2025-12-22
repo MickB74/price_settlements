@@ -190,14 +190,11 @@ with st.sidebar.form("add_scenario_form"):
     submitted = st.form_submit_button("Add Scenario")
     
     if submitted:
-        if len(st.session_state.scenarios) >= 10:
-            st.error("Maximum of 10 scenarios allowed. Please remove one first.")
-        else:
-            # Helper for friendly names
-            hub_map = {
-                "HB_NORTH": "North Hub",
-                "HB_SOUTH": "South Hub",
-                "HB_WEST": "West Hub",
+        # Helper for friendly names
+        hub_map = {
+            "HB_NORTH": "North Hub",
+            "HB_SOUTH": "South Hub",
+            "HB_WEST": "West Hub",
                 "HB_HOUSTON": "Houston Hub"
             }
             friendly_hub = hub_map.get(s_hub, s_hub)
@@ -365,7 +362,13 @@ if cum_data:
     )
     fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
     # Format x-axis to show only Month (e.g., Jan, Feb)
-    fig_cum.update_xaxes(title="Month", tickformat="%b")
+    # Force range to full year (2024) to avoid repeated labels on zoomed-in single-month views
+    fig_cum.update_xaxes(
+        title="Month", 
+        tickformat="%b",
+        dtick="M1",
+        range=["2024-01-01", "2024-12-31"]
+    )
     st.plotly_chart(fig_cum, use_container_width=True)
 
 # Monthly Data
