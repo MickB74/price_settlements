@@ -6,3 +6,4 @@ __pycache__/
 venv/
 ercot_rtm_*.parquet
 miso_rtm_*.parquet
+user_uploads/

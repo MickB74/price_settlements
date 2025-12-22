@@ -115,28 +115,70 @@ def calculate_scenario(scenario, df_rtm):
     lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
 
     try:
-        profile_series = fetch_tmy.get_profile_for_year(
-            year=scenario['year'],
-            tech=tech,
-            capacity_mw=capacity_mw,
-            lat=lat,
-            lon=lon
-        )
+    try:
+        if tech == "Custom Upload":
+            # Load Custom CSV
+            csv_path = scenario.get('custom_profile_path')
+            if csv_path and pd.io.common.file_exists(csv_path):
+                df_custom = pd.read_csv(csv_path)
+                
+                # Normalize columns
+                df_custom.columns = [c.lower().strip() for c in df_custom.columns]
+                
+                # Identify MW column
+                mw_col = next((c for c in df_custom.columns if any(x in c for x in ['mw', 'gen', 'load', 'power'])), None)
+                if not mw_col:
+                    raise ValueError("Could not identify Generation/MW column in CSV.")
+                
+                # Identify Time column
+                time_col = next((c for c in df_custom.columns if any(x in c for x in ['time', 'date', 'hour'])), None)
+                
+                if time_col:
+                    # Parse Time
+                    df_custom['Time'] = pd.to_datetime(df_custom[time_col], utc=True) # Assume UTC if not specified? 
+                    # If naive, assume UTC or Central? Let's assume input matches expected years or generic.
+                    # Best effort: convert to Central if possible, or just naive.
+                    if df_custom['Time'].dt.tz is None:
+                        df_custom['Time'] = df_custom['Time'].dt.tz_localize('UTC') # Assume UTC
+                    
+                    profile_series = df_custom.set_index('Time')[mw_col]
+                    profile_central = profile_series.tz_convert('US/Central')
+                else:
+                    # Infer Time Index based on length
+                    year = scenario['year']
+                    start_date = f"{year}-01-01"
+                    
+                    if len(df_custom) >= 35000: # Approx 15-min (35040)
+                        freq = '15min'
+                    else: # Assume Hourly (8760/8784)
+                        freq = 'h'
+                    
+                    # Create index
+                    idx = pd.date_range(start=start_date, periods=len(df_custom), freq=freq, tz='US/Central')
+                    profile_central = pd.Series(df_custom[mw_col].values, index=idx)
+
+            else:
+                # File missing?
+                potential_gen = np.zeros(len(df_hub))
+                profile_central = None
+
+        else:
+            # Standard TMY/Actual Logic
+            profile_series = fetch_tmy.get_profile_for_year(
+                year=scenario['year'],
+                tech=tech,
+                capacity_mw=capacity_mw,
+                lat=lat,
+                lon=lon
+            )
+            # Align profile with df_hub timestamps
+            profile_central = profile_series.tz_convert('US/Central')
         
-        # Align profile with df_hub timestamps
-        profile_central = profile_series.tz_convert('US/Central')
-        
-        # Reindex to match df_hub['Time_Central']
-        # This handles interpolation if MISO is hourly but profile is 15-min, or vice versa
-        # Actually fetch_tmy returns 15-min. If MISO is Hourly, we should probably downsample profile or upsample price.
-        # Here we reindex profile to match price timestamps.
-        # Method='nearest' or interpolate?
-        # profile_central.reindex(...) might introduce NaNs if timestamps don't match exactly.
-        # Best to use reindex with nearest or interpolate.
-        
-        # If we reindex a 15-min profile to Hourly timestamps, we lose detail but it works.
-        # If we reindex Hourly profile to 15-min, we need ffill.
-        potential_gen = profile_central.reindex(df_hub['Time_Central'], method='nearest').values
+        if profile_central is not None:
+             # Reindex to match df_hub['Time_Central']
+             potential_gen = profile_central.reindex(df_hub['Time_Central'], method='nearest').values
+        else:
+             potential_gen = np.zeros(len(df_hub))
         
     except Exception as e:
         try:
@@ -197,7 +239,28 @@ with st.sidebar.form("add_scenario_form"):
         if not s_hubs:
             st.warning("Please select at least one hub.")
     
-    s_tech = st.radio("Generation Source", ["Solar", "Wind"], index=0)
+    s_tech = st.radio("Generation Source", ["Solar", "Wind", "Custom Upload"], index=0)
+    
+    # Custom File Upload Logic
+    uploaded_file = None
+    custom_profile_path = None
+    
+    if s_tech == "Custom Upload":
+        st.info("Upload a CSV file with your generation profile.")
+        with st.expander("File Format Guidance", expanded=True):
+            st.markdown("""
+            **Required Format:** CSV file
+            
+            **Columns:**
+            - `Gen_MW` (Required): Generation in MW.
+            - `Time` (Optional): Datetime column.
+            
+            **Notes:**
+            - If `Time` is missing, we assume data starts Jan 1st of the selected year.
+            - **8,760 rows** = Hourly Data
+            - **35,040 rows** = 15-Minute Data
+            """)
+        uploaded_file = st.file_uploader("Upload Profile (CSV)", type=["csv"])
     
     # Duration Selection
     use_specific_month = st.checkbox("Filter by specific month")
@@ -229,11 +292,33 @@ with st.sidebar.form("add_scenario_form"):
     if submitted:
         if not s_years or not s_hubs or (use_specific_month and not s_months):
             st.error("Please ensure Years, Hubs, and Months (if applicable) are selected.")
+        elif s_tech == "Custom Upload" and not uploaded_file:
+            st.error("Please upload a CSV file for the Custom profile.")
         else:
             # Helper for friendly names
             hub_map = {
                 "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
             }
+            
+            # Handle File Upload for Custom Scenarios
+            if s_tech == "Custom Upload" and uploaded_file is not None:
+                import os
+                
+                # Ensure directory exists
+                upload_dir = "user_uploads"
+                if not os.path.exists(upload_dir):
+                    os.makedirs(upload_dir)
+                    
+                # Save file with unique name
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                # Sanitize filename
+                safe_filename = "".join(x for x in uploaded_file.name if x.isalnum() or x in "._- ")
+                save_path = os.path.join(upload_dir, f"{timestamp}_{safe_filename}")
+                
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                custom_profile_path = save_path
             
             added_count = 0
             
@@ -269,7 +354,8 @@ with st.sidebar.form("add_scenario_form"):
                                 "month": month,
                                 "capacity_mw": s_capacity,
                                 "vppa_price": s_vppa_price,
-                                "no_curtailment": s_no_curtailment
+                                "no_curtailment": s_no_curtailment,
+                                "custom_profile_path": custom_profile_path # Add path if custom
                             }
                             st.session_state.scenarios.append(new_scenario)
                             added_count += 1
