@@ -85,7 +85,7 @@ def calculate_scenario(scenario, df_rtm):
     # Robustness: Handle empty dataframe
     if df_hub.empty:
         # Return empty dataframe with expected columns
-        empty_df = pd.DataFrame(columns=['Time_Central', 'Potential_Gen_MW', 'Strike_Price', 'Settlement_Price', 'Actual_Gen_MW', 
+        empty_df = pd.DataFrame(columns=['Time_Central', 'Potential_Gen_MW', 'VPPA_Price', 'Settlement_Price', 'Actual_Gen_MW', 
                                        'Gen_Energy_MWh', 'Curtailed_MWh', 'Settlement_Amount', 'Cumulative_Settlement', 'SPP'])
         # Ensure correct dtypes
         for col in empty_df.columns:
@@ -148,9 +148,9 @@ def calculate_scenario(scenario, df_rtm):
     df_hub['Potential_Gen_MW'] = potential_gen
     
     # Settlement
-    strike_price = scenario['strike_price']
-    df_hub['Strike_Price'] = strike_price
-    df_hub['Settlement_Price'] = df_hub['SPP'] - strike_price
+    vppa_price = scenario.get('vppa_price', scenario.get('strike_price', 50.0))
+    df_hub['VPPA_Price'] = vppa_price
+    df_hub['Settlement_Price'] = df_hub['SPP'] - vppa_price
     
     # Curtailment
     if scenario.get('no_curtailment'):
@@ -219,7 +219,7 @@ with st.sidebar.form("add_scenario_form"):
                 st.warning("Please select at least one month.")
     
     s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
-    s_strike = st.number_input("Strike Price ($/MWh)", value=30.0, step=1.0)
+    s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0)
     
     # Curtailment Option
     s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)")
@@ -268,7 +268,7 @@ with st.sidebar.form("add_scenario_form"):
                                 "duration": s_duration,
                                 "month": month,
                                 "capacity_mw": s_capacity,
-                                "strike_price": s_strike,
+                                "vppa_price": s_vppa_price,
                                 "no_curtailment": s_no_curtailment
                             }
                             st.session_state.scenarios.append(new_scenario)
