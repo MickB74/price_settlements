@@ -133,69 +133,162 @@ def wind_from_speed(speed_series, capacity_mw):
     normalized_power = speed_series.apply(power_curve)
     return normalized_power * capacity_mw
 
+def find_nearest_noaa_station(lat, lon, year=2024):
+    """Find nearest NOAA ISD station (Simplified for known Texas hubs or generic search)."""
+    # For reliability/speed in this demo, let's hardcode the confirmed stations for our 5 hubs
+    # Data from our previous test run
+    KNOWN_STATIONS = {
+        # North (Waxahachie) -> Mid-Way Regional
+        (32.3865, -96.8475): {'usaf': '720299', 'wban': '53966'},
+        # South (Zapata) -> Zapata County
+        (26.9070, -99.2715): {'usaf': '720584', 'wban': '00181'},
+        # West (Roscoe) -> Dyess AFB (Abilene) or nearby? Roscoe is near Sweetwater.
+        # Let's use Sweetwater (Avenger Field) if available, or finding nearest dynamically.
+        # For this implementation, let's include the dynamic search properly to be robust.
+        # But to avoid huge dependency on isd-history.csv every run, strict fallback is good.
+    }
+    
+    # Check if exact match (float comparison might be tricky, so generic search is better)
+    pass
+    
+    # Generic Search
+    try:
+        stations_url = "https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv"
+        # We use a cache for station list if possible, or just fetch (it's 2MB)
+        # To be safe and fast, let's just use the nearest finding logic if not cached
+        cache_file = os.path.join(CACHE_DIR, "isd-history.csv")
+        
+        if os.path.exists(cache_file):
+            df_stations = pd.read_csv(cache_file)
+        else:
+            print("Fetching NOAA station list...")
+            df_stations = pd.read_csv(stations_url)
+            df_stations.to_csv(cache_file, index=False)
+            
+        df_stations['END'] = pd.to_datetime(df_stations['END'], format='%Y%m%d', errors='coerce')
+        df_active = df_stations[df_stations['END'] >= '2023-01-01'].copy()
+        
+        df_active['DISTANCE'] = np.sqrt((df_active['LAT'] - lat)**2 + (df_active['LON'] - lon)**2)
+        closest = df_active.nsmallest(1, 'DISTANCE').iloc[0]
+        
+        return {
+            'usaf': str(closest['USAF']).zfill(6),
+            'wban': str(closest['WBAN']).zfill(5),
+            'name': closest['STATION NAME']
+        }
+    except Exception as e:
+        print(f"Error finding NOAA station: {e}")
+        return None
+
+def get_noaa_2024_data(lat, lon):
+    """Fetch 2024 hourly data from NOAA ISD."""
+    cache_file = os.path.join(CACHE_DIR, f"noaa_2024_{lat}_{lon}.parquet")
+    
+    if os.path.exists(cache_file):
+        return pd.read_parquet(cache_file)
+        
+    station = find_nearest_noaa_station(lat, lon)
+    if not station:
+        return pd.DataFrame()
+        
+    usaf, wban = station['usaf'], station['wban']
+    url = f"https://www.ncei.noaa.gov/data/global-hourly/access/2024/{usaf}{wban}.csv"
+    
+    print(f"Fetching NOAA 2024 data for {lat}, {lon} from {station['name']}...")
+    
+    try:
+        df = pd.read_csv(url, low_memory=False)
+        df['datetime'] = pd.to_datetime(df['DATE'])
+        
+        # Parse Wind Speed (WND: angle,quality,type,speed,quality)
+        # Speed is scaled by 10 (e.g. 35 = 3.5 m/s). 9999 = Missing.
+        def parse_wind(wnd_str):
+            try:
+                parts = str(wnd_str).split(',')
+                if len(parts) >= 4:
+                    speed = float(parts[3])
+                    if speed == 9999: return np.nan
+                    return speed / 10.0
+            except:
+                pass
+            return np.nan
+            
+        if 'WND' in df.columns:
+            df['wind_speed_mps'] = df['WND'].apply(parse_wind)
+        else:
+            df['wind_speed_mps'] = np.nan
+            
+        # Select and save
+        out_df = df[['datetime', 'wind_speed_mps']].copy()
+        out_df = out_df.dropna(subset=['wind_speed_mps'])
+        out_df.to_parquet(cache_file)
+        return out_df
+        
+    except Exception as e:
+        print(f"Error fetching NOAA data: {e}")
+        return pd.DataFrame()
+
 def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
-    Uses NOAA ISD for 2024 (if available).
+    Uses NOAA ISD for 2024 (Wind only).
     Uses TMY data for future years or fallback.
     """
     # Determine Data Source
     use_pvgis_actual = 2005 <= year <= 2023
-    use_noaa_2024 = (year == 2024)  # Try NOAA for 2024
-    
-    if use_actual:
-        # Fetch Actual
-        # We need to ensure we get horizontal irradiance for Solar.
-        # We'll update get_actual_data to request horizontal.
-        # For now, let's call it and handle columns.
-        
-        # To get G(h) equivalent from seriescalc with angle=0:
-        # G(h) = Gb(i) + Gd(i) (since Gr(i) is 0 on horizontal usually)
-        # We need to pass angle=0 to get_actual_data.
-        # Let's modify get_actual_data to take params or just hardcode horizontal for now.
-        
-        # Actually, let's modify get_actual_data in place (below).
-        pass
-    
-    # ... (Refactoring to support both in one flow)
+    use_noaa_2024 = (year == 2024)
     
     df_data = pd.DataFrame()
-    source_type = "TMY"
+    source_type = "TMY" # Default
     
-    if use_actual:
-        # We need to re-implement get_actual_data with angle=0 to be safe
-        url = "https://re.jrc.ec.europa.eu/api/seriescalc"
-        params = {
-            "lat": lat,
-            "lon": lon,
-            "startyear": year,
-            "endyear": year,
-            "outputformat": "json",
-            "pvcalculation": 0,
-            "components": 1,
-            "angle": 0, # Horizontal
-            "aspect": 0
-        }
-        
-        cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
-        if os.path.exists(cache_file):
-             df_data = pd.read_parquet(cache_file)
-        else:
-            try:
-                print(f"Fetching Actual data for {year}...")
+    # 1. Try PVGIS Actuals (2005-2023)
+    if use_pvgis_actual:
+        # (Existing PVGIS fetch logic...)
+        try:
+            # Re-implement get_actual_data inline or call it
+            # For brevity in this edit, leveraging existing logic structure if feasible
+            # But we must ensure df_data is populated
+            
+            # Using the cache/fetch logic from previous block:
+            cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
+            if os.path.exists(cache_file):
+                 df_data = pd.read_parquet(cache_file)
+            else:
+                # Fetch new
+                url = "https://re.jrc.ec.europa.eu/api/seriescalc"
+                params = {
+                    "lat": lat, "lon": lon, "startyear": year, "endyear": year,
+                    "outputformat": "json", "pvcalculation": 0, "components": 1,
+                    "angle": 0 # Horizontal
+                }
+                print(f"Fetching PVGIS Actual data for {year}...")
                 response = requests.get(url, params=params)
-                response.raise_for_status()
-                data = response.json()
-                if 'outputs' in data and 'hourly' in data['outputs']:
-                    df_data = pd.DataFrame(data['outputs']['hourly'])
-                    df_data.to_parquet(cache_file)
-            except Exception as e:
-                print(f"Error fetching actuals: {e}")
-        
-        source_type = "Actual"
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'outputs' in data and 'hourly' in data['outputs']:
+                        df_data = pd.DataFrame(data['outputs']['hourly'])
+                        df_data.to_parquet(cache_file)
+                else:
+                    print(f"PVGIS Error: {response.status_code}")
+            
+            if not df_data.empty:
+                source_type = "Actual"
+        except Exception as e:
+            print(f"Error in PVGIS flow: {e}")
 
-    # Fallback to TMY if actual failed or not requested
+    # 2. Try NOAA 2024 (Wind Only)
+    if use_noaa_2024 and tech == "Wind" and df_data.empty:
+        df_noaa = get_noaa_2024_data(lat, lon)
+        if not df_noaa.empty:
+            df_data = df_noaa
+            # Map columns for downstream compatibility
+            # Downstream expects 'time' or 'time(UTC)' and 'WS10m'
+            # We have 'datetime' and 'wind_speed_mps'
+            df_data['WS10m'] = df_data['wind_speed_mps']
+            source_type = "NOAA_Actual"
+
+    # 3. Fallback to TMY (Solar 2024, Future Years, or failures)
     if df_data.empty:
         df_data = get_tmy_data(lat, lon)
         source_type = "TMY"
@@ -205,20 +298,16 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
 
     # Calculate MW
     if tech == "Solar":
-        # Solar Irradiance
         if source_type == "Actual":
-            # With angle=0, Gb(i) + Gd(i) should be G(h)
-            # Or just sum them.
-            # Columns: 'Gb(i)', 'Gd(i)', 'Gr(i)'
             irradiance = df_data['Gb(i)'] + df_data['Gd(i)'] + df_data.get('Gr(i)', 0)
-        else:
-            # TMY
+        elif source_type == "TMY":
             irradiance = df_data['G(h)']
+        else:
+            return pd.Series() # Should not happen for Solar if logic is correct
             
         mw_hourly = solar_from_ghi(irradiance, capacity_mw)
         
     elif tech == "Wind":
-        # Wind Speed
         if 'WS10m' in df_data.columns:
             # Extrapolate to hub height (80m)
             wind_speed_hub = df_data['WS10m'] * 1.35
@@ -228,49 +317,44 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
     else:
         return pd.Series()
 
-    # Align with Target Year
-    # If Actual: The data is already for the correct year (hourly).
-    # If TMY: The data is "typical" (mixed years).
-    
-    if source_type == "Actual":
-        # Actual data is hourly for the specific year.
-        # We just need to upsample to 15-min.
+    # Align with Target Year (Resampling)
+    if source_type in ["Actual", "NOAA_Actual"]:
+        # Actual data is hourly for the specific year. Upsample to 15-min.
         
-        # Create index from 'time' string?
-        # Format: YYYYMMDD:HHMM
-        # 20200101:0030 (UTC)
-        
-        # Parse time
-        # Note: PVGIS time is usually UTC.
-        if 'time' in df_data.columns:
-            time_col = 'time'
-        elif 'time(UTC)' in df_data.columns:
-            time_col = 'time(UTC)'
+        # Parse timestamps
+        if source_type == "NOAA_Actual":
+            # Already datetime objects
+            timestamps = df_data['datetime']
+            # Ensure UTC timezone if not present (NOAA is UTC usually)
+            if timestamps.dt.tz is None:
+                timestamps = timestamps.dt.tz_localize('UTC')
+            else:
+                timestamps = timestamps.dt.tz_convert('UTC')
         else:
-            return pd.Series()
-            
-        # Parse
-        # For Actuals, format is YYYYMMDD:HHMM
-        timestamps = pd.to_datetime(df_data[time_col], format='%Y%m%d:%H%M', utc=True)
+            # PVGIS format
+            if 'time' in df_data.columns: time_col = 'time'
+            elif 'time(UTC)' in df_data.columns: time_col = 'time(UTC)'
+            else: return pd.Series()
+            timestamps = pd.to_datetime(df_data[time_col], format='%Y%m%d:%H%M', utc=True)
         
         # Create Series
         s_hourly = pd.Series(mw_hourly.values, index=timestamps)
         
         # Resample to 15min
+        # Handle duplicate indices if any (NOAA sometimes has dups)
+        s_hourly = s_hourly[~s_hourly.index.duplicated(keep='first')]
         s_15min = s_hourly.resample('15min').interpolate(method='linear')
         
-        # Ensure it covers the full year (start/end might be slightly off due to center-of-interval timestamps)
-        # PVGIS hourly is usually center or end? 00:30 usually means 00:00-01:00 avg?
-        # We'll reindex to the exact expected index for the year.
-        
+        # Reindex to full year
         start_date = f"{year}-01-01"
         end_date = f"{year}-12-31 23:45"
         target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
         
-        s_final = s_15min.reindex(target_index).fillna(method='ffill').fillna(method='bfill') # Fill edges
-        return s_final.fillna(0) # Safety
+        s_final = s_15min.reindex(target_index).ffill().bfill()
+        return s_final.fillna(0)
         
     else:
+        # TMY Logic (Linear Interpolation of typical year to target year)
         # TMY Logic (Same as before)
         # Interpolate to 15-min
         dummy_index_hourly = pd.date_range(start="2000-01-01", periods=len(mw_hourly), freq='h')
@@ -293,12 +377,22 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
         return pd.Series(values, index=target_index, name="Gen_MW")
 
 if __name__ == "__main__":
-    print("Testing fetch_tmy (Hybrid)...")
-    # Test Actual (2020)
-    s_2020 = get_profile_for_year(2020, "Solar", 100)
-    print(f"Solar 2020 (Actual): {len(s_2020)} points, Max: {s_2020.max():.2f} MW")
+    print("Testing fetch_tmy (Hybrid + NOAA)...")
     
+    # Test Actual (2020)
+    print("\n--- Test 2020 Solar (PVGIS Actual) ---")
+    s_2020 = get_profile_for_year(2020, "Solar", 100)
+    print(f"Solar 2020: {len(s_2020)} points, Max: {s_2020.max():.2f} MW")
+    
+    # Test NOAA 2024 (Wind)
+    print("\n--- Test 2024 Wind (NOAA Actual) ---")
+    s_2024 = get_profile_for_year(2024, "Wind", 100)
+    print(f"Wind 2024: {len(s_2024)} points, Max: {s_2024.max():.2f} MW")
+    if not s_2024.empty:
+        print(f"Sample head:\n{s_2024.head()}")
+
     # Test TMY (2025)
+    print("\n--- Test 2025 Wind (TMY) ---")
     s_2025 = get_profile_for_year(2025, "Wind", 100)
-    print(f"Wind 2025 (TMY): {len(s_2025)} points, Max: {s_2025.max():.2f} MW")
+    print(f"Wind 2025: {len(s_2025)} points, Max: {s_2025.max():.2f} MW")
 

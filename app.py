@@ -36,8 +36,9 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ### 2. **Generation Profiles (Wind/Solar)**
     - **Source:** [PVGIS (Photovoltaic Geographical Information System)](https://re.jrc.ec.europa.eu/pvgis/) - European Commission JRC
     - **Method:**
-      - **Historical Years (2005-2023):** Uses actual meteorological data for that specific year
-      - **Future Years (2024+):** Uses Typical Meteorological Year (TMY) representative data
+      - **Historical Years (2005-2023):** Uses actual meteorological data (PVGIS)
+      - **2024 (Wind):** Uses actual weather data from NOAA ISD ✅
+      - **Future Years (2025+ or 2024 Solar):** Uses Typical Meteorological Year (TMY)
     - **Resolution:** 15-minute intervals, aligned to ERCOT settlement timestamps
     - **Conversion:** Weather data (solar irradiance, wind speed) → MW generation using standard power curves
     
