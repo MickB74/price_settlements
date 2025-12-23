@@ -258,6 +258,13 @@ def calculate_scenario(scenario, df_rtm):
             # Extract override flag
             force_tmy = scenario.get('force_tmy', False)
             
+            # Ensure module is reloaded to pick up recent changes (hotfix)
+            import importlib
+            importlib.reload(fetch_tmy)
+            
+            if force_tmy:
+                st.toast(f"ℹ️ Forcing TMY Data for {scenario['name']}")
+            
             profile_series = fetch_tmy.get_profile_for_year(
                 year=scenario['year'],
                 tech=tech,
