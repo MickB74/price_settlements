@@ -439,9 +439,12 @@ else:
         # TMY Override
         s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.")
         
-        submitted = st.form_submit_button("Add Scenarios")
+        submitted = st.form_submit_button("Run Scenarios")
         
         if submitted:
+            # User requested to "reset everything" on click - do this FIRST
+            st.session_state.scenarios = []
+            
             if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
                 st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
             else:
@@ -474,7 +477,7 @@ else:
                                 if s_force_tmy:
                                     name += " [TMY]"
                                     
-                                # Check for duplicates
+                                # Check for duplicates (against new list)
                                 if any(s['name'] == name for s in st.session_state.scenarios):
                                     continue 
                                 else:
@@ -496,7 +499,8 @@ else:
                                 added_count += 1
                 
                 if added_count > 0:
-                    st.success(f"Successfully added {added_count} scenarios!")
+                    st.success(f"Generated {added_count} scenarios!")
+                    st.rerun()
                 else:
                     st.warning("No new scenarios added (duplicates or empty selection).")
 
@@ -700,37 +704,74 @@ for res in results:
 if monthly_data:
     df_monthly = pd.concat(monthly_data, ignore_index=True)
     
-    # Chart 2: Monthly Net Settlement
-    st.subheader("Monthly Net Settlement ($)")
     
-    # Insight for Monthly Settlement
-    best_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmax()]
-    worst_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmin()]
+    # Toggle for Monthly vs Annual view
+    settle_view_mode = st.radio("View Mode", ["Monthly", "Annual"], horizontal=True, key="settle_view_mode")
     
-    st.markdown(
-        f"**Insight:** The highest monthly return was **\${best_month_row['Settlement_Amount']:,.0f}** "
-        f"in **{best_month_row['Month_Date'].strftime('%B %Y')}** ({best_month_row['Scenario']}), "
-        f"whereas the lowest was **\${worst_month_row['Settlement_Amount']:,.0f}** "
-        f"in **{worst_month_row['Month_Date'].strftime('%B %Y')}** ({worst_month_row['Scenario']})."
-    )
-
-    fig_settle = px.bar(
-        df_monthly, 
-        x='Normalized_Month_Date', 
-        y='Settlement_Amount', 
-        color='Scenario', 
-        barmode='group',
-        title="Monthly Net Settlement (Seasonal Comparison)",
-        color_discrete_sequence=COLOR_SEQUENCE,
-        hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
-    )
-    fig_settle.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
-    fig_settle.update_xaxes(
-        title="Month", 
-        tickformat="%b", 
-        dtick="M1" # Force monthly ticks
-    )
-    st.plotly_chart(fig_settle, use_container_width=True)
+    if settle_view_mode == "Annual":
+        st.subheader("Annual Net Settlement ($)")
+        
+        # Annual view: Sum by scenario
+        df_annual_settle = df_monthly.groupby('Scenario').agg({
+            'Settlement_Amount': 'sum'
+        }).reset_index()
+        
+        # Insight for Annual
+        best_scen = df_annual_settle.loc[df_annual_settle['Settlement_Amount'].idxmax(), 'Scenario']
+        best_val = df_annual_settle['Settlement_Amount'].max()
+        
+        st.markdown(
+            f"**Insight:** **{best_scen}** led with a total settlement of **\${best_val:,.0f}**."
+        )
+        
+        fig_settle = px.bar(
+            df_annual_settle,
+            x='Scenario',
+            y='Settlement_Amount',
+            color='Scenario',
+            title="Annual Net Settlement Comparison",
+            color_discrete_sequence=COLOR_SEQUENCE,
+            text='Settlement_Amount'
+        )
+        fig_settle.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+        fig_settle.update_yaxes(title="Total Settlement ($)")
+        fig_settle.update_xaxes(title="Scenario")
+        fig_settle.update_layout(showlegend=True, legend_title_text="Scenario")
+        
+        st.plotly_chart(fig_settle, use_container_width=True)
+        
+    else:
+        # Chart 2: Monthly Net Settlement
+        st.subheader("Monthly Net Settlement ($)")
+        
+        # Insight for Monthly Settlement
+        best_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmax()]
+        worst_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmin()]
+        
+        st.markdown(
+            f"**Insight:** The highest monthly return was **\${best_month_row['Settlement_Amount']:,.0f}** "
+            f"in **{best_month_row['Month_Date'].strftime('%B %Y')}** ({best_month_row['Scenario']}), "
+            f"whereas the lowest was **\${worst_month_row['Settlement_Amount']:,.0f}** "
+            f"in **{worst_month_row['Month_Date'].strftime('%B %Y')}** ({worst_month_row['Scenario']})."
+        )
+    
+        fig_settle = px.bar(
+            df_monthly, 
+            x='Normalized_Month_Date', 
+            y='Settlement_Amount', 
+            color='Scenario', 
+            barmode='group',
+            title="Monthly Net Settlement (Seasonal Comparison)",
+            color_discrete_sequence=COLOR_SEQUENCE,
+            hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
+        )
+        fig_settle.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
+        fig_settle.update_xaxes(
+            title="Month", 
+            tickformat="%b", 
+            dtick="M1" # Force monthly ticks
+        )
+        st.plotly_chart(fig_settle, use_container_width=True)
     
     
     # Chart 3: Monthly Generation
@@ -745,6 +786,9 @@ if monthly_data:
             'Gen_Energy_MWh': 'sum'
         }).reset_index()
         
+        # Extract Year from scenario name (assumes format "YYYY ...")
+        df_annual['Year'] = df_annual['Scenario'].str.extract(r'(\d{4})')[0]
+        
         # Insight for Annual
         max_gen_scen = df_annual.loc[df_annual['Gen_Energy_MWh'].idxmax(), 'Scenario']
         max_gen_val = df_annual['Gen_Energy_MWh'].max()
@@ -753,21 +797,25 @@ if monthly_data:
             f"**Insight:** **{max_gen_scen}** was the top producer, generating **{max_gen_val:,.0f} MWh** annually.\n"
         )
         
-        # Annual bar chart
+        # Annual bar chart - Year on X-axis
         fig_gen = px.bar(
             df_annual,
-            x='Scenario',
+            x='Year',
             y='Gen_Energy_MWh',
             color='Scenario',
             title="Annual Energy Generation Comparison",
             color_discrete_sequence=COLOR_SEQUENCE,
-            text='Gen_Energy_MWh'
+            text='Gen_Energy_MWh',
+            barmode='group'
         )
-        fig_gen.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+        # Improve number formatting: use abbreviated format (118.3k instead of 118,378)
+        fig_gen.update_traces(
+            texttemplate='%{text:.3s}', 
+            textposition='outside',
+            textfont_size=10
+        )
         fig_gen.update_yaxes(title="Annual Generation (MWh)")
-        fig_gen.update_xaxes(title="Scenario", showticklabels=False) # Hide X labels if legend is present to avoid clutter?
-        # Actually, let's keep X labels but also show legend for clarity
-        fig_gen.update_xaxes(title="Scenario")
+        fig_gen.update_xaxes(title="Year", type='category')
         fig_gen.update_layout(showlegend=True, legend_title_text="Scenario")
         
     else:
