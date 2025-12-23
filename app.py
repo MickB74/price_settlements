@@ -212,149 +212,180 @@ def calculate_scenario(scenario, df_rtm):
 # --- Sidebar: Scenario Builder ---
 st.sidebar.header("Scenario Builder")
 
-with st.sidebar.form("add_scenario_form"):
-    st.subheader("Add New Scenario")
+# Mode Selection (outside form)
+mode = st.sidebar.radio("Mode", ["Solar/Wind (Batch)", "Custom Upload"], index=0)
+
+if mode == "Custom Upload":
+    # --- Custom Upload Section (No Form) ---
+    st.sidebar.subheader("Custom Upload")
+    st.sidebar.markdown("*Upload a file to auto-create scenario*")
     
-    # Generation Source Selection (moved to top)
-    s_tech = st.radio("Generation Source", ["Solar", "Wind", "Custom Upload"], index=0)
-    
-    # Dynamic Form based on Generation Source
     available_years = [2025, 2024, 2023, 2022, 2021, 2020]
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
     
-    if s_tech == "Custom Upload":
-        # Single-scenario mode for Custom Upload
-        st.markdown("*Custom upload: One scenario at a time*")
-        s_years = [st.selectbox("Year", available_years, index=0)]
-        s_hubs = [st.selectbox("Hub", common_hubs, index=0)]
-    else:
-        # Batch mode for Solar/Wind
-        st.markdown("*Batch mode: Select multiple years/hubs*")
+    custom_year = st.sidebar.selectbox("Year", available_years, index=0)
+    custom_hub = st.sidebar.selectbox("Hub", common_hubs, index=0)
+    custom_capacity = st.sidebar.number_input("Capacity (MW)", value=80.0, step=10.0, key="custom_capacity")
+    custom_vppa_price = st.sidebar.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="custom_vppa")
+    custom_no_curtailment = st.sidebar.checkbox("Remove $0 floor (No Curtailment)", key="custom_curtail")
+    
+    st.sidebar.info("Upload a CSV file with your generation profile.")
+    with st.sidebar.expander("File Format Guidance"):
+        st.markdown("""
+        **Required Format:** CSV file
+        
+        **Columns:**
+        - `Gen_MW` (Required): Generation in MW.
+        - `Time` (Optional): Datetime column.
+        
+        **Notes:**
+        - If `Time` is missing, we assume data starts Jan 1st of the selected year.
+        - **8,760 rows** = Hourly Data
+        - **35,040 rows** = 15-Minute Data
+        """)
+    
+    uploaded_file = st.sidebar.file_uploader("Upload Profile (CSV)", type=["csv"], key="custom_uploader")
+    
+    # Auto-process on upload
+    if uploaded_file is not None:
+        import os
+        
+        # Ensure directory exists
+        upload_dir = "user_uploads"
+        if not os.path.exists(upload_dir):
+            os.makedirs(upload_dir)
+            
+        # Save file with unique name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_filename = "".join(x for x in uploaded_file.name if x.isalnum() or x in "._- ")
+        save_path = os.path.join(upload_dir, f"{timestamp}_{safe_filename}")
+        
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        # Create scenario name
+        hub_map = {
+            "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
+        }
+        friendly_hub = hub_map.get(custom_hub, custom_hub)
+        name = f"{custom_year} Custom in {friendly_hub} ({int(custom_capacity)}MW)"
+        if custom_no_curtailment:
+            name += " [No Curtailment]"
+        
+        # Check for duplicates
+        if not any(s['name'] == name for s in st.session_state.scenarios):
+            new_scenario = {
+                "id": datetime.now().isoformat(),
+                "name": name,
+                "year": custom_year,
+                "hub": custom_hub,
+                "tech": "Custom Upload",
+                "duration": "Full Year",
+                "month": None,
+                "capacity_mw": custom_capacity,
+                "vppa_price": custom_vppa_price,
+                "no_curtailment": custom_no_curtailment,
+                "custom_profile_path": save_path
+            }
+            st.session_state.scenarios.append(new_scenario)
+            st.sidebar.success(f"✅ Added: {name}")
+        else:
+            st.sidebar.warning("⚠️ Scenario already exists")
+
+else:
+    # --- Solar/Wind Batch Form ---
+    with st.sidebar.form("add_scenario_form"):
+        st.subheader("Add Scenarios (Batch)")
+        
+        available_years = [2025, 2024, 2023, 2022, 2021, 2020]
+        common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
+        
+        s_tech = st.radio("Generation Source", ["Solar", "Wind"], index=0)
+        
+        st.markdown("*Select multiple years/hubs*")
         s_years = st.multiselect("Years", available_years, default=[2025])
         if not s_years:
             st.warning("Please select at least one year.")
+        
         s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
         if not s_hubs:
             st.warning("Please select at least one hub.")
-    
-    # Custom File Upload Logic
-    uploaded_file = None
-    custom_profile_path = None
-    
-    if s_tech == "Custom Upload":
-        st.info("Upload a CSV file with your generation profile.")
-        with st.expander("File Format Guidance", expanded=True):
-            st.markdown("""
-            **Required Format:** CSV file
-            
-            **Columns:**
-            - `Gen_MW` (Required): Generation in MW.
-            - `Time` (Optional): Datetime column.
-            
-            **Notes:**
-            - If `Time` is missing, we assume data starts Jan 1st of the selected year.
-            - **8,760 rows** = Hourly Data
-            - **35,040 rows** = 15-Minute Data
-            """)
-        uploaded_file = st.file_uploader("Upload Profile (CSV)", type=["csv"])
-    
-    # Duration Selection
-    use_specific_month = st.checkbox("Filter by specific month")
-    s_duration = "Specific Month" if use_specific_month else "Full Year"
-    
-    s_months = None
-    if use_specific_month:
-        all_months = [
-            "January", "February", "March", "April", "May", "June", 
-            "July", "August", "September", "October", "November", "December"
-        ]
-        s_months = st.multiselect("Months", all_months, default=["January"])
-        if not s_months:
-            st.warning("Please select at least one month.")
-    
-    s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
-    s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0)
-    
-    # Curtailment Option
-    s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)")
-    
-    submitted = st.form_submit_button("Add Scenarios")
-    
-    if submitted:
-        if not s_years or not s_hubs or (use_specific_month and not s_months):
-            st.error("Please ensure Years, Hubs, and Months (if applicable) are selected.")
-        elif s_tech == "Custom Upload" and not uploaded_file:
-            st.error("Please upload a CSV file for the Custom profile.")
-        else:
-            # Helper for friendly names
-            hub_map = {
-                "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
-            }
-            
-            # Handle File Upload for Custom Scenarios
-            if s_tech == "Custom Upload" and uploaded_file is not None:
-                import os
-                
-                # Ensure directory exists
-                upload_dir = "user_uploads"
-                if not os.path.exists(upload_dir):
-                    os.makedirs(upload_dir)
-                    
-                # Save file with unique name
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                # Sanitize filename
-                safe_filename = "".join(x for x in uploaded_file.name if x.isalnum() or x in "._- ")
-                save_path = os.path.join(upload_dir, f"{timestamp}_{safe_filename}")
-                
-                with open(save_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                custom_profile_path = save_path
-            
-            added_count = 0
-            
-            # Iterate through all combinations
-            for year in s_years:
-                for hub in s_hubs:
-                    friendly_hub = hub_map.get(hub, hub)
-                    
-                    # Define list of monthly iterations
-                    month_iterator = s_months if use_specific_month else [None]
-                    
-                    for month in month_iterator:
-                        # Construct Name
-                        if use_specific_month:
-                            name = f"{month} {year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
-                        else:
-                            name = f"{year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
-                        
-                        if s_no_curtailment:
-                            name += " [No Curtailment]"
-                            
-                        # Check for duplicates
-                        if any(s['name'] == name for s in st.session_state.scenarios):
-                            continue 
-                        else:
-                            new_scenario = {
-                                "id": datetime.now().isoformat() + f"_{added_count}",
-                                "name": name,
-                                "year": year, # Removed 'market'
-                                "hub": hub,
-                                "tech": s_tech,
-                                "duration": s_duration,
-                                "month": month,
-                                "capacity_mw": s_capacity,
-                                "vppa_price": s_vppa_price,
-                                "no_curtailment": s_no_curtailment,
-                                "custom_profile_path": custom_profile_path # Add path if custom
-                            }
-                            st.session_state.scenarios.append(new_scenario)
-                            added_count += 1
-            
-            if added_count > 0:
-                st.success(f"Successfully added {added_count} scenarios!")
+        
+        # Duration Selection
+        use_specific_month = st.checkbox("Filter by specific month")
+        s_duration = "Specific Month" if use_specific_month else "Full Year"
+        
+        s_months = None
+        if use_specific_month:
+            all_months = [
+                "January", "February", "March", "April", "May", "June", 
+                "July", "August", "September", "October", "November", "December"
+            ]
+            s_months = st.multiselect("Months", all_months, default=["January"])
+            if not s_months:
+                st.warning("Please select at least one month.")
+        
+        s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
+        s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0)
+        
+        # Curtailment Option
+        s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)")
+        
+        submitted = st.form_submit_button("Add Scenarios")
+        
+        if submitted:
+            if not s_years or not s_hubs or (use_specific_month and not s_months):
+                st.error("Please ensure Years, Hubs, and Months (if applicable) are selected.")
             else:
-                st.warning("No new scenarios added (duplicates or empty selection).")
+                # Helper for friendly names
+                hub_map = {
+                    "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
+                }
+                
+                added_count = 0
+                
+                # Iterate through all combinations
+                for year in s_years:
+                    for hub in s_hubs:
+                        friendly_hub = hub_map.get(hub, hub)
+                        
+                        # Define list of monthly iterations
+                        month_iterator = s_months if use_specific_month else [None]
+                        
+                        for month in month_iterator:
+                            # Construct Name
+                            if use_specific_month:
+                                name = f"{month} {year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                            else:
+                                name = f"{year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                            
+                            if s_no_curtailment:
+                                name += " [No Curtailment]"
+                                
+                            # Check for duplicates
+                            if any(s['name'] == name for s in st.session_state.scenarios):
+                                continue 
+                            else:
+                                new_scenario = {
+                                    "id": datetime.now().isoformat() + f"_{added_count}",
+                                    "name": name,
+                                    "year": year,
+                                    "hub": hub,
+                                    "tech": s_tech,
+                                    "duration": s_duration,
+                                    "month": month,
+                                    "capacity_mw": s_capacity,
+                                    "vppa_price": s_vppa_price,
+                                    "no_curtailment": s_no_curtailment,
+                                    "custom_profile_path": None
+                                }
+                                st.session_state.scenarios.append(new_scenario)
+                                added_count += 1
+                
+                if added_count > 0:
+                    st.success(f"Successfully added {added_count} scenarios!")
+                else:
+                    st.warning("No new scenarios added (duplicates or empty selection).")
 
 # Manage Scenarios
 if st.session_state.scenarios:
