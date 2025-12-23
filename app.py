@@ -620,34 +620,71 @@ if monthly_data:
     )
     st.plotly_chart(fig_settle, use_container_width=True)
     
+    
     # Chart 3: Monthly Generation
     st.subheader("Monthly Generation (MWh)")
     
-    # Insight for Generation
-    total_gen_by_scen = df_monthly.groupby('Scenario')['Gen_Energy_MWh'].sum()
-    max_gen_scen = total_gen_by_scen.idxmax()
-    max_gen_val = total_gen_by_scen.max()
+    # Toggle for Monthly vs Annual view
+    view_mode = st.radio("View Mode", ["Monthly", "Annual"], horizontal=True, key="gen_view_mode")
     
-    st.markdown(
-        f"**Insight:** **{max_gen_scen}** was the top producer, generating **{max_gen_val:,.0f} MWh**."
-    )
+    if view_mode == "Annual":
+        # Annual view: Sum by scenario
+        df_annual = df_monthly.groupby('Scenario').agg({
+            'Gen_Energy_MWh': 'sum',
+            'Year': 'first'  # For display
+        }).reset_index()
+        
+        # Insight for Annual
+        max_gen_scen = df_annual.loc[df_annual['Gen_Energy_MWh'].idxmax(), 'Scenario']
+        max_gen_val = df_annual['Gen_Energy_MWh'].max()
+        
+        st.markdown(
+            f"**Insight:** **{max_gen_scen}** was the top producer, generating **{max_gen_val:,.0f} MWh** annually.\n"
+        )
+        
+        # Annual bar chart
+        fig_gen = px.bar(
+            df_annual,
+            x='Scenario',
+            y='Gen_Energy_MWh',
+            color='Scenario',
+            title="Annual Energy Generation Comparison",
+            color_discrete_sequence=COLOR_SEQUENCE,
+            text='Gen_Energy_MWh'
+        )
+        fig_gen.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+        fig_gen.update_yaxes(title="Annual Generation (MWh)")
+        fig_gen.update_xaxes(title="Scenario")
+        fig_gen.update_layout(showlegend=False)
+        
+    else:
+        # Monthly view (original)
+        # Insight for Generation
+        total_gen_by_scen = df_monthly.groupby('Scenario')['Gen_Energy_MWh'].sum()
+        max_gen_scen = total_gen_by_scen.idxmax()
+        max_gen_val = total_gen_by_scen.max()
+        
+        st.markdown(
+            f"**Insight:** **{max_gen_scen}** was the top producer, generating **{max_gen_val:,.0f} MWh**.\n"
+        )
 
-    fig_gen = px.bar(
-        df_monthly, 
-        x='Normalized_Month_Date', 
-        y='Gen_Energy_MWh', 
-        color='Scenario', 
-        barmode='group',
-        title="Monthly Energy Generation (Seasonal Comparison)",
-        color_discrete_sequence=COLOR_SEQUENCE,
-        hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
-    )
-    fig_gen.update_yaxes(title="Generation (MWh)")
-    fig_gen.update_xaxes(
-        title="Month", 
-        tickformat="%b", 
-        dtick="M1"
-    )
+        fig_gen = px.bar(
+            df_monthly, 
+            x='Normalized_Month_Date', 
+            y='Gen_Energy_MWh', 
+            color='Scenario', 
+            barmode='group',
+            title="Monthly Energy Generation (Seasonal Comparison)",
+            color_discrete_sequence=COLOR_SEQUENCE,
+            hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
+        )
+        fig_gen.update_yaxes(title="Generation (MWh)")
+        fig_gen.update_xaxes(
+            title="Month", 
+            tickformat="%b", 
+            dtick="M1"
+        )
+    
     st.plotly_chart(fig_gen, use_container_width=True)
 
 # Data Preview
