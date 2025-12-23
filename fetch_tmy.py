@@ -136,11 +136,13 @@ def wind_from_speed(speed_series, capacity_mw):
 def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
     """
     Generates a full year profile.
-    Uses Actual data for 2005-2023.
-    Uses TMY data for other years (fallback).
+    Uses Actual data for 2005-2023 (PVGIS).
+    Uses NOAA ISD for 2024 (if available).
+    Uses TMY data for future years or fallback.
     """
     # Determine Data Source
-    use_actual = 2005 <= year <= 2023
+    use_pvgis_actual = 2005 <= year <= 2023
+    use_noaa_2024 = (year == 2024)  # Try NOAA for 2024
     
     if use_actual:
         # Fetch Actual
