@@ -34,13 +34,15 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     - **Hubs:** HB_NORTH, HB_SOUTH, HB_WEST, HB_HOUSTON, HB_PAN
     
     ### 2. **Generation Profiles (Wind/Solar)**
-    - **Source:** [PVGIS (Photovoltaic Geographical Information System)](https://re.jrc.ec.europa.eu/pvgis/) - European Commission JRC
+    - **Sources:** 
+        - **[Open-Meteo](https://open-meteo.com/):** For **2024 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 100m wind speeds.
+        - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Typical Meteorological Year (TMY)** data.
     - **Method:**
-      - **Historical Years (2005-2023):** Uses actual meteorological data (PVGIS)
-      - **2024:** Uses actual weather data from Open-Meteo (Solar & Wind) ✅
-      - **Future Years (2025+):** Uses Typical Meteorological Year (TMY)
-    - **Resolution:** 15-minute intervals, aligned to ERCOT settlement timestamps
-    - **Conversion:** Weather data (solar irradiance, wind speed) → MW generation using standard power curves
+      - **2024:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
+      - **Historical Years:** Uses **Actual PVGIS Data**
+      - **Future/TMY:** Uses **TMY Data** (Typical Meteorological Year) representing long-term averages.
+    - **Sensitivity Analysis:**
+      - Use the **"Force TMY"** checkbox to simulate "normal" weather conditions for any year, overriding actual weather data.
     
     ### 3. **Hub Location Coordinates**
     Based on analysis of **ERCOT project queue data** (787 renewable projects):
@@ -68,10 +70,10 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ```
     
     ### Generation Profile Creation
-    1. **Fetch Weather Data** from PVGIS for hub coordinates
+    1. **Fetch Weather Data** from Open-Meteo (2024) or PVGIS (History/TMY)
     2. **Convert to Power:**
        - Solar: GHI (Global Horizontal Irradiance) → DC power → inverter efficiency → AC MW
-       - Wind: Wind speed @ 10m → extrapolate to 80m hub height → power curve → MW
+       - Wind: Wind speed (scaled to hub height) → power curve → MW
     3. **Resample** to 15-minute intervals
     4. **Align** timestamps to ERCOT Central Time
     
