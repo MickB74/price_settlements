@@ -104,15 +104,15 @@ def calculate_scenario(scenario, df_rtm):
     # Hub Locations (Lat, Lon)
     # Updated based on actual renewable project concentrations from ERCOT queue data
     HUB_LOCATIONS = {
-        "HB_NORTH": (32.3865, -96.8475),   # Waxahachie (I-35 solar corridor)
-        "HB_SOUTH": (27.8006, -97.3964),   # Corpus Christi (coastal + border wind)
-        "HB_WEST": (32.4708, -100.4065),   # Sweetwater (Texas wind belt)
-        "HB_HOUSTON": (29.7604, -95.3698), # Houston
-        "HB_PAN": (35.2220, -101.8313),    # Amarillo
+        "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
+        "HB_SOUTH": (27.8006, -97.3964),   # Corpus Christi, TX (coastal + border wind)
+        "HB_WEST": (32.4708, -100.4065),   # Sweetwater, TX (Texas wind belt)
+        "HB_HOUSTON": (29.5827, -95.7619), # Richmond, TX (Fort Bend County - where Houston Hub renewables actually are)
+        "HB_PAN": (35.2220, -101.8313),    # Amarillo, TX (Panhandle)
     }
     
     # Default to Abilene if hub not found
-    default_loc = (32.4487, -99.7331)
+    default_loc = (32.4487, -99.7331)  # Abilene, TX
     lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
 
     try:
