@@ -872,20 +872,59 @@ if monthly_data:
             x='Year',
             y='Gen_Energy_MWh',
             color='Scenario',
-            title="Annual Energy Generation Comparison",
+        title="Annual Energy Generation Comparison",
             color_discrete_sequence=COLOR_SEQUENCE,
             text='Gen_Energy_MWh',
             barmode='group'
         )
-        # Improve number formatting: use abbreviated format (118.3k instead of 118,378)
+        
+        # Better number formatting based on magnitude
+        max_value = df_annual['Gen_Energy_MWh'].max()
+        if max_value >= 1_000_000:
+            # Millions: 1.2M
+            format_template = '%{text:.3s}M'
+            divisor = 1_000_000
+        elif max_value >= 100_000:
+            # Hundreds of thousands: 197k
+            format_template = '%{text:.0f}k'
+            divisor = 1000
+        else:
+            # Thousands or less: 12.3k
+            format_template = '%{text:.1f}k'
+            divisor = 1000
+        
+        # Apply formatting
         fig_gen.update_traces(
-            texttemplate='%{text:.3s}', 
+            texttemplate=format_template if divisor == 1 else None,
             textposition='outside',
-            textfont_size=10
+            textfont=dict(size=11, family="Arial, sans-serif", color="white"),
+            marker_line_width=0
         )
-        fig_gen.update_yaxes(title="Annual Generation (MWh)")
-        fig_gen.update_xaxes(title="Year", type='category')
-        fig_gen.update_layout(showlegend=True, legend_title_text="Scenario")
+        
+        # Format Y-axis with thousands separator
+        fig_gen.update_yaxes(
+            title="Annual Generation (MWh)",
+            tickformat=",.0f",
+            gridcolor='rgba(128, 128, 128, 0.2)'
+        )
+        
+        fig_gen.update_xaxes(
+            title="Year", 
+            type='category',
+            tickfont=dict(size=12)
+        )
+        
+        # Improve overall layout
+        fig_gen.update_layout(
+            showlegend=True, 
+            legend_title_text="Scenario",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(size=12),
+            height=500,
+            bargap=0.15,
+            bargroupgap=0.1
+        )
         
     else:
         # Monthly view (original)
