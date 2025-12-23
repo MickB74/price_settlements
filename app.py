@@ -765,8 +765,10 @@ if monthly_data:
         )
         fig_gen.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
         fig_gen.update_yaxes(title="Annual Generation (MWh)")
+        fig_gen.update_xaxes(title="Scenario", showticklabels=False) # Hide X labels if legend is present to avoid clutter?
+        # Actually, let's keep X labels but also show legend for clarity
         fig_gen.update_xaxes(title="Scenario")
-        fig_gen.update_layout(showlegend=False)
+        fig_gen.update_layout(showlegend=True, legend_title_text="Scenario")
         
     else:
         # Monthly view (original)
