@@ -439,10 +439,78 @@ else:
         # TMY Override
         s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.")
         
-        submitted = st.form_submit_button("Run Scenarios")
         
-        if submitted:
-            # User requested to "reset everything" on click - do this FIRST
+        # Two buttons: Add (append) vs Clear & Run (reset)
+        col1, col2 = st.columns(2)
+        with col1:
+            add_button = st.form_submit_button("Add Scenarios", type="secondary")
+        with col2:
+            clear_run_button = st.form_submit_button("Clear & Run", type="primary")
+        
+        # Handle Add Scenarios (append mode)
+        if add_button:
+            if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
+                st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
+            else:
+                # Helper for friendly names
+                hub_map = {
+                    "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
+                }
+                
+                added_count = 0
+                
+                # Iterate through all combinations
+                for year in s_years:
+                    for hub in s_hubs:
+                        for tech in s_techs:
+                            friendly_hub = hub_map.get(hub, hub)
+                            
+                            # Define list of monthly iterations
+                            month_iterator = s_months if use_specific_month else [None]
+                            
+                            for month in month_iterator:
+                                # Construct Name
+                                if use_specific_month:
+                                    name = f"{month} {year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                                else:
+                                    name = f"{year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                                
+                                if s_no_curtailment:
+                                    name += " [No Curtailment]"
+                                
+                                if s_force_tmy:
+                                    name += " [TMY]"
+                                    
+                                # Check for duplicates
+                                if any(s['name'] == name for s in st.session_state.scenarios):
+                                    continue 
+                                else:
+                                    new_scenario = {
+                                        "id": datetime.now().isoformat() + f"_{added_count}",
+                                        "name": name,
+                                        "year": year,
+                                        "hub": hub,
+                                        "tech": tech,
+                                        "duration": s_duration,
+                                        "month": month,
+                                        "capacity_mw": s_capacity,
+                                        "vppa_price": s_vppa_price,
+                                        "no_curtailment": s_no_curtailment,
+                                        "force_tmy": s_force_tmy,
+                                        "custom_profile_path": None
+                                }
+                                st.session_state.scenarios.append(new_scenario)
+                                added_count += 1
+                
+                if added_count > 0:
+                    st.success(f"Added {added_count} scenarios!")
+                    st.rerun()
+                else:
+                    st.warning("No new scenarios added (duplicates or empty selection).")
+        
+        # Handle Clear & Run (reset mode)
+        if clear_run_button:
+            # Clear existing scenarios FIRST
             st.session_state.scenarios = []
             
             if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
@@ -477,32 +545,29 @@ else:
                                 if s_force_tmy:
                                     name += " [TMY]"
                                     
-                                # Check for duplicates (against new list)
-                                if any(s['name'] == name for s in st.session_state.scenarios):
-                                    continue 
-                                else:
-                                    new_scenario = {
-                                        "id": datetime.now().isoformat() + f"_{added_count}",
-                                        "name": name,
-                                        "year": year,
-                                        "hub": hub,
-                                        "tech": tech,
-                                        "duration": s_duration,
-                                        "month": month,
-                                        "capacity_mw": s_capacity,
-                                        "vppa_price": s_vppa_price,
-                                        "no_curtailment": s_no_curtailment,
-                                        "force_tmy": s_force_tmy,
-                                        "custom_profile_path": None
-                                }
-                                st.session_state.scenarios.append(new_scenario)
-                                added_count += 1
+                                # No need to check duplicates since we cleared the list
+                                new_scenario = {
+                                    "id": datetime.now().isoformat() + f"_{added_count}",
+                                    "name": name,
+                                    "year": year,
+                                    "hub": hub,
+                                    "tech": tech,
+                                    "duration": s_duration,
+                                    "month": month,
+                                    "capacity_mw": s_capacity,
+                                    "vppa_price": s_vppa_price,
+                                    "no_curtailment": s_no_curtailment,
+                                    "force_tmy": s_force_tmy,
+                                    "custom_profile_path": None
+                            }
+                            st.session_state.scenarios.append(new_scenario)
+                            added_count += 1
                 
                 if added_count > 0:
                     st.success(f"Generated {added_count} scenarios!")
                     st.rerun()
                 else:
-                    st.warning("No new scenarios added (duplicates or empty selection).")
+                    st.warning("No scenarios created.")
 
 # Manage Scenarios
 if st.session_state.scenarios:
