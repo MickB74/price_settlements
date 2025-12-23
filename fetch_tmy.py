@@ -133,129 +133,71 @@ def wind_from_speed(speed_series, capacity_mw):
     normalized_power = speed_series.apply(power_curve)
     return normalized_power * capacity_mw
 
-def find_nearest_noaa_station(lat, lon, year=2024):
-    """Find nearest NOAA ISD station (Simplified for known Texas hubs or generic search)."""
-    # For reliability/speed in this demo, let's hardcode the confirmed stations for our 5 hubs
-    # Data from our previous test run
-    KNOWN_STATIONS = {
-        # North (Waxahachie) -> Mid-Way Regional
-        (32.3865, -96.8475): {'usaf': '720299', 'wban': '53966'},
-        # South (Zapata) -> Zapata County
-        (26.9070, -99.2715): {'usaf': '720584', 'wban': '00181'},
-        # West (Roscoe) -> Dyess AFB (Abilene) or nearby? Roscoe is near Sweetwater.
-        # Let's use Sweetwater (Avenger Field) if available, or finding nearest dynamically.
-        # For this implementation, let's include the dynamic search properly to be robust.
-        # But to avoid huge dependency on isd-history.csv every run, strict fallback is good.
-    }
-    
-    # Check if exact match (float comparison might be tricky, so generic search is better)
-    pass
-    
-    # Generic Search
-    try:
-        stations_url = "https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv"
-        # We use a cache for station list if possible, or just fetch (it's 2MB)
-        # To be safe and fast, let's just use the nearest finding logic if not cached
-        cache_file = os.path.join(CACHE_DIR, "isd-history.csv")
-        
-        if os.path.exists(cache_file):
-            df_stations = pd.read_csv(cache_file)
-        else:
-            print("Fetching NOAA station list...")
-            df_stations = pd.read_csv(stations_url)
-            df_stations.to_csv(cache_file, index=False)
-            
-        df_stations['END'] = pd.to_datetime(df_stations['END'], format='%Y%m%d', errors='coerce')
-        df_active = df_stations[df_stations['END'] >= '2023-01-01'].copy()
-        
-        df_active['DISTANCE'] = np.sqrt((df_active['LAT'] - lat)**2 + (df_active['LON'] - lon)**2)
-        closest = df_active.nsmallest(1, 'DISTANCE').iloc[0]
-        
-        return {
-            'usaf': str(closest['USAF']).zfill(6),
-            'wban': str(closest['WBAN']).zfill(5),
-            'name': closest['STATION NAME']
-        }
-    except Exception as e:
-        print(f"Error finding NOAA station: {e}")
-        return None
 
-def get_noaa_2024_data(lat, lon):
-    """Fetch 2024 hourly data from NOAA ISD."""
-    cache_file = os.path.join(CACHE_DIR, f"noaa_2024_{lat}_{lon}.parquet")
+def get_openmeteo_2024_data(lat, lon):
+    """Fetch 2024 hourly solar and wind data from Open-Meteo."""
+    cache_file = os.path.join(CACHE_DIR, f"openmeteo_2024_{lat}_{lon}.parquet")
     
     if os.path.exists(cache_file):
         return pd.read_parquet(cache_file)
         
-    station = find_nearest_noaa_station(lat, lon)
-    if not station:
-        return pd.DataFrame()
-        
-    usaf, wban = station['usaf'], station['wban']
-    url = f"https://www.ncei.noaa.gov/data/global-hourly/access/2024/{usaf}{wban}.csv"
+    url = "https://archive-api.open-meteo.com/v1/archive"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": "2024-01-01",
+        "end_date": "2024-12-31",
+        "hourly": "shortwave_radiation,wind_speed_100m",
+        "timezone": "UTC"
+    }
     
-    print(f"Fetching NOAA 2024 data for {lat}, {lon} from {station['name']}...")
+    print(f"Fetching Open-Meteo 2024 data for {lat}, {lon}...")
     
     try:
-        df = pd.read_csv(url, low_memory=False)
-        df['datetime'] = pd.to_datetime(df['DATE'])
+        response = requests.get(url, params=params)
+        if response.status_code != 200:
+            print(f"Open-Meteo Error: {response.text}")
+            return pd.DataFrame()
+            
+        data = response.json()
+        df = pd.DataFrame(data['hourly'])
+        df['datetime'] = pd.to_datetime(df['time'])
         
-        # Parse Wind Speed (WND: angle,quality,type,speed,quality)
-        # Speed is scaled by 10 (e.g. 35 = 3.5 m/s). 9999 = Missing.
-        def parse_wind(wnd_str):
-            try:
-                parts = str(wnd_str).split(',')
-                if len(parts) >= 4:
-                    speed = float(parts[3])
-                    if speed == 9999: return np.nan
-                    return speed / 10.0
-            except:
-                pass
-            return np.nan
-            
-        if 'WND' in df.columns:
-            df['wind_speed_mps'] = df['WND'].apply(parse_wind)
-        else:
-            df['wind_speed_mps'] = np.nan
-            
-        # Select and save
-        out_df = df[['datetime', 'wind_speed_mps']].copy()
-        out_df = out_df.dropna(subset=['wind_speed_mps'])
+        # Rename columns to standard internal names
+        # shortwave_radiation = GHI (W/m2)
+        # wind_speed_100m is in km/h -> Convert to m/s
+        df['GHI_Wm2'] = df['shortwave_radiation']
+        df['Wind_Speed_100m_mps'] = df['wind_speed_100m'] / 3.6
+        
+        out_df = df[['datetime', 'GHI_Wm2', 'Wind_Speed_100m_mps']].copy()
         out_df.to_parquet(cache_file)
         return out_df
         
     except Exception as e:
-        print(f"Error fetching NOAA data: {e}")
+        print(f"Error fetching Open-Meteo data: {e}")
         return pd.DataFrame()
 
 def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
-    Uses NOAA ISD for 2024 (Wind only).
+    Uses Open-Meteo for 2024 (Solar + Wind).
     Uses TMY data for future years or fallback.
     """
     # Determine Data Source
     use_pvgis_actual = 2005 <= year <= 2023
-    use_noaa_2024 = (year == 2024)
+    use_openmeteo_2024 = (year == 2024)
     
     df_data = pd.DataFrame()
     source_type = "TMY" # Default
     
     # 1. Try PVGIS Actuals (2005-2023)
     if use_pvgis_actual:
-        # (Existing PVGIS fetch logic...)
         try:
-            # Re-implement get_actual_data inline or call it
-            # For brevity in this edit, leveraging existing logic structure if feasible
-            # But we must ensure df_data is populated
-            
-            # Using the cache/fetch logic from previous block:
             cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
             if os.path.exists(cache_file):
                  df_data = pd.read_parquet(cache_file)
             else:
-                # Fetch new
                 url = "https://re.jrc.ec.europa.eu/api/seriescalc"
                 params = {
                     "lat": lat, "lon": lon, "startyear": year, "endyear": year,
@@ -277,18 +219,14 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
         except Exception as e:
             print(f"Error in PVGIS flow: {e}")
 
-    # 2. Try NOAA 2024 (Wind Only)
-    if use_noaa_2024 and tech == "Wind" and df_data.empty:
-        df_noaa = get_noaa_2024_data(lat, lon)
-        if not df_noaa.empty:
-            df_data = df_noaa
-            # Map columns for downstream compatibility
-            # Downstream expects 'time' or 'time(UTC)' and 'WS10m'
-            # We have 'datetime' and 'wind_speed_mps'
-            df_data['WS10m'] = df_data['wind_speed_mps']
-            source_type = "NOAA_Actual"
+    # 2. Try Open-Meteo 2024 (Solar + Wind)
+    if use_openmeteo_2024 and df_data.empty:
+        df_om = get_openmeteo_2024_data(lat, lon)
+        if not df_om.empty:
+            df_data = df_om
+            source_type = "OpenMeteo_Actual"
 
-    # 3. Fallback to TMY (Solar 2024, Future Years, or failures)
+    # 3. Fallback to TMY
     if df_data.empty:
         df_data = get_tmy_data(lat, lon)
         source_type = "TMY"
@@ -296,36 +234,46 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
     if df_data.empty:
         return pd.Series()
 
-    # Calculate MW
+    # Calculate MW from Weather Data
     if tech == "Solar":
         if source_type == "Actual":
+            # PVGIS: G(h) = Gb(i) + Gd(i) (approx on horizontal)
             irradiance = df_data['Gb(i)'] + df_data['Gd(i)'] + df_data.get('Gr(i)', 0)
+        elif source_type == "OpenMeteo_Actual":
+            # Open-Meteo: GHI provided directly
+            irradiance = df_data['GHI_Wm2']
         elif source_type == "TMY":
+            # PVGIS TMY: G(h)
             irradiance = df_data['G(h)']
         else:
-            return pd.Series() # Should not happen for Solar if logic is correct
+            return pd.Series()
             
         mw_hourly = solar_from_ghi(irradiance, capacity_mw)
         
     elif tech == "Wind":
-        if 'WS10m' in df_data.columns:
-            # Extrapolate to hub height (80m)
-            wind_speed_hub = df_data['WS10m'] * 1.35
-            mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw)
+        if source_type in ["Actual", "TMY"]:
+            if 'WS10m' in df_data.columns:
+                # PVGIS TMY/Actual: 10m wind speed
+                # Extrapolate to hub height (80m) using power law (alpha=0.143 standard, or empirical 1.35 factor)
+                wind_speed_hub = df_data['WS10m'] * 1.35
+                mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw)
+            else:
+                return pd.Series()
+        elif source_type == "OpenMeteo_Actual":
+            # Open-Meteo: 100m wind speed provided directly
+            # This is much better than extrapolating from 10m!
+            # We'll treat 100m speed as roughly equivalent to 80-100m hub height
+            mw_hourly = wind_from_speed(df_data['Wind_Speed_100m_mps'], capacity_mw)
         else:
             return pd.Series()
     else:
         return pd.Series()
 
     # Align with Target Year (Resampling)
-    if source_type in ["Actual", "NOAA_Actual"]:
-        # Actual data is hourly for the specific year. Upsample to 15-min.
-        
+    if source_type in ["Actual", "OpenMeteo_Actual"]:
         # Parse timestamps
-        if source_type == "NOAA_Actual":
-            # Already datetime objects
+        if source_type == "OpenMeteo_Actual":
             timestamps = df_data['datetime']
-            # Ensure UTC timezone if not present (NOAA is UTC usually)
             if timestamps.dt.tz is None:
                 timestamps = timestamps.dt.tz_localize('UTC')
             else:
@@ -340,8 +288,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
         # Create Series
         s_hourly = pd.Series(mw_hourly.values, index=timestamps)
         
-        # Resample to 15min
-        # Handle duplicate indices if any (NOAA sometimes has dups)
+        # Handle duplicates/Resample
         s_hourly = s_hourly[~s_hourly.index.duplicated(keep='first')]
         s_15min = s_hourly.resample('15min').interpolate(method='linear')
         
@@ -352,6 +299,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
         
         s_final = s_15min.reindex(target_index).ffill().bfill()
         return s_final.fillna(0)
+
         
     else:
         # TMY Logic (Linear Interpolation of typical year to target year)
@@ -376,23 +324,32 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
             
         return pd.Series(values, index=target_index, name="Gen_MW")
 
+
 if __name__ == "__main__":
-    print("Testing fetch_tmy (Hybrid + NOAA)...")
+    print("Testing fetch_tmy (Hybrid + Open-Meteo)...")
     
     # Test Actual (2020)
     print("\n--- Test 2020 Solar (PVGIS Actual) ---")
     s_2020 = get_profile_for_year(2020, "Solar", 100)
     print(f"Solar 2020: {len(s_2020)} points, Max: {s_2020.max():.2f} MW")
     
-    # Test NOAA 2024 (Wind)
-    print("\n--- Test 2024 Wind (NOAA Actual) ---")
-    s_2024 = get_profile_for_year(2024, "Wind", 100)
-    print(f"Wind 2024: {len(s_2024)} points, Max: {s_2024.max():.2f} MW")
-    if not s_2024.empty:
-        print(f"Sample head:\n{s_2024.head()}")
+    # Test Open-Meteo 2024 (Wind)
+    print("\n--- Test 2024 Wind (Open-Meteo 100m) ---")
+    s_2024_wind = get_profile_for_year(2024, "Wind", 100)
+    print(f"Wind 2024: {len(s_2024_wind)} points, Max: {s_2024_wind.max():.2f} MW")
+    if not s_2024_wind.empty:
+        print(f"Sample head:\n{s_2024_wind.head()}")
+
+    # Test Open-Meteo 2024 (Solar)
+    print("\n--- Test 2024 Solar (Open-Meteo GHI) ---")
+    s_2024_solar = get_profile_for_year(2024, "Solar", 100)
+    print(f"Solar 2024: {len(s_2024_solar)} points, Max: {s_2024_solar.max():.2f} MW")
+    if not s_2024_solar.empty:
+        print(f"Sample head:\n{s_2024_solar.head()}")
 
     # Test TMY (2025)
     print("\n--- Test 2025 Wind (TMY) ---")
     s_2025 = get_profile_for_year(2025, "Wind", 100)
     print(f"Wind 2025: {len(s_2025)} points, Max: {s_2025.max():.2f} MW")
+
 
