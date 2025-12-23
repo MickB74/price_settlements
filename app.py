@@ -630,8 +630,7 @@ if monthly_data:
     if view_mode == "Annual":
         # Annual view: Sum by scenario
         df_annual = df_monthly.groupby('Scenario').agg({
-            'Gen_Energy_MWh': 'sum',
-            'Year': 'first'  # For display
+            'Gen_Energy_MWh': 'sum'
         }).reset_index()
         
         # Insight for Annual
