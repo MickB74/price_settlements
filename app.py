@@ -240,8 +240,8 @@ if mode == "Custom Upload":
         
         **Notes:**
         - If `Time` is missing, we assume data starts Jan 1st of the selected year.
-        - **8,760 rows** = Hourly Data
-        - **35,040 rows** = 15-Minute Data
+        - **Hourly Data**: 8,760 rows (regular year) or 8,784 rows (leap year)
+        - **15-Minute Data**: 35,040 rows (regular year) or 35,136 rows (leap year)
         """)
     
     uploaded_file = st.sidebar.file_uploader("Upload Profile (CSV)", type=["csv"], key="custom_uploader")
