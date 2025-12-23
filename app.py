@@ -107,7 +107,7 @@ def calculate_scenario(scenario, df_rtm):
         "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
         "HB_SOUTH": (26.9070, -99.2715),   # Zapata, TX (South Texas inland wind belt - where projects actually are)
         "HB_WEST": (32.4518, -100.5371),   # Roscoe, TX ("Wind Energy Capital of Texas" - best West TX wind resource)
-        "HB_HOUSTON": (29.5827, -95.7619), # Richmond, TX (Fort Bend County - where Houston Hub renewables actually are)
+        "HB_HOUSTON": (29.3013, -94.7977), # Galveston, TX (Houston Hub's only wind project - excellent coastal wind resource)
         "HB_PAN": (35.2220, -101.8313),    # Amarillo, TX (Panhandle)
     }
     
