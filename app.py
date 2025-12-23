@@ -102,10 +102,11 @@ def calculate_scenario(scenario, df_rtm):
     tech = scenario['tech']
 
     # Hub Locations (Lat, Lon)
+    # Updated based on actual renewable project concentrations from ERCOT queue data
     HUB_LOCATIONS = {
-        "HB_NORTH": (33.9137, -98.4934),   # Wichita Falls
-        "HB_SOUTH": (29.4241, -98.4936),   # San Antonio
-        "HB_WEST": (31.9973, -102.0779),   # Midland
+        "HB_NORTH": (32.3865, -96.8475),   # Waxahachie (I-35 solar corridor)
+        "HB_SOUTH": (27.8006, -97.3964),   # Corpus Christi (coastal + border wind)
+        "HB_WEST": (32.4708, -100.4065),   # Sweetwater (Texas wind belt)
         "HB_HOUSTON": (29.7604, -95.3698), # Houston
         "HB_PAN": (35.2220, -101.8313),    # Amarillo
     }
