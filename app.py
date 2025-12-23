@@ -572,6 +572,12 @@ else:
 # Manage Scenarios
 if st.session_state.scenarios:
     st.sidebar.markdown("---")
+    
+    # Clear All button at the top
+    if st.sidebar.button("Clear All Scenarios"):
+        st.session_state.scenarios = []
+        st.rerun()
+    
     st.sidebar.subheader("Current Scenarios")
     for i, sc in enumerate(st.session_state.scenarios):
         col1, col2 = st.sidebar.columns([0.85, 0.15])
@@ -581,10 +587,6 @@ if st.session_state.scenarios:
             if st.button("❌", key=f"remove_{i}", help="Remove this scenario"):
                 st.session_state.scenarios.pop(i)
                 st.rerun()
-    
-    if st.sidebar.button("Clear All Scenarios"):
-        st.session_state.scenarios = []
-        st.rerun()
 
 # --- Main Content ---
 
