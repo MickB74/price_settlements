@@ -403,8 +403,10 @@ else:
         available_years = [2025, 2024, 2023, 2022, 2021, 2020]
         common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
         
-        s_tech = st.radio("Generation Source", ["Solar", "Wind"], index=0)
-        
+        s_techs = st.multiselect("Generation Source", ["Solar", "Wind"], default=["Solar"])
+        if not s_techs:
+            st.warning("Please select at least one technology.")
+
         st.markdown("*Select multiple years/hubs*")
         s_years = st.multiselect("Years", available_years, default=[2025])
         if not s_years:
@@ -440,8 +442,8 @@ else:
         submitted = st.form_submit_button("Add Scenarios")
         
         if submitted:
-            if not s_years or not s_hubs or (use_specific_month and not s_months):
-                st.error("Please ensure Years, Hubs, and Months (if applicable) are selected.")
+            if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
+                st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
             else:
                 # Helper for friendly names
                 hub_map = {
@@ -453,41 +455,42 @@ else:
                 # Iterate through all combinations
                 for year in s_years:
                     for hub in s_hubs:
-                        friendly_hub = hub_map.get(hub, hub)
-                        
-                        # Define list of monthly iterations
-                        month_iterator = s_months if use_specific_month else [None]
-                        
-                        for month in month_iterator:
-                            # Construct Name
-                            if use_specific_month:
-                                name = f"{month} {year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
-                            else:
-                                name = f"{year} {s_tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                        for tech in s_techs:
+                            friendly_hub = hub_map.get(hub, hub)
                             
-                            if s_no_curtailment:
-                                name += " [No Curtailment]"
+                            # Define list of monthly iterations
+                            month_iterator = s_months if use_specific_month else [None]
                             
-                            if s_force_tmy:
-                                name += " [TMY]"
+                            for month in month_iterator:
+                                # Construct Name
+                                if use_specific_month:
+                                    name = f"{month} {year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                                else:
+                                    name = f"{year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
                                 
-                            # Check for duplicates
-                            if any(s['name'] == name for s in st.session_state.scenarios):
-                                continue 
-                            else:
-                                new_scenario = {
-                                    "id": datetime.now().isoformat() + f"_{added_count}",
-                                    "name": name,
-                                    "year": year,
-                                    "hub": hub,
-                                    "tech": s_tech,
-                                    "duration": s_duration,
-                                    "month": month,
-                                    "capacity_mw": s_capacity,
-                                    "vppa_price": s_vppa_price,
-                                    "no_curtailment": s_no_curtailment,
-                                    "force_tmy": s_force_tmy,
-                                    "custom_profile_path": None
+                                if s_no_curtailment:
+                                    name += " [No Curtailment]"
+                                
+                                if s_force_tmy:
+                                    name += " [TMY]"
+                                    
+                                # Check for duplicates
+                                if any(s['name'] == name for s in st.session_state.scenarios):
+                                    continue 
+                                else:
+                                    new_scenario = {
+                                        "id": datetime.now().isoformat() + f"_{added_count}",
+                                        "name": name,
+                                        "year": year,
+                                        "hub": hub,
+                                        "tech": tech,
+                                        "duration": s_duration,
+                                        "month": month,
+                                        "capacity_mw": s_capacity,
+                                        "vppa_price": s_vppa_price,
+                                        "no_curtailment": s_no_curtailment,
+                                        "force_tmy": s_force_tmy,
+                                        "custom_profile_path": None
                                 }
                                 st.session_state.scenarios.append(new_scenario)
                                 added_count += 1
