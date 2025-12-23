@@ -858,6 +858,19 @@ if monthly_data:
         # Extract Year from scenario name (assumes format "YYYY ...")
         df_annual['Year'] = df_annual['Scenario'].str.extract(r'(\d{4})')[0]
         
+        # Create formatted text labels based on value magnitude
+        def format_mwh(value):
+            if value >= 1_000_000:
+                return f"{value/1_000_000:.1f}M"
+            elif value >= 100_000:
+                return f"{value/1000:.0f}k"
+            elif value >= 10_000:
+                return f"{value/1000:.1f}k"
+            else:
+                return f"{value:,.0f}"
+        
+        df_annual['Text_Label'] = df_annual['Gen_Energy_MWh'].apply(format_mwh)
+        
         # Insight for Annual
         max_gen_scen = df_annual.loc[df_annual['Gen_Energy_MWh'].idxmax(), 'Scenario']
         max_gen_val = df_annual['Gen_Energy_MWh'].max()
@@ -872,32 +885,16 @@ if monthly_data:
             x='Year',
             y='Gen_Energy_MWh',
             color='Scenario',
-        title="Annual Energy Generation Comparison",
+            title="Annual Energy Generation Comparison",
             color_discrete_sequence=COLOR_SEQUENCE,
-            text='Gen_Energy_MWh',
+            text='Text_Label',  # Use formatted labels
             barmode='group'
         )
         
-        # Better number formatting based on magnitude
-        max_value = df_annual['Gen_Energy_MWh'].max()
-        if max_value >= 1_000_000:
-            # Millions: 1.2M
-            format_template = '%{text:.3s}M'
-            divisor = 1_000_000
-        elif max_value >= 100_000:
-            # Hundreds of thousands: 197k
-            format_template = '%{text:.0f}k'
-            divisor = 1000
-        else:
-            # Thousands or less: 12.3k
-            format_template = '%{text:.1f}k'
-            divisor = 1000
-        
-        # Apply formatting
+        # Style the text
         fig_gen.update_traces(
-            texttemplate=format_template if divisor == 1 else None,
             textposition='outside',
-            textfont=dict(size=11, family="Arial, sans-serif", color="white"),
+            textfont=dict(size=12, family="Arial, sans-serif"),
             marker_line_width=0
         )
         
@@ -911,7 +908,7 @@ if monthly_data:
         fig_gen.update_xaxes(
             title="Year", 
             type='category',
-            tickfont=dict(size=12)
+            tickfont=dict(size=13)
         )
         
         # Improve overall layout
@@ -921,9 +918,10 @@ if monthly_data:
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
             font=dict(size=12),
-            height=500,
+            height=550,
             bargap=0.15,
-            bargroupgap=0.1
+            bargroupgap=0.1,
+            margin=dict(t=80, b=60, l=60, r=20)
         )
         
     else:
