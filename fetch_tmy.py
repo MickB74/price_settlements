@@ -177,16 +177,19 @@ def get_openmeteo_2024_data(lat, lon):
         print(f"Error fetching Open-Meteo data: {e}")
         return pd.DataFrame()
 
-def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
+def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
     Uses Open-Meteo for 2024 (Solar + Wind).
     Uses TMY data for future years or fallback.
+    
+    If force_tmy=True, skips actuals and uses TMY.
     """
     # Determine Data Source
-    use_pvgis_actual = 2005 <= year <= 2023
-    use_openmeteo_2024 = (year == 2024)
+    # If forced TMY, disable all actuals
+    use_pvgis_actual = (2005 <= year <= 2023) and not force_tmy
+    use_openmeteo_2024 = (year == 2024) and not force_tmy
     
     df_data = pd.DataFrame()
     source_type = "TMY" # Default
@@ -226,7 +229,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
             df_data = df_om
             source_type = "OpenMeteo_Actual"
 
-    # 3. Fallback to TMY
+    # 3. Fallback to TMY (or if enabled)
     if df_data.empty:
         df_data = get_tmy_data(lat, lon)
         source_type = "TMY"
@@ -309,13 +312,15 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
         s_hourly = pd.Series(mw_hourly.values, index=dummy_index_hourly)
         s_15min = s_hourly.resample('15min').interpolate(method='linear')
         
-        values = s_15min.values
-        
+        # Reindex to full year
         start_date = f"{year}-01-01"
         end_date = f"{year}-12-31 23:45"
         target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
         
+        values = s_15min.values
         target_len = len(target_index)
+        
+        # Handle Leap Year length diffs (TMY is 8760, target might be 8784)
         if len(values) < target_len:
             diff = target_len - len(values)
             values = np.pad(values, (0, diff), mode='edge')
@@ -326,7 +331,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331):
 
 
 if __name__ == "__main__":
-    print("Testing fetch_tmy (Hybrid + Open-Meteo)...")
+    print("Testing fetch_tmy (Hybrid + Open-Meteo + Forced TMY)...")
     
     # Test Actual (2020)
     print("\n--- Test 2020 Solar (PVGIS Actual) ---")
@@ -347,9 +352,13 @@ if __name__ == "__main__":
     if not s_2024_solar.empty:
         print(f"Sample head:\n{s_2024_solar.head()}")
 
-    # Test TMY (2025)
-    print("\n--- Test 2025 Wind (TMY) ---")
-    s_2025 = get_profile_for_year(2025, "Wind", 100)
-    print(f"Wind 2025: {len(s_2025)} points, Max: {s_2025.max():.2f} MW")
-
-
+    # Test Forced TMY 2024
+    print("\n--- Test 2024 Solar (Forced TMY) ---")
+    s_2024_tmy = get_profile_for_year(2024, "Solar", 100, force_tmy=True)
+    print(f"Solar 2024 (TMY): {len(s_2024_tmy)} points, Max: {s_2024_tmy.max():.2f} MW")
+    
+    # Check if they are different
+    if not s_2024_solar.equals(s_2024_tmy):
+        print("✅ Success: Forced TMY produced different profile than Actuals.")
+    else:
+        print("⚠️ Warning: Profiles are identical (Check implementation).")

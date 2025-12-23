@@ -253,12 +253,16 @@ def calculate_scenario(scenario, df_rtm):
 
         else:
             # Standard TMY/Actual Logic
+            # Extract override flag
+            force_tmy = scenario.get('force_tmy', False)
+            
             profile_series = fetch_tmy.get_profile_for_year(
                 year=scenario['year'],
                 tech=tech,
                 capacity_mw=capacity_mw,
                 lat=lat,
-                lon=lon
+                lon=lon,
+                force_tmy=force_tmy
             )
             # Align profile with df_hub timestamps
             profile_central = profile_series.tz_convert('US/Central')
@@ -420,6 +424,9 @@ else:
         
         # Curtailment Option
         s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)")
+
+        # TMY Override
+        s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.")
         
         submitted = st.form_submit_button("Add Scenarios")
         
@@ -451,6 +458,9 @@ else:
                             
                             if s_no_curtailment:
                                 name += " [No Curtailment]"
+                            
+                            if s_force_tmy:
+                                name += " [TMY]"
                                 
                             # Check for duplicates
                             if any(s['name'] == name for s in st.session_state.scenarios):
@@ -467,6 +477,7 @@ else:
                                     "capacity_mw": s_capacity,
                                     "vppa_price": s_vppa_price,
                                     "no_curtailment": s_no_curtailment,
+                                    "force_tmy": s_force_tmy,
                                     "custom_profile_path": None
                                 }
                                 st.session_state.scenarios.append(new_scenario)
