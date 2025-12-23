@@ -257,8 +257,16 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         if source_type in ["Actual", "TMY"]:
             if 'WS10m' in df_data.columns:
                 # PVGIS TMY/Actual: 10m wind speed
-                # Extrapolate to hub height (80m) using power law (alpha=0.143 standard, or empirical 1.35 factor)
-                wind_speed_hub = df_data['WS10m'] * 1.35
+                
+                # Dynamic Scaling based on Longitude to correct PVGIS biases
+                # Houston/East TX (lon > -96.0) is often overestimated relative to West TX by simple scaling
+                # West/Panhandle/South (lon <= -96.0) needs significant boost to match reality (40-50% CF)
+                if lon > -96.0:
+                    shear_factor = 1.6  # Coastal/East (Houston)
+                else:
+                    shear_factor = 1.95  # Inland/West, South, Panhandle
+                
+                wind_speed_hub = df_data['WS10m'] * shear_factor
                 mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw)
             else:
                 return pd.Series()
