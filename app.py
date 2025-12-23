@@ -440,12 +440,14 @@ else:
         s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.")
         
         
+        st.markdown("---")
+        
         # Two buttons: Add (append) vs Clear & Run (reset)
         col1, col2 = st.columns(2)
         with col1:
-            add_button = st.form_submit_button("Add Scenarios", type="secondary")
+            add_button = st.form_submit_button("➕ Add", type="secondary", use_container_width=True)
         with col2:
-            clear_run_button = st.form_submit_button("Clear & Run", type="primary")
+            clear_run_button = st.form_submit_button("🔄 Clear & Run", type="primary", use_container_width=True)
         
         # Handle Add Scenarios (append mode)
         if add_button:
