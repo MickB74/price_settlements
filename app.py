@@ -214,23 +214,28 @@ st.sidebar.header("Scenario Builder")
 
 with st.sidebar.form("add_scenario_form"):
     st.subheader("Add New Scenario")
-    # --- Batch Selection Logic ---
     
-    # Years
-    available_years = [2025, 2024, 2023, 2022, 2021, 2020]
-    available_years = [2025, 2024, 2023, 2022, 2021, 2020]
-    s_years = st.multiselect("Years", available_years, default=[2025])
-    if not s_years:
-        st.warning("Please select at least one year.")
-
-    # Hubs
-    common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
-    common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
-    s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
-    if not s_hubs:
-        st.warning("Please select at least one hub.")
-    
+    # Generation Source Selection (moved to top)
     s_tech = st.radio("Generation Source", ["Solar", "Wind", "Custom Upload"], index=0)
+    
+    # Dynamic Form based on Generation Source
+    available_years = [2025, 2024, 2023, 2022, 2021, 2020]
+    common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
+    
+    if s_tech == "Custom Upload":
+        # Single-scenario mode for Custom Upload
+        st.markdown("*Custom upload: One scenario at a time*")
+        s_years = [st.selectbox("Year", available_years, index=0)]
+        s_hubs = [st.selectbox("Hub", common_hubs, index=0)]
+    else:
+        # Batch mode for Solar/Wind
+        st.markdown("*Batch mode: Select multiple years/hubs*")
+        s_years = st.multiselect("Years", available_years, default=[2025])
+        if not s_years:
+            st.warning("Please select at least one year.")
+        s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
+        if not s_hubs:
+            st.warning("Please select at least one hub.")
     
     # Custom File Upload Logic
     uploaded_file = None
