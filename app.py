@@ -318,12 +318,10 @@ def calculate_scenario(scenario, df_rtm):
     return df_hub
 
 def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
-    """Generate a comprehensive PDF report with summary metrics and charts."""
+    """Generate a simpler PDF report with summary metrics, without requiring Kaleido for charts."""
     
-    # Create a temporary file for the PDF
     pdf_buffer = io.BytesIO()
     
-    # Create the PDF document
     doc = SimpleDocTemplate(
         pdf_buffer,
         pagesize=letter,
@@ -333,10 +331,7 @@ def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
         bottomMargin=0.75*inch
     )
     
-    # Container for the 'Flowable' objects
     elements = []
-    
-    # Define styles
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'CustomTitle',
@@ -356,7 +351,7 @@ def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
     )
     normal_style = styles['Normal']
     
-    # --- PAGE 1: Cover Page ---
+    # --- Cover Page ---
     elements.append(Spacer(1, 2*inch))
     elements.append(Paragraph("VPPA Settlement Analysis Report", title_style))
     elements.append(Spacer(1, 0.5*inch))
@@ -369,17 +364,17 @@ def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
     elements.append(Paragraph(f"<b>Number of Scenarios:</b> {num_scenarios}", normal_style))
     elements.append(Spacer(1, 0.2*inch))
     
-    # Get best performer
-    best_scenario = max(results, key=lambda x: x['Net Settlement ($)'])
-    elements.append(Paragraph(
-        f"<b>Best Performer:</b> {best_scenario['Scenario']}<br/>"
-        f"Net Settlement: ${best_scenario['Net Settlement ($)']:,.0f}",
-        normal_style
-    ))
+    if results:
+        best_scenario = max(results, key=lambda x: x['Net Settlement ($)'])
+        elements.append(Paragraph(
+            f"<b>Best Performer:</b> {best_scenario['Scenario']}<br/>"
+            f"Net Settlement: ${best_scenario['Net Settlement ($)']:,.0f}",
+            normal_style
+        ))
     
     elements.append(PageBreak())
     
-    # --- PAGE 2: Summary Metrics Table ---
+    # --- Summary Metrics Table ---
     elements.append(Paragraph("Summary Metrics", heading_style))
     elements.append(Spacer(1, 0.2*inch))
     
@@ -412,43 +407,40 @@ def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
     ]))
     
     elements.append(table)
+    elements.append(Spacer(1, 0.5*inch))
+    
+    # --- Key Insights ---
+    elements.append(Paragraph("Key Insights", heading_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    if len(results) > 1:
+        final_settlements = {r['Scenario']: r['Net Settlement ($)'] for r in results}
+        best_scen = max(final_settlements, key=final_settlements.get)
+        best_val = final_settlements[best_scen]
+        worst_scen = min(final_settlements, key=final_settlements.get)
+        worst_val = final_settlements[worst_scen]
+        
+        insights = [
+            f"• <b>Best Performing:</b> {best_scen} with ${best_val:,.0f}",
+            f"• <b>Lowest Performing:</b> {worst_scen} with ${worst_val:,.0f}",
+            f"• <b>Performance Spread:</b> ${best_val - worst_val:,.0f}",
+        ]
+        
+        for insight in insights:
+            elements.append(Paragraph(insight, normal_style))
+            elements.append(Spacer(1, 0.1*inch))
+    
+    # --- Footer ---
     elements.append(PageBreak())
-    
-    # --- PAGE 3+: Charts ---
-    # Export Plotly charts as static images and embed them
-    
-    charts = [
-        (fig_cum, "Cumulative Settlement Over Time"),
-        (fig_settle, "Annual Net Settlement Comparison"),
-        (fig_gen, "Annual Energy Generation Comparison")
-    ]
-    
-    for fig, chart_title in charts:
-        if fig is not None:
-            elements.append(Paragraph(chart_title, heading_style))
-            elements.append(Spacer(1, 0.2*inch))
-            
-            # Export figure to image
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-                fig.write_image(tmp_file.name, width=800, height=500)
-                tmp_filename = tmp_file.name
-            
-            # Add image to PDF
-            img = Image(tmp_filename, width=6.5*inch, height=4*inch)
-            elements.append(img)
-            elements.append(Spacer(1, 0.3*inch))
-            
-            # Clean up temp file
-            import os
-            try:
-                os.unlink(tmp_filename)
-            except:
-                pass
+    elements.append(Spacer(1, 3*inch))
+    elements.append(Paragraph("<i>Note: This PDF provides a summary of VPPA settlement scenarios.</i>", normal_style))
+    elements.append(Spacer(1, 0.1*inch))
+    elements.append(Paragraph("<i>For detailed interactive charts and visualizations, please refer to the Streamlit application.</i>", normal_style))
     
     # Build PDF
     doc.build(elements)
     
-    # Get the value of the BytesIO buffer
+    # Return buffer
     pdf_buffer.seek(0)
     return pdf_buffer
 
