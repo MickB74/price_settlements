@@ -326,7 +326,15 @@ if mode == "Custom Upload":
     available_years = [2025, 2024, 2023, 2022, 2021, 2020]
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
     
-    custom_year = st.sidebar.selectbox("Year", available_years, index=0)
+    # Add "All Years" option to the dropdown
+    year_options = ["All Years"] + available_years
+    custom_year_selection = st.sidebar.selectbox("Year", year_options, index=0)
+    
+    # If "All Years" is selected, use all available years; otherwise use the selected year
+    if custom_year_selection == "All Years":
+        custom_years = available_years
+    else:
+        custom_years = [custom_year_selection]
     custom_hub = st.sidebar.selectbox("Hub", common_hubs, index=0)
     custom_capacity = st.sidebar.number_input("Capacity (MW)", value=80.0, step=10.0, key="custom_capacity")
     custom_vppa_price = st.sidebar.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="custom_vppa")
@@ -371,29 +379,37 @@ if mode == "Custom Upload":
             "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
         }
         friendly_hub = hub_map.get(custom_hub, custom_hub)
-        name = f"{custom_year} Custom in {friendly_hub} ({int(custom_capacity)}MW)"
-        if custom_no_curtailment:
-            name += " [No Curtailment]"
         
-        # Check for duplicates
-        if not any(s['name'] == name for s in st.session_state.scenarios):
-            new_scenario = {
-                "id": datetime.now().isoformat(),
-                "name": name,
-                "year": custom_year,
-                "hub": custom_hub,
-                "tech": "Custom Upload",
-                "duration": "Full Year",
-                "month": None,
-                "capacity_mw": custom_capacity,
-                "vppa_price": custom_vppa_price,
-                "no_curtailment": custom_no_curtailment,
-                "custom_profile_path": save_path
-            }
-            st.session_state.scenarios.append(new_scenario)
-            st.sidebar.success(f"✅ Added: {name}")
+        # Create scenarios for all selected years
+        added_count = 0
+        for custom_year in custom_years:
+            year_label = "All Years" if custom_year_selection == "All Years" else str(custom_year)
+            name = f"{custom_year} Custom in {friendly_hub} ({int(custom_capacity)}MW)"
+            if custom_no_curtailment:
+                name += " [No Curtailment]"
+            
+            # Check for duplicates
+            if not any(s['name'] == name for s in st.session_state.scenarios):
+                new_scenario = {
+                    "id": datetime.now().isoformat() + f"_{added_count}",
+                    "name": name,
+                    "year": custom_year,
+                    "hub": custom_hub,
+                    "tech": "Custom Upload",
+                    "duration": "Full Year",
+                    "month": None,
+                    "capacity_mw": custom_capacity,
+                    "vppa_price": custom_vppa_price,
+                    "no_curtailment": custom_no_curtailment,
+                    "custom_profile_path": save_path
+                }
+                st.session_state.scenarios.append(new_scenario)
+                added_count += 1
+        
+        if added_count > 0:
+            st.sidebar.success(f"✅ Added {added_count} scenario(s)")
         else:
-            st.sidebar.warning("⚠️ Scenario already exists")
+            st.sidebar.warning("⚠️ Scenario(s) already exist")
 
 else:
     # --- Solar/Wind Batch Form ---
@@ -408,9 +424,14 @@ else:
             st.warning("Please select at least one technology.")
 
         st.markdown("*Select multiple years/hubs*")
-        s_years = st.multiselect("Years", available_years, default=[2025])
-        if not s_years:
-            st.warning("Please select at least one year.")
+        # Add "All Years" checkbox for batch mode
+        select_all_years = st.checkbox("Select All Years")
+        if select_all_years:
+            s_years = available_years
+        else:
+            s_years = st.multiselect("Years", available_years, default=[2025])
+            if not s_years:
+                st.warning("Please select at least one year.")
         
         s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
         if not s_hubs:
