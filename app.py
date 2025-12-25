@@ -673,11 +673,14 @@ else:
         st.markdown("---")
         
         # Two buttons: Add (append) vs Clear & Run (reset)
-        col1, col2 = st.columns(2)
+        # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
+        col1, col2, col3 = st.columns([1.2, 1.2, 1])
         with col1:
-            add_button = st.form_submit_button("➕ Add", type="secondary", use_container_width=True)
+            add_button = st.form_submit_button("➕ Add", type="primary", use_container_width=True)
         with col2:
-            clear_run_button = st.form_submit_button("🔄 Clear & Run", type="primary", use_container_width=True)
+            clear_run_button = st.form_submit_button("🔄 Clear & Run", type="secondary", use_container_width=True)
+        with col3:
+            reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True)
         
         # Handle Add Scenarios (append mode)
         if add_button:
@@ -800,15 +803,16 @@ else:
                     st.rerun()
                 else:
                     st.warning("No scenarios created.")
+        
+        if reset_all_button:
+            st.session_state.scenarios = []
+            st.rerun()
 
 # Manage Scenarios
 if st.session_state.scenarios:
     st.sidebar.markdown("---")
     
-    # Clear All button at the top
-    if st.sidebar.button("Clear All Scenarios"):
-        st.session_state.scenarios = []
-        st.rerun()
+
     
     st.sidebar.subheader("Current Scenarios")
     for i, sc in enumerate(st.session_state.scenarios):
