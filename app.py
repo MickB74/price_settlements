@@ -628,26 +628,26 @@ else:
         available_years = [2025, 2024, 2023, 2022, 2021, 2020]
         common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
         
-        s_techs = st.multiselect("Generation Source", ["Solar", "Wind"], default=["Solar"])
+        s_techs = st.multiselect("Generation Source", ["Solar", "Wind"], default=["Solar"], key="sb_techs")
         if not s_techs:
             st.warning("Please select at least one technology.")
 
         st.markdown("*Select multiple years/hubs*")
         # Add "All Years" checkbox for batch mode
-        select_all_years = st.checkbox("Select All Years")
+        select_all_years = st.checkbox("Select All Years", key="sb_select_all_years")
         
         # Show multiselect with all years selected if checkbox is checked
         default_years = available_years if select_all_years else [2025]
-        s_years = st.multiselect("Years", available_years, default=default_years)
+        s_years = st.multiselect("Years", available_years, default=default_years, key="sb_years")
         if not s_years:
             st.warning("Please select at least one year.")
         
-        s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
+        s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"], key="sb_hubs")
         if not s_hubs:
             st.warning("Please select at least one hub.")
         
         # Duration Selection
-        use_specific_month = st.checkbox("Filter by specific month")
+        use_specific_month = st.checkbox("Filter by specific month", key="sb_use_specific_month")
         s_duration = "Specific Month" if use_specific_month else "Full Year"
         
         s_months = None
@@ -656,18 +656,18 @@ else:
                 "January", "February", "March", "April", "May", "June", 
                 "July", "August", "September", "October", "November", "December"
             ]
-            s_months = st.multiselect("Months", all_months, default=["January"])
+            s_months = st.multiselect("Months", all_months, default=["January"], key="sb_months")
             if not s_months:
                 st.warning("Please select at least one month.")
         
-        s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0)
-        s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0)
+        s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
+        s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
         
         # Curtailment Option
-        s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)")
+        s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
 
         # TMY Override
-        s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.")
+        s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.", key="sb_force_tmy")
         
         
         st.markdown("---")
@@ -806,6 +806,15 @@ else:
         
         if reset_all_button:
             st.session_state.scenarios = []
+            # Reset sidebar widgets by clearing their state
+            keys_to_reset = [
+                "sb_techs", "sb_select_all_years", "sb_years", "sb_hubs", 
+                "sb_use_specific_month", "sb_months", "sb_capacity", 
+                "sb_vppa_price", "sb_no_curtailment", "sb_force_tmy"
+            ]
+            for key in keys_to_reset:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
 
 # Manage Scenarios
