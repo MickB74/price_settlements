@@ -3,3 +3,7 @@ pandas
 numpy
 gridstatus
 plotly
+reportlab
+kaleido
+Pillow
+xlsxwriter

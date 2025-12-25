@@ -1169,4 +1169,109 @@ with st.expander("View Raw Data"):
             )
             
             st.info("Note: Detailed ZIP download is disabled to save memory. Use 'View Raw Data' to download specific scenario CSVs.")
+        
+        st.markdown("---")
+        
+        # Download PDF Report
+        st.subheader("📄 PDF Report")
+        st.markdown("Generate a comprehensive PDF report with summary metrics and all visualizations.")
+        
+        if st.button("Generate PDF Report"):
+            with st.spinner("Generating PDF report..."):
+                try:
+                    # Store the current chart figures
+                    # We need to ensure charts are in Annual view mode for the PDF
+                    
+                    # Cumulative chart (already created above as fig_cum)
+                    # Settlement chart - create annual version
+                    df_annual_settle = df_monthly.groupby('Scenario').agg({
+                        'Settlement_Amount': 'sum'
+                    }).reset_index()
+                    
+                    fig_settle_pdf = px.bar(
+                        df_annual_settle,
+                        x='Scenario',
+                        y='Settlement_Amount',
+                        color='Scenario',
+                        title="Annual Net Settlement Comparison",
+                        color_discrete_sequence=COLOR_SEQUENCE,
+                        text='Settlement_Amount'
+                    )
+                    fig_settle_pdf.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+                    fig_settle_pdf.update_yaxes(title="Total Settlement ($)")
+                    fig_settle_pdf.update_xaxes(title="Scenario")
+                    fig_settle_pdf.update_layout(showlegend=True, legend_title_text="Scenario")
+                    
+                    # Generation chart - create annual version
+                    df_annual_gen = df_monthly.groupby('Scenario').agg({
+                        'Gen_Energy_MWh': 'sum'
+                    }).reset_index()
+                    df_annual_gen['Year'] = df_annual_gen['Scenario'].str.extract(r'(\d{4})')[0]
+                    
+                    def format_mwh(value):
+                        if value >= 1_000_000:
+                            return f"{value/1_000_000:.1f}M"
+                        elif value >= 100_000:
+                            return f"{value/1000:.0f}k"
+                        elif value >= 10_000:
+                            return f"{value/1000:.1f}k"
+                        else:
+                            return f"{value:,.0f}"
+                    
+                    df_annual_gen['Text_Label'] = df_annual_gen['Gen_Energy_MWh'].apply(format_mwh)
+                    
+                    fig_gen_pdf = px.bar(
+                        df_annual_gen,
+                        x='Year',
+                        y='Gen_Energy_MWh',
+                        color='Scenario',
+                        title="Annual Energy Generation Comparison",
+                        color_discrete_sequence=COLOR_SEQUENCE,
+                        text='Text_Label',
+                        barmode='group'
+                    )
+                    fig_gen_pdf.update_traces(
+                        textposition='outside',
+                        textfont=dict(size=12, family="Arial, sans-serif"),
+                        marker_line_width=0
+                    )
+                    fig_gen_pdf.update_yaxes(
+                        title="Annual Generation (MWh)",
+                        tickformat=",.0f",
+                        gridcolor='rgba(128, 128, 128, 0.2)'
+                    )
+                    fig_gen_pdf.update_xaxes(
+                        title="Year",
+                        type='category',
+                        tickfont=dict(size=13)
+                    )
+                    fig_gen_pdf.update_layout(
+                        showlegend=True,
+                        legend_title_text="Scenario",
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        font=dict(size=12),
+                        height=550,
+                        bargap=0.15,
+                        bargroupgap=0.1,
+                        margin=dict(t=80, b=60, l=60, r=20)
+                    )
+                    
+                    # Generate PDF
+                    pdf_buffer = generate_pdf_report(results, df_summary, fig_cum, fig_settle_pdf, fig_gen_pdf)
+                    
+                    # Download button
+                    report_date = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    st.download_button(
+                        label="📥 Download PDF Report",
+                        data=pdf_buffer.getvalue(),
+                        file_name=f"vppa_report_{report_date}.pdf",
+                        mime="application/pdf"
+                    )
+                    
+                    st.success("✅ PDF report generated successfully!")
+                    
+                except Exception as e:
+                    st.error(f"Error generating PDF: {str(e)}")
+                    st.info("Make sure all required dependencies are installed: `pip install reportlab kaleido Pillow`")
 
