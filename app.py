@@ -809,15 +809,19 @@ else:
         
         if reset_all_button:
             st.session_state.scenarios = []
-            # Reset sidebar widgets by clearing their state
-            keys_to_reset = [
-                "sb_techs", "sb_select_all_years", "sb_years", "sb_hubs", 
-                "sb_use_specific_month", "sb_months", "sb_capacity", 
-                "sb_vppa_price", "sb_no_curtailment", "sb_force_tmy"
-            ]
-            for key in keys_to_reset:
-                if key in st.session_state:
-                    del st.session_state[key]
+            
+            # Explicitly set defaults to ensure UI updates during rerun
+            st.session_state.sb_techs = ["Solar"]
+            st.session_state.sb_select_all_years = False
+            st.session_state.sb_years = [2025]
+            st.session_state.sb_hubs = ["HB_NORTH"]
+            st.session_state.sb_use_specific_month = False
+            st.session_state.sb_months = ["January"]
+            st.session_state.sb_capacity = 80.0
+            st.session_state.sb_vppa_price = 50.0
+            st.session_state.sb_no_curtailment = False
+            st.session_state.sb_force_tmy = False
+            
             st.rerun()
 
 # Manage Scenarios
