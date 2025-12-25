@@ -674,12 +674,15 @@ else:
         
         # Two buttons: Add (append) vs Clear & Run (reset)
         # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
-        col1, col2, col3 = st.columns([1.2, 1.2, 1])
-        with col1:
-            add_button = st.form_submit_button("➕ Add", type="primary", use_container_width=True)
-        with col2:
+        # Button Layout: 
+        # Row 1: Add (Primary Action)
+        add_button = st.form_submit_button("➕ Add Scenarios", type="primary", use_container_width=True)
+        
+        # Row 2: Secondary Actions
+        col_clear, col_reset = st.columns(2)
+        with col_clear:
             clear_run_button = st.form_submit_button("🔄 Clear & Run", type="secondary", use_container_width=True)
-        with col3:
+        with col_reset:
             reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True)
         
         # Handle Add Scenarios (append mode)
