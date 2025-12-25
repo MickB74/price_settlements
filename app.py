@@ -455,7 +455,7 @@ def generate_pdf_report(results, df_summary):
     # Aggregate all monthly rows
     for res in results:
         if 'monthly_agg' in res and not res['monthly_agg'].empty:
-            m_df = res['monthly_agg']
+            m_df = res['monthly_agg'].sort_values('Month_Num')
             # Sort by Month Num if possible, it's already sorted by default usually
             for _, row in m_df.iterrows():
                 monthly_rows.append([
@@ -1233,7 +1233,7 @@ with st.expander("Downloads"):
             selected_res = next((r for r in results if r['Scenario'] == selected_scenario_name), None)
             
             if selected_res and 'monthly_agg' in selected_res:
-                monthly_df = selected_res['monthly_agg'].copy()
+                monthly_df = selected_res['monthly_agg'].copy().sort_values('Month_Num')
                 # Format columns for display
                 display_monthly = monthly_df[['Month', 'Settlement_Amount', 'Gen_Energy_MWh']].copy()
                 display_monthly.columns = ['Month', 'Net Settlement ($)', 'Generation (MWh)']
