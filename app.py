@@ -522,7 +522,23 @@ def generate_pdf_report(results, df_summary):
 # ...
 
 # --- Sidebar: Scenario Builder ---
+# --- Helper Functions for Sidebar ---
+def reset_defaults():
+    st.session_state.scenarios = []
+    st.session_state.sb_techs = ["Solar"]
+    st.session_state.sb_select_all_years = False
+    st.session_state.sb_years = [2025]
+    st.session_state.sb_hubs = ["HB_NORTH"]
+    st.session_state.sb_use_specific_month = False
+    st.session_state.sb_months = ["January"]
+    st.session_state.sb_capacity = 80.0
+    st.session_state.sb_vppa_price = 50.0
+    st.session_state.sb_no_curtailment = False
+    st.session_state.sb_force_tmy = False
+
+# --- Sidebar: Scenario Builder ---
 st.sidebar.header("Scenario Builder")
+
 
 # Mode Selection (outside form)
 mode = st.sidebar.radio("Mode", ["Solar/Wind (Batch)", "Custom Upload"], index=0)
@@ -683,7 +699,7 @@ else:
         with col_clear:
             clear_run_button = st.form_submit_button("🔄 Clear & Run", type="secondary", use_container_width=True)
         with col_reset:
-            reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True)
+            reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
         
         # Handle Add Scenarios (append mode)
         if add_button:
@@ -808,20 +824,7 @@ else:
                     st.warning("No scenarios created.")
         
         if reset_all_button:
-            st.session_state.scenarios = []
-            
-            # Explicitly set defaults to ensure UI updates during rerun
-            st.session_state.sb_techs = ["Solar"]
-            st.session_state.sb_select_all_years = False
-            st.session_state.sb_years = [2025]
-            st.session_state.sb_hubs = ["HB_NORTH"]
-            st.session_state.sb_use_specific_month = False
-            st.session_state.sb_months = ["January"]
-            st.session_state.sb_capacity = 80.0
-            st.session_state.sb_vppa_price = 50.0
-            st.session_state.sb_no_curtailment = False
-            st.session_state.sb_force_tmy = False
-            
+            # Logic handled in callback
             st.rerun()
 
 # Manage Scenarios
