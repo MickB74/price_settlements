@@ -526,7 +526,7 @@ def generate_pdf_report(results, df_summary):
 def reset_defaults():
     st.session_state.scenarios = []
     st.session_state.sb_techs = ["Solar"]
-    st.session_state.sb_select_all_years = False
+    # st.session_state.sb_select_all_years = False  # Removed
     st.session_state.sb_years = [2025]
     st.session_state.sb_hubs = ["HB_NORTH"]
     st.session_state.sb_use_specific_month = False
@@ -649,12 +649,16 @@ else:
             st.warning("Please select at least one technology.")
 
         st.markdown("*Select multiple years/hubs*")
-        # Add "All Years" checkbox for batch mode
-        select_all_years = st.checkbox("Select All Years", key="sb_select_all_years")
         
-        # Show multiselect with all years selected if checkbox is checked
-        default_years = available_years if select_all_years else [2025]
-        s_years = st.multiselect("Years", available_years, default=default_years, key="sb_years")
+        # Handle "Select All" logic for Years
+        if "sb_years" not in st.session_state:
+            st.session_state.sb_years = [2025]
+            
+        if "Select All" in st.session_state.sb_years:
+            st.session_state.sb_years = available_years
+            st.rerun()
+
+        s_years = st.multiselect("Years", ["Select All"] + available_years, key="sb_years")
         if not s_years:
             st.warning("Please select at least one year.")
         
@@ -697,7 +701,7 @@ else:
         # Row 2: Secondary Actions
         col_clear, col_reset = st.columns(2)
         with col_clear:
-            clear_run_button = st.form_submit_button("🔄 Clear & Run", type="secondary", use_container_width=True)
+            clear_run_button = st.form_submit_button("Run", type="secondary", use_container_width=True)
         with col_reset:
             reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
         
