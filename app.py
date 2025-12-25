@@ -1041,10 +1041,14 @@ if monthly_data:
             color_discrete_sequence=COLOR_SEQUENCE,
             text='Settlement_Amount'
         )
-        fig_settle.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+        fig_settle.update_traces(texttemplate='$%{text:,.0f}', textposition='outside', cliponaxis=False)
         fig_settle.update_yaxes(title="Total Settlement ($)")
         fig_settle.update_xaxes(title="Scenario")
-        fig_settle.update_layout(showlegend=True, legend_title_text="Scenario")
+        fig_settle.update_layout(
+            showlegend=True, 
+            legend_title_text="Scenario",
+            margin=dict(t=60, b=60, l=60, r=60)
+        )
         
         st.plotly_chart(fig_settle, use_container_width=True)
         
@@ -1134,7 +1138,8 @@ if monthly_data:
         fig_gen.update_traces(
             textposition='outside',
             textfont=dict(size=12, family="Arial, sans-serif"),
-            marker_line_width=0
+            marker_line_width=0,
+            cliponaxis=False
         )
         
         # Format Y-axis with thousands separator
@@ -1160,7 +1165,7 @@ if monthly_data:
             height=550,
             bargap=0.15,
             bargroupgap=0.1,
-            margin=dict(t=80, b=60, l=60, r=20)
+            margin=dict(t=80, b=60, l=60, r=60)
         )
         
     else:
