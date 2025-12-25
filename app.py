@@ -1209,6 +1209,45 @@ with st.expander("View Raw Data"):
             df_display = calculate_scenario(selected_scenario_config, df_rtm)
             
             st.markdown(f"**Showing data for: {selected_scenario_name}**")
+            
+            # 1. Scenario Configuration Table
+            st.subheader("1. Scenario Configuration")
+            config_data = {
+                "Parameter": ["Year", "Hub", "Technology", "Capacity (MW)", "VPPA Price ($/MWh)", "Duration"],
+                "Value": [
+                    selected_scenario_config.get('year'),
+                    selected_scenario_config.get('hub'),
+                    selected_scenario_config.get('tech'),
+                    f"{selected_scenario_config.get('capacity_mw', 0):.1f}",
+                    f"${selected_scenario_config.get('vppa_price', 0):.2f}",
+                    selected_scenario_config.get('duration')
+                ]
+            }
+            st.table(pd.DataFrame(config_data))
+            
+            # 2. Monthly Performance Table
+            st.subheader("2. Monthly Performance Details")
+            
+            # We need to find the monthly aggregate for this scenario from the 'results' list
+            # The 'results' list has the 'monthly_agg' dataframe inside it
+            selected_res = next((r for r in results if r['Scenario'] == selected_scenario_name), None)
+            
+            if selected_res and 'monthly_agg' in selected_res:
+                monthly_df = selected_res['monthly_agg'].copy()
+                # Format columns for display
+                display_monthly = monthly_df[['Month', 'Settlement_Amount', 'Gen_Energy_MWh']].copy()
+                display_monthly.columns = ['Month', 'Net Settlement ($)', 'Generation (MWh)']
+                
+                # Add formatting
+                st.dataframe(display_monthly.style.format({
+                    'Net Settlement ($)': '${:,.0f}',
+                    'Generation (MWh)': '{:,.0f}'
+                }))
+            else:
+                st.info("Monthly aggregation data not available.")
+
+            # 3. Detailed Interval Data
+            st.subheader("3. Detailed Interval Data (Top 1000 Rows)")
             st.dataframe(df_display.head(1000)) # Limit display rows
             
             # Download CSV
