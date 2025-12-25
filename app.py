@@ -317,7 +317,7 @@ def calculate_scenario(scenario, df_rtm):
     
     return df_hub
 
-def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
+def generate_pdf_report(results, df_summary):
     """Generate a simpler PDF report with summary metrics, without requiring Kaleido for charts."""
     
     pdf_buffer = io.BytesIO()
@@ -1250,7 +1250,7 @@ with st.expander("View Raw Data"):
                     )
                     
                     # Generate PDF
-                    pdf_buffer = generate_pdf_report(results, df_summary, fig_cum, fig_settle_pdf, fig_gen_pdf)
+                    pdf_buffer = generate_pdf_report(results, df_summary)
                     
                     # Download button
                     report_date = datetime.now().strftime('%Y%m%d_%H%M%S')
