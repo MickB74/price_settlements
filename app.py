@@ -1190,7 +1190,7 @@ if monthly_data:
     st.plotly_chart(fig_gen, use_container_width=True)
 
 # Data Preview
-with st.expander("View Raw Data"):
+with st.expander("Downloads"):
     if results:
         # Scenario Selection
         scenario_names = [res['Scenario'] for res in results]
