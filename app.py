@@ -9,6 +9,13 @@ from datetime import datetime
 import zipfile
 import io
 import fetch_tmy # New module for TMY data
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+import tempfile
 
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
@@ -310,6 +317,141 @@ def calculate_scenario(scenario, df_rtm):
     
     return df_hub
 
+def generate_pdf_report(results, df_summary, fig_cum, fig_settle, fig_gen):
+    """Generate a comprehensive PDF report with summary metrics and charts."""
+    
+    # Create a temporary file for the PDF
+    pdf_buffer = io.BytesIO()
+    
+    # Create the PDF document
+    doc = SimpleDocTemplate(
+        pdf_buffer,
+        pagesize=letter,
+        rightMargin=0.75*inch,
+        leftMargin=0.75*inch,
+        topMargin=0.75*inch,
+        bottomMargin=0.75*inch
+    )
+    
+    # Container for the 'Flowable' objects
+    elements = []
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#0171BB'),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#0171BB'),
+        spaceAfter=12,
+        spaceBefore=12
+    )
+    normal_style = styles['Normal']
+    
+    # --- PAGE 1: Cover Page ---
+    elements.append(Spacer(1, 2*inch))
+    elements.append(Paragraph("VPPA Settlement Analysis Report", title_style))
+    elements.append(Spacer(1, 0.5*inch))
+    
+    report_date = datetime.now().strftime('%B %d, %Y at %I:%M %p')
+    elements.append(Paragraph(f"<b>Generated:</b> {report_date}", normal_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    num_scenarios = len(results)
+    elements.append(Paragraph(f"<b>Number of Scenarios:</b> {num_scenarios}", normal_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Get best performer
+    best_scenario = max(results, key=lambda x: x['Net Settlement ($)'])
+    elements.append(Paragraph(
+        f"<b>Best Performer:</b> {best_scenario['Scenario']}<br/>"
+        f"Net Settlement: ${best_scenario['Net Settlement ($)']:,.0f}",
+        normal_style
+    ))
+    
+    elements.append(PageBreak())
+    
+    # --- PAGE 2: Summary Metrics Table ---
+    elements.append(Paragraph("Summary Metrics", heading_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Prepare table data
+    table_data = [['Scenario', 'Net Settlement', 'Total Gen', 'Curtailed', 'Capture Price', 'Avg Hub Price']]
+    
+    for _, row in df_summary.iterrows():
+        table_data.append([
+            Paragraph(str(row['Scenario']), ParagraphStyle('Small', fontSize=8)),
+            f"${row['Net Settlement ($)']:,.0f}",
+            f"{row['Total Gen (MWh)']:,.0f}",
+            f"{row['Curtailed (MWh)']:,.0f}",
+            f"${row['Capture Price ($/MWh)']:.2f}",
+            f"${row['Avg Hub Price ($/MWh)']:.2f}"
+        ])
+    
+    # Create table
+    table = Table(table_data, colWidths=[2.2*inch, 1.1*inch, 0.9*inch, 0.9*inch, 1*inch, 1*inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0171BB')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+    ]))
+    
+    elements.append(table)
+    elements.append(PageBreak())
+    
+    # --- PAGE 3+: Charts ---
+    # Export Plotly charts as static images and embed them
+    
+    charts = [
+        (fig_cum, "Cumulative Settlement Over Time"),
+        (fig_settle, "Annual Net Settlement Comparison"),
+        (fig_gen, "Annual Energy Generation Comparison")
+    ]
+    
+    for fig, chart_title in charts:
+        if fig is not None:
+            elements.append(Paragraph(chart_title, heading_style))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Export figure to image
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                fig.write_image(tmp_file.name, width=800, height=500)
+                tmp_filename = tmp_file.name
+            
+            # Add image to PDF
+            img = Image(tmp_filename, width=6.5*inch, height=4*inch)
+            elements.append(img)
+            elements.append(Spacer(1, 0.3*inch))
+            
+            # Clean up temp file
+            import os
+            try:
+                os.unlink(tmp_filename)
+            except:
+                pass
+    
+    # Build PDF
+    doc.build(elements)
+    
+    # Get the value of the BytesIO buffer
+    pdf_buffer.seek(0)
+    return pdf_buffer
+
 # ...
 
 # --- Sidebar: Scenario Builder ---
@@ -426,12 +568,12 @@ else:
         st.markdown("*Select multiple years/hubs*")
         # Add "All Years" checkbox for batch mode
         select_all_years = st.checkbox("Select All Years")
-        if select_all_years:
-            s_years = available_years
-        else:
-            s_years = st.multiselect("Years", available_years, default=[2025])
-            if not s_years:
-                st.warning("Please select at least one year.")
+        
+        # Show multiselect with all years selected if checkbox is checked
+        default_years = available_years if select_all_years else [2025]
+        s_years = st.multiselect("Years", available_years, default=default_years)
+        if not s_years:
+            st.warning("Please select at least one year.")
         
         s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"])
         if not s_hubs:
