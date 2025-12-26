@@ -84,6 +84,97 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     3. **Resample** to 15-minute intervals
     4. **Align** timestamps to ERCOT Central Time
     
+    ---
+    
+    ## Technical Details: Weather-to-Power Conversion
+    
+    ### Solar Generation Model
+    
+    **Input Data:**
+    - **2024 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
+    - **Historical (2005-2023):** GHI from PVGIS (calculated as Gb(i) + Gd(i) + Gr(i) for horizontal plane)
+    - **TMY:** GHI from PVGIS Typical Meteorological Year, W/m²
+    
+    **Conversion Formula:**
+    ```
+    Solar_MW = Capacity_MW × (GHI / 1000) × System_Efficiency
+    
+    Where:
+    - GHI is in W/m²
+    - System_Efficiency = 0.85 (accounts for DC-to-AC conversion, soiling, temperature losses)
+    - Output is clipped at Capacity_MW (no overgeneration)
+    ```
+    
+    **Key Assumptions:**
+    - **Panel Orientation:** Horizontal tracking (simplification - actual projects use tilted/tracking)
+    - **Performance Ratio:** 85% accounts for:
+      - Inverter losses (~3%)
+      - Temperature derating (~5%)
+      - Soiling/shading (~4%)
+      - Wiring/mismatch (~3%)
+    - **Capacity Factor:** Typical range 20-25% in Texas
+    
+    ---
+    
+    ### Wind Generation Model
+    
+    **Input Data:**
+    - **All Sources:** 10-meter wind speed (m/s) from Open-Meteo or PVGIS
+    - **Note:** We use 10m data consistently across all years for methodology alignment
+    
+    **Step 1: Extrapolate to Hub Height (80m)**
+    
+    Wind speed increases with height following a power law. We apply empirically-tuned scaling factors:
+    
+    ```
+    Wind_Speed_80m = Wind_Speed_10m × Shear_Factor
+    
+    Shear_Factor by Region:
+    - East Texas / Houston (lon > -96.0°): 1.60
+    - West / South / Panhandle (lon ≤ -96.0°): 1.95
+    ```
+    
+    **Why Regional Scaling?**
+    - **Coastal (Houston):** Lower surface roughness → lower shear exponent
+    - **Inland (West/South/Pan):** Higher terrain roughness → higher shear exponent
+    - These factors were calibrated against EIA-923 actual generation data
+    
+    **Step 2: Apply Power Curve**
+    
+    We use a simplified IEC Class 2 turbine power curve:
+    
+    ```
+    Normalized_Power = 
+        0.0                           if v < 3.0 m/s   (cut-in speed)
+        ((v - 3.0) / 9.0)³           if 3.0 ≤ v < 12.0 m/s   (cubic region)
+        1.0                           if 12.0 ≤ v < 25.0 m/s  (rated power)
+        0.0                           if v ≥ 25.0 m/s  (cut-out speed)
+    
+    Wind_MW = Normalized_Power × Capacity_MW
+    ```
+    
+    **Key Assumptions:**
+    - **Turbine Type:** Generic 2.5-3.5 MW turbine (representative of Texas fleet)
+    - **Hub Height:** 80 meters (typical for modern Texas wind farms)
+    - **Cut-in Speed:** 3 m/s (turbine starts generating)
+    - **Rated Speed:** 12 m/s (full power output)
+    - **Cut-out Speed:** 25 m/s (turbine shuts down for safety)
+    - **Capacity Factor:** Typical range 35-45% in good Texas wind sites
+    
+    **Power Curve Shape:**
+    - **Cubic relationship** in the 3-12 m/s range reflects physics: Power ∝ v³
+    - This is the most sensitive region where small wind speed errors have large generation impacts
+    
+    ---
+    
+    ### Data Processing Pipeline
+    
+    1. **Fetch:** Hourly weather data (8,760 or 8,784 points for leap years)
+    2. **Convert:** Apply solar or wind model → hourly MW profile
+    3. **Interpolate:** Resample from hourly to 15-minute intervals using linear interpolation
+    4. **Align:** Match timestamps to ERCOT market data (UTC → Central Time)
+    5. **Validate:** Ensure 35,040 or 35,136 intervals (15-min resolution for full year)
+    
     ### Curtailment Modeling
     - **Default:** Negative prices ($<0) are floored at $0 (curtailment)
     - **Optional:** "No Curtailment" mode keeps negative prices (financial exposure)
