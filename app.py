@@ -77,7 +77,7 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ```
     
     ### Generation Profile Creation
-    1. **Fetch Weather Data** from Open-Meteo (2024) or PVGIS (History/TMY)
+    1. **Fetch Weather Data** from Open-Meteo (2024-2025) or PVGIS (History/TMY)
     2. **Convert to Power:**
        - Solar: GHI (Global Horizontal Irradiance) → DC power → inverter efficiency → AC MW
        - Wind: Wind speed (scaled to hub height) → power curve → MW
@@ -91,7 +91,7 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ### Solar Generation Model
     
     **Input Data:**
-    - **2024 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
+    - **2024-2025 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
     - **Historical (2005-2023):** GHI from PVGIS (calculated as Gb(i) + Gd(i) + Gr(i) for horizontal plane)
     - **TMY:** GHI from PVGIS Typical Meteorological Year, W/m²
     
