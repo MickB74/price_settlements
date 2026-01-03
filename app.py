@@ -42,11 +42,11 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     
     ### 2. **Generation Profiles (Wind/Solar)**
     - **Sources:** 
-        - **[Open-Meteo](https://open-meteo.com/):** For **2024 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 100m wind speeds.
+        - **[Open-Meteo](https://open-meteo.com/):** For **2024-2025 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 10m wind speeds.
         - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Typical Meteorological Year (TMY)** data.
     - **Method:**
-      - **2024:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
-      - **Historical Years:** Uses **Actual PVGIS Data**
+      - **2024-2025:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
+      - **Historical Years (2005-2023):** Uses **Actual PVGIS Data**
       - **Future/TMY:** Uses **TMY Data** (Typical Meteorological Year) representing long-term averages.
     - **Sensitivity Analysis:**
       - Use the **"Force TMY"** checkbox to simulate "normal" weather conditions for any year, overriding actual weather data.

@@ -134,24 +134,28 @@ def wind_from_speed(speed_series, capacity_mw):
     return normalized_power * capacity_mw
 
 
-def get_openmeteo_2024_data(lat, lon):
-    """Fetch 2024 hourly solar and wind data from Open-Meteo."""
-    cache_file = os.path.join(CACHE_DIR, f"openmeteo_2024_{lat}_{lon}.parquet")
+def get_openmeteo_data(year, lat, lon):
+    """Fetch hourly solar and wind data from Open-Meteo for any year."""
+    cache_file = os.path.join(CACHE_DIR, f"openmeteo_{year}_{lat}_{lon}.parquet")
     
+    # Check if cache exists (and verify columns if old cache used 100m)
     if os.path.exists(cache_file):
-        return pd.read_parquet(cache_file)
+        df = pd.read_parquet(cache_file)
+        if 'Wind_Speed_10m_mps' in df.columns:
+            return df
+        # If old cache (100m), ignore it and re-fetch
         
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
         "latitude": lat,
         "longitude": lon,
-        "start_date": "2024-01-01",
-        "end_date": "2024-12-31",
-        "hourly": "shortwave_radiation,wind_speed_100m",
+        "start_date": f"{year}-01-01",
+        "end_date": f"{year}-12-31",
+        "hourly": "shortwave_radiation,wind_speed_10m",
         "timezone": "UTC"
     }
     
-    print(f"Fetching Open-Meteo 2024 data for {lat}, {lon}...")
+    print(f"Fetching Open-Meteo {year} data (10m) for {lat}, {lon}...")
     
     try:
         response = requests.get(url, params=params)
@@ -165,11 +169,11 @@ def get_openmeteo_2024_data(lat, lon):
         
         # Rename columns to standard internal names
         # shortwave_radiation = GHI (W/m2)
-        # wind_speed_100m is in km/h -> Convert to m/s
+        # wind_speed_10m is in km/h -> Convert to m/s
         df['GHI_Wm2'] = df['shortwave_radiation']
-        df['Wind_Speed_100m_mps'] = df['wind_speed_100m'] / 3.6
+        df['Wind_Speed_10m_mps'] = df['wind_speed_10m'] / 3.6
         
-        out_df = df[['datetime', 'GHI_Wm2', 'Wind_Speed_100m_mps']].copy()
+        out_df = df[['datetime', 'GHI_Wm2', 'Wind_Speed_10m_mps']].copy()
         out_df.to_parquet(cache_file)
         return out_df
         
@@ -177,11 +181,16 @@ def get_openmeteo_2024_data(lat, lon):
         print(f"Error fetching Open-Meteo data: {e}")
         return pd.DataFrame()
 
+# Keep old function name for backward compatibility
+def get_openmeteo_2024_data(lat, lon):
+    """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
+    return get_openmeteo_data(2024, lat, lon)
+
 def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
-    Uses Open-Meteo for 2024 (Solar + Wind).
+    Uses Open-Meteo for 2024-2025 (Solar + Wind).
     Uses TMY data for future years or fallback.
     
     If force_tmy=True, skips actuals and uses TMY.
@@ -189,7 +198,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
     # Determine Data Source
     # If forced TMY, disable all actuals
     use_pvgis_actual = (2005 <= year <= 2023) and not force_tmy
-    use_openmeteo_2024 = (year == 2024) and not force_tmy
+    use_openmeteo_actual = (2024 <= year <= 2025) and not force_tmy
     
     df_data = pd.DataFrame()
     source_type = "TMY" # Default
@@ -222,9 +231,9 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         except Exception as e:
             print(f"Error in PVGIS flow: {e}")
 
-    # 2. Try Open-Meteo 2024 (Solar + Wind)
-    if use_openmeteo_2024 and df_data.empty:
-        df_om = get_openmeteo_2024_data(lat, lon)
+    # 2. Try Open-Meteo 2024-2025 (Solar + Wind)
+    if use_openmeteo_actual and df_data.empty:
+        df_om = get_openmeteo_data(year, lat, lon)
         if not df_om.empty:
             df_data = df_om
             source_type = "OpenMeteo_Actual"
@@ -254,27 +263,24 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         mw_hourly = solar_from_ghi(irradiance, capacity_mw)
         
     elif tech == "Wind":
-        if source_type in ["Actual", "TMY"]:
-            if 'WS10m' in df_data.columns:
-                # PVGIS TMY/Actual: 10m wind speed
+        if source_type in ["Actual", "TMY", "OpenMeteo_Actual"]:
+            if 'WS10m' in df_data.columns or 'Wind_Speed_10m_mps' in df_data.columns:
+                # Use 10m wind speed and apply scaling factor
+                if 'WS10m' in df_data.columns:
+                    ws_10m = df_data['WS10m']
+                else:
+                    ws_10m = df_data['Wind_Speed_10m_mps']
                 
-                # Dynamic Scaling based on Longitude to correct PVGIS biases
-                # Houston/East TX (lon > -96.0) is often overestimated relative to West TX by simple scaling
-                # West/Panhandle/South (lon <= -96.0) needs significant boost to match reality (40-50% CF)
+                # Dynamic Scaling based on Longitude to correct PVGIS/OpenMeteo biases
                 if lon > -96.0:
                     shear_factor = 1.6  # Coastal/East (Houston)
                 else:
                     shear_factor = 1.95  # Inland/West, South, Panhandle
                 
-                wind_speed_hub = df_data['WS10m'] * shear_factor
+                wind_speed_hub = ws_10m * shear_factor
                 mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw)
             else:
                 return pd.Series()
-        elif source_type == "OpenMeteo_Actual":
-            # Open-Meteo: 100m wind speed provided directly
-            # This is much better than extrapolating from 10m!
-            # We'll treat 100m speed as roughly equivalent to 80-100m hub height
-            mw_hourly = wind_from_speed(df_data['Wind_Speed_100m_mps'], capacity_mw)
         else:
             return pd.Series()
     else:

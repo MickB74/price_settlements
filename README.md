@@ -8,7 +8,7 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 -   **Multi-Year Analysis:** Simulate settlements for 2020-2025.
 -   **Granular Location Data:** Select from all major ERCOT Hubs (North, South, West, Houston, Panhandle).
 -   **Weather-Driven Profiles:**
-    -   **2024:** Uses **Actual Weather** (Open-Meteo ERA5) for both Solar & Wind.
+    -   **2024-2025:** Uses **Actual Weather** (Open-Meteo ERA5) for both Solar & Wind.
     -   **History (2005-2023):** Uses **Actual Weather** (PVGIS).
     -   **Sensitivity:** Toggle "Force TMY" to compare actuals against "Typical Meteorological Year" baselines.
 -   **Custom Profiles:** Upload your own 8760/15-min generation shapes (CSV) for bespoke analysis.
@@ -31,7 +31,7 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 | Data Type | Source | Details |
 | :--- | :--- | :--- |
 | **Market Prices** | **ERCOT (via GridStatus)** | Real-Time Market (RTM) settlement point prices. |
-| **Solar/Wind (2024)** | **Open-Meteo** | ERA5 Reanalysis data (Global Horizontal Irradiance, 100m Wind Speed). |
+| **Solar/Wind (2024-2025)** | **Open-Meteo** | ERA5 Reanalysis data (Global Horizontal Irradiance, 10m Wind Speed). |
 | **Solar/Wind (History)** | **PVGIS** | Satellite-based solar radiation and reanalysis wind data. |
 | **TMY Data** | **PVGIS** | Typical Meteorological Year derived from multi-year averages. |
 
