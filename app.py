@@ -788,6 +788,9 @@ else:
             clicked_lon = max(-106.5, min(-93.5, clicked_lon))
             st.session_state.map_lat = clicked_lat
             st.session_state.map_lon = clicked_lon
+            # Also sync to form input keys so they update
+            st.session_state.sb_custom_lat = clicked_lat
+            st.session_state.sb_custom_lon = clicked_lon
             st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
         
         st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
