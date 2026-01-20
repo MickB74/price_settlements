@@ -809,7 +809,7 @@ else:
         # Row 2: Secondary Actions
         col_clear, col_reset = st.columns(2)
         with col_clear:
-            clear_run_button = st.form_submit_button("Run", type="secondary", use_container_width=True)
+            clear_run_button = st.form_submit_button("🏃 Run", type="secondary", use_container_width=True)
         with col_reset:
             reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
         
