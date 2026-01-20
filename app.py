@@ -37,15 +37,15 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ### 1. **Market Prices (ERCOT RTM)**
     - **Source:** [gridstatus.io](https://www.gridstatus.io/) - Real-time ERCOT data API
     - **Data:** 15-minute Real-Time Market (RTM) prices by settlement point
-    - **Coverage:** 2020-2025 (historical actual prices)
+    - **Coverage:** 2020-2026 (historical actual prices)
     - **Hubs:** HB_NORTH, HB_SOUTH, HB_WEST, HB_HOUSTON, HB_PAN
     
     ### 2. **Generation Profiles (Wind/Solar)**
     - **Sources:** 
-        - **[Open-Meteo](https://open-meteo.com/):** For **2024-2025 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 10m wind speeds.
+        - **[Open-Meteo](https://open-meteo.com/):** For **2024-2026 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 10m wind speeds.
         - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Typical Meteorological Year (TMY)** data.
     - **Method:**
-      - **2024-2025:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
+      - **2024-2026:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
       - **Historical Years (2005-2023):** Uses **Actual PVGIS Data**
       - **Future/TMY:** Uses **TMY Data** (Typical Meteorological Year) representing long-term averages.
     - **Sensitivity Analysis:**
@@ -77,7 +77,7 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ```
     
     ### Generation Profile Creation
-    1. **Fetch Weather Data** from Open-Meteo (2024-2025) or PVGIS (History/TMY)
+    1. **Fetch Weather Data** from Open-Meteo (2024-2026) or PVGIS (History/TMY)
     2. **Convert to Power:**
        - Solar: GHI (Global Horizontal Irradiance) → DC power → inverter efficiency → AC MW
        - Wind: Wind speed (scaled to hub height) → power curve → MW
@@ -91,7 +91,7 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
     ### Solar Generation Model
     
     **Input Data:**
-    - **2024-2025 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
+    - **2024-2026 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
     - **Historical (2005-2023):** GHI from PVGIS (calculated as Gb(i) + Gd(i) + Gr(i) for horizontal plane)
     - **TMY:** GHI from PVGIS Typical Meteorological Year, W/m²
     
