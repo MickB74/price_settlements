@@ -190,15 +190,13 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
-    Uses Open-Meteo for 2024-2025 (Solar + Wind).
-    Uses TMY data for future years or fallback.
-    
-    If force_tmy=True, skips actuals and uses TMY.
+    Uses Open-Meteo for 2024+ (Solar + Wind) - real weather data.
+    Uses TMY data only when force_tmy=True.
     """
     # Determine Data Source
     # If forced TMY, disable all actuals
     use_pvgis_actual = (2005 <= year <= 2023) and not force_tmy
-    use_openmeteo_actual = (2024 <= year <= 2025) and not force_tmy
+    use_openmeteo_actual = (year >= 2024) and not force_tmy  # 2024 and all future years
     
     df_data = pd.DataFrame()
     source_type = "TMY" # Default

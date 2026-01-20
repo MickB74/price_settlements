@@ -45,9 +45,9 @@ with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=
         - **[Open-Meteo](https://open-meteo.com/):** For **2024-2026 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 10m wind speeds.
         - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Typical Meteorological Year (TMY)** data.
     - **Method:**
-      - **2024-2026:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
-      - **Historical Years (2005-2023):** Uses **Actual PVGIS Data**
-      - **Future/TMY:** Uses **TMY Data** (Typical Meteorological Year) representing long-term averages.
+      - **2024+:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
+      - **Historical Years (2005-2023):** Uses **Actual PVGIS Data** ✅
+      - **TMY:** Only used when **"Force TMY"** checkbox is selected
     - **Sensitivity Analysis:**
       - Use the **"Force TMY"** checkbox to simulate "normal" weather conditions for any year, overriding actual weather data.
     
