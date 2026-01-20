@@ -783,6 +783,9 @@ else:
         if map_data and map_data.get("last_clicked"):
             clicked_lat = map_data["last_clicked"]["lat"]
             clicked_lon = map_data["last_clicked"]["lng"]
+            # Clamp to Texas bounds to prevent errors in form inputs
+            clicked_lat = max(25.5, min(36.5, clicked_lat))
+            clicked_lon = max(-106.5, min(-93.5, clicked_lon))
             st.session_state.map_lat = clicked_lat
             st.session_state.map_lon = clicked_lon
             st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
