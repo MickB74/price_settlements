@@ -302,7 +302,12 @@ def calculate_scenario(scenario, df_rtm):
     
     # Default to Abilene if hub not found
     default_loc = (32.4487, -99.7331)  # Abilene, TX
-    lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
+    
+    # Check for custom location override
+    if scenario.get('custom_lat') is not None and scenario.get('custom_lon') is not None:
+        lat, lon = scenario['custom_lat'], scenario['custom_lon']
+    else:
+        lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
 
     try:
         if tech == "Custom Upload":
@@ -780,6 +785,18 @@ else:
         # TMY Override
         s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.", key="sb_force_tmy")
         
+        # Custom Location Override
+        s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Override default hub coordinates with your actual project site.", key="sb_use_custom_location")
+        
+        s_custom_lat = None
+        s_custom_lon = None
+        if s_use_custom_location:
+            col_lat, col_lon = st.columns(2)
+            with col_lat:
+                s_custom_lat = st.number_input("Latitude", value=32.0, min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
+            with col_lon:
+                s_custom_lon = st.number_input("Longitude", value=-100.0, min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
+            st.caption("Texas bounds: Lat 25.5-36.5, Lon -106.5 to -93.5")
         
         st.markdown("---")
         
@@ -829,6 +846,9 @@ else:
                                 
                                 if s_force_tmy:
                                     name += " [TMY]"
+                                
+                                if s_use_custom_location and s_custom_lat is not None:
+                                    name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
                                     
                                 # Check for duplicates
                                 if any(s['name'] == name for s in st.session_state.scenarios):
@@ -846,6 +866,8 @@ else:
                                         "vppa_price": s_vppa_price,
                                         "no_curtailment": s_no_curtailment,
                                         "force_tmy": s_force_tmy,
+                                        "custom_lat": s_custom_lat if s_use_custom_location else None,
+                                        "custom_lon": s_custom_lon if s_use_custom_location else None,
                                         "custom_profile_path": None
                                 }
                                 st.session_state.scenarios.append(new_scenario)
@@ -893,6 +915,9 @@ else:
                                 
                                 if s_force_tmy:
                                     name += " [TMY]"
+                                
+                                if s_use_custom_location and s_custom_lat is not None:
+                                    name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
                                     
                                 # No need to check duplicates since we cleared the list
                                 new_scenario = {
@@ -907,6 +932,8 @@ else:
                                     "vppa_price": s_vppa_price,
                                     "no_curtailment": s_no_curtailment,
                                     "force_tmy": s_force_tmy,
+                                    "custom_lat": s_custom_lat if s_use_custom_location else None,
+                                    "custom_lon": s_custom_lon if s_use_custom_location else None,
                                     "custom_profile_path": None
                             }
                             st.session_state.scenarios.append(new_scenario)
