@@ -639,7 +639,7 @@ if mode == "Custom Upload":
     st.sidebar.subheader("Custom Upload")
     st.sidebar.markdown("*Upload a file to auto-create scenario*")
     
-    available_years = [2025, 2024, 2023, 2022, 2021, 2020]
+    available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
     
     # Add "All Years" option to the dropdown
@@ -732,7 +732,7 @@ else:
     with st.sidebar.form("add_scenario_form"):
         st.subheader("Add Scenarios (Batch)")
         
-        available_years = [2025, 2024, 2023, 2022, 2021, 2020]
+        available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
         common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
         
         s_techs = st.multiselect("Generation Source", ["Solar", "Wind"], default=["Solar"], key="sb_techs")
