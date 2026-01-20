@@ -16,6 +16,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import tempfile
+import folium
+from streamlit_folium import st_folium
 
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
@@ -733,6 +735,60 @@ if mode == "Custom Upload":
             st.sidebar.warning("⚠️ Scenario(s) already exist")
 
 else:
+    # --- Map Location Picker (outside form) ---
+    with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
+        st.caption("Click on the map to select your project location")
+        
+        # Initialize map location from session state or defaults
+        if 'map_lat' not in st.session_state:
+            st.session_state.map_lat = 32.0
+        if 'map_lon' not in st.session_state:
+            st.session_state.map_lon = -100.0
+        
+        # Create map centered on Texas/ERCOT region
+        m = folium.Map(
+            location=[31.0, -100.0],  # Center of Texas
+            zoom_start=6,
+            tiles="OpenStreetMap"
+        )
+        
+        # Add marker for current selected location
+        folium.Marker(
+            [st.session_state.map_lat, st.session_state.map_lon],
+            popup=f"Selected: {st.session_state.map_lat:.4f}, {st.session_state.map_lon:.4f}",
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(m)
+        
+        # Add ERCOT hub markers for reference
+        hub_locations = {
+            "HB_NORTH": (32.3865, -96.8475),
+            "HB_SOUTH": (26.9070, -99.2715),
+            "HB_WEST": (32.4518, -100.5371),
+            "HB_HOUSTON": (29.3013, -94.7977),
+            "HB_PAN": (35.2220, -101.8313),
+        }
+        for hub, (lat, lon) in hub_locations.items():
+            folium.CircleMarker(
+                [lat, lon],
+                radius=8,
+                popup=hub,
+                color='blue',
+                fill=True,
+                fillOpacity=0.6
+            ).add_to(m)
+        
+        # Display map and capture clicks
+        map_data = st_folium(m, height=300, width=280, returned_objects=["last_clicked"])
+        
+        if map_data and map_data.get("last_clicked"):
+            clicked_lat = map_data["last_clicked"]["lat"]
+            clicked_lon = map_data["last_clicked"]["lng"]
+            st.session_state.map_lat = clicked_lat
+            st.session_state.map_lon = clicked_lon
+            st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
+        
+        st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
+    
     # --- Solar/Wind Batch Form ---
     with st.sidebar.form("add_scenario_form"):
         st.subheader("Add Scenarios (Batch)")
@@ -786,17 +842,21 @@ else:
         s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.", key="sb_force_tmy")
         
         # Custom Location Override
-        s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Override default hub coordinates with your actual project site.", key="sb_use_custom_location")
+        s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Use map picker above or enter coordinates. Overrides hub defaults.", key="sb_use_custom_location")
         
         s_custom_lat = None
         s_custom_lon = None
         if s_use_custom_location:
+            # Use map-selected coordinates as defaults if available
+            default_lat = st.session_state.get('map_lat', 32.0)
+            default_lon = st.session_state.get('map_lon', -100.0)
+            
+            st.caption("💡 Use map picker above to click-select location")
             col_lat, col_lon = st.columns(2)
             with col_lat:
-                s_custom_lat = st.number_input("Latitude", value=32.0, min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
+                s_custom_lat = st.number_input("Latitude", value=default_lat, min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
             with col_lon:
-                s_custom_lon = st.number_input("Longitude", value=-100.0, min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
-            st.caption("Texas bounds: Lat 25.5-36.5, Lon -106.5 to -93.5")
+                s_custom_lon = st.number_input("Longitude", value=default_lon, min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
         
         st.markdown("---")
         
