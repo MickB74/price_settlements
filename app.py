@@ -18,6 +18,8 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import tempfile
 import folium
 from streamlit_folium import st_folium
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
 
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
@@ -737,7 +739,39 @@ if mode == "Custom Upload":
 else:
     # --- Map Location Picker (outside form) ---
     with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
-        st.caption("Click on the map to select your project location")
+        st.caption("Search by name or click on the map")
+        
+        # Location search box
+        search_query = st.text_input("🔍 Search location", placeholder="e.g., Abilene, TX or 79601", key="location_search")
+        
+        if search_query:
+            try:
+                geolocator = Nominatim(user_agent="vppa_estimator")
+                # Append Texas to improve search accuracy
+                if "texas" not in search_query.lower() and "tx" not in search_query.lower():
+                    search_with_state = f"{search_query}, Texas, USA"
+                else:
+                    search_with_state = f"{search_query}, USA"
+                
+                location = geolocator.geocode(search_with_state, timeout=5)
+                
+                if location:
+                    # Clamp to Texas bounds
+                    found_lat = max(25.5, min(36.5, location.latitude))
+                    found_lon = max(-106.5, min(-93.5, location.longitude))
+                    
+                    st.session_state.map_lat = found_lat
+                    st.session_state.map_lon = found_lon
+                    st.session_state.sb_custom_lat = found_lat
+                    st.session_state.sb_custom_lon = found_lon
+                    st.success(f"📍 Found: {location.address[:50]}...")
+                    st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
+                else:
+                    st.warning("Location not found. Try a different name.")
+            except GeocoderTimedOut:
+                st.warning("Search timed out. Try again.")
+            except Exception as e:
+                st.error(f"Search error: {str(e)[:50]}")
         
         # Initialize map location from session state or defaults
         if 'map_lat' not in st.session_state:

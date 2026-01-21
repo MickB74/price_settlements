@@ -9,3 +9,4 @@ Pillow
 xlsxwriter
 folium
 streamlit-folium
+geopy
