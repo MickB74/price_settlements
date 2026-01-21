@@ -861,7 +861,7 @@ else:
     
     # --- Solar/Wind Batch Form ---
     with st.sidebar.form("add_scenario_form"):
-        st.subheader("Add Scenarios (Batch)")
+        st.subheader("Add Scenarios")
         
         available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
         common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
