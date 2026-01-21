@@ -24,6 +24,16 @@ from geopy.exc import GeocoderTimedOut
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
 
+# Custom CSS to widen sidebar (50% wider than default)
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {
+        min-width: 450px;
+        max-width: 450px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Title
 st.title("VPPA Settlement Estimator")
 st.markdown("Compare multiple Virtual Power Purchase Agreement (VPPA) scenarios in ERCOT.")
