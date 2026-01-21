@@ -860,6 +860,8 @@ else:
         
         # Store suggested hub in session state for form to use
         st.session_state.suggested_hub = nearest_hub
+        # Also auto-select this hub in the form
+        st.session_state.sb_hubs = [nearest_hub]
         
         st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
     
