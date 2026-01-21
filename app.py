@@ -926,16 +926,18 @@ else:
         s_custom_lat = None
         s_custom_lon = None
         if s_use_custom_location:
-            # Use map-selected coordinates as defaults if available
-            default_lat = st.session_state.get('map_lat', 32.0)
-            default_lon = st.session_state.get('map_lon', -100.0)
+            # Initialize session state for inputs if not set (avoid value= conflict)
+            if 'sb_custom_lat' not in st.session_state:
+                st.session_state.sb_custom_lat = st.session_state.get('map_lat', 32.0)
+            if 'sb_custom_lon' not in st.session_state:
+                st.session_state.sb_custom_lon = st.session_state.get('map_lon', -100.0)
             
             st.caption("💡 Use map picker above to click-select location")
             col_lat, col_lon = st.columns(2)
             with col_lat:
-                s_custom_lat = st.number_input("Latitude", value=default_lat, min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
+                s_custom_lat = st.number_input("Latitude", min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
             with col_lon:
-                s_custom_lon = st.number_input("Longitude", value=default_lon, min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
+                s_custom_lon = st.number_input("Longitude", min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
         
         st.markdown("---")
         
