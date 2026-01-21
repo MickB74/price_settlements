@@ -774,6 +774,8 @@ else:
                     st.session_state.map_lon = found_lon
                     st.session_state.sb_custom_lat = found_lat
                     st.session_state.sb_custom_lon = found_lon
+                    # Auto-check the "Use Custom Location" checkbox
+                    st.session_state.sb_use_custom_location = True
                     st.success(f"📍 Found: {location.address[:50]}...")
                     st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
                 else:
@@ -835,6 +837,8 @@ else:
             # Also sync to form input keys so they update
             st.session_state.sb_custom_lat = clicked_lat
             st.session_state.sb_custom_lon = clicked_lon
+            # Auto-check the "Use Custom Location" checkbox
+            st.session_state.sb_use_custom_location = True
             st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
         
         # Calculate and suggest nearest hub
