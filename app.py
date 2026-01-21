@@ -914,7 +914,7 @@ else:
         s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
 
         # TMY Override
-        s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data even for 2024.", key="sb_force_tmy")
+        s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
         
         # Custom Location Override
         s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Use map picker above or enter coordinates. Overrides hub defaults.", key="sb_use_custom_location")
