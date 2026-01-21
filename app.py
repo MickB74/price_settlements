@@ -839,6 +839,14 @@ else:
             st.session_state.sb_custom_lon = clicked_lon
             # Auto-check the "Use Custom Location" checkbox
             st.session_state.sb_use_custom_location = True
+            
+            # Calculate nearest hub on click and auto-select it
+            def calc_dist(lat1, lon1, lat2, lon2):
+                return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+            click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
+            nearest = min(click_distances, key=click_distances.get)
+            st.session_state.sb_hubs = [nearest]
+            
             st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
         
         # Calculate and suggest nearest hub
@@ -860,8 +868,6 @@ else:
         
         # Store suggested hub in session state for form to use
         st.session_state.suggested_hub = nearest_hub
-        # Also auto-select this hub in the form
-        st.session_state.sb_hubs = [nearest_hub]
         
         st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
     
