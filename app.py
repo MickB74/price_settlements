@@ -827,6 +827,26 @@ else:
             st.session_state.sb_custom_lon = clicked_lon
             st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
         
+        # Calculate and suggest nearest hub
+        def calc_distance(lat1, lon1, lat2, lon2):
+            """Simple Euclidean distance (good enough for nearby points)"""
+            return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+        
+        current_lat = st.session_state.get('map_lat', 32.0)
+        current_lon = st.session_state.get('map_lon', -100.0)
+        
+        distances = {}
+        for hub_name, (hub_lat, hub_lon) in hub_locations.items():
+            distances[hub_name] = calc_distance(current_lat, current_lon, hub_lat, hub_lon)
+        
+        nearest_hub = min(distances, key=distances.get)
+        nearest_dist_miles = distances[nearest_hub] * 69  # Rough lat/lon to miles
+        
+        st.info(f"💡 **Suggested Hub:** {nearest_hub} (~{nearest_dist_miles:.0f} mi)")
+        
+        # Store suggested hub in session state for form to use
+        st.session_state.suggested_hub = nearest_hub
+        
         st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
     
     # --- Solar/Wind Batch Form ---
@@ -854,7 +874,12 @@ else:
         if not s_years:
             st.warning("Please select at least one year.")
         
-        s_hubs = st.multiselect("Hubs", common_hubs, default=["HB_NORTH"], key="sb_hubs")
+        # Use suggested hub from map if available, otherwise default to HB_NORTH
+        default_hub = st.session_state.get('suggested_hub', 'HB_NORTH')
+        if default_hub not in common_hubs:
+            default_hub = 'HB_NORTH'
+        
+        s_hubs = st.multiselect("Hubs", common_hubs, default=[default_hub], key="sb_hubs")
         if not s_hubs:
             st.warning("Please select at least one hub.")
         
