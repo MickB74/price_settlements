@@ -412,11 +412,10 @@ def calculate_scenario(scenario, df_rtm):
     vppa_price = scenario.get('vppa_price', scenario.get('strike_price', 50.0))
     df_hub['VPPA_Price'] = vppa_price
     
-    # Revenue Share: If enabled, buyer only gets 50% of the upside when SPP > VPPA price
-    revenue_share = scenario.get('revenue_share', False)
-    revenue_share_pct = scenario.get('revenue_share_pct', 0.5)  # Default 50/50 split
+    # Revenue Share: If > 0, buyer only gets that percentage of the upside when SPP > VPPA price
+    revenue_share_pct = scenario.get('revenue_share_pct', 100) / 100.0  # Convert from percentage to decimal
     
-    if revenue_share:
+    if revenue_share_pct < 1.0:
         # When SPP > VPPA: Settlement = (SPP - VPPA) * share_pct (buyer gets only their share of upside)
         # When SPP <= VPPA: Settlement = SPP - VPPA (full downside, no sharing)
         upside = np.maximum(df_hub['SPP'] - vppa_price, 0)  # Positive when SPP > VPPA
@@ -934,12 +933,15 @@ else:
         s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
         s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
         
-        # Revenue Share Option (50/50 upside split)
-        s_revenue_share = st.checkbox(
-            "50/50 Revenue Share (when SPP > PPA)", 
-            value=False, 
-            help="If enabled, when the settlement price exceeds the PPA price, the upside is split 50/50 between buyer and seller.",
-            key="sb_revenue_share"
+        # Revenue Share Option (configurable upside split)
+        s_revenue_share_pct = st.number_input(
+            "Buyer's Upside Share % (when SPP > PPA)", 
+            min_value=0, 
+            max_value=100, 
+            value=100, 
+            step=5,
+            help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA (buyer keeps all upside). 50% = 50/50 split with seller.",
+            key="sb_revenue_share_pct"
         )
         
         # Curtailment Option
@@ -1013,8 +1015,8 @@ else:
                                 if s_no_curtailment:
                                     name += " [No Curtailment]"
                                 
-                                if s_revenue_share:
-                                    name += " [50/50 Share]"
+                                if s_revenue_share_pct < 100:
+                                    name += f" [{s_revenue_share_pct}% Share]"
                                 
                                 if s_force_tmy:
                                     name += " [TMY]"
@@ -1037,7 +1039,7 @@ else:
                                         "capacity_mw": s_capacity,
                                         "vppa_price": s_vppa_price,
                                         "no_curtailment": s_no_curtailment,
-                                        "revenue_share": s_revenue_share,
+                                        "revenue_share_pct": s_revenue_share_pct,
                                         "force_tmy": s_force_tmy,
                                         "custom_lat": s_custom_lat if s_use_custom_location else None,
                                         "custom_lon": s_custom_lon if s_use_custom_location else None,
@@ -1086,8 +1088,8 @@ else:
                                 if s_no_curtailment:
                                     name += " [No Curtailment]"
                                 
-                                if s_revenue_share:
-                                    name += " [50/50 Share]"
+                                if s_revenue_share_pct < 100:
+                                    name += f" [{s_revenue_share_pct}% Share]"
                                 
                                 if s_force_tmy:
                                     name += " [TMY]"
@@ -1107,7 +1109,7 @@ else:
                                     "capacity_mw": s_capacity,
                                     "vppa_price": s_vppa_price,
                                     "no_curtailment": s_no_curtailment,
-                                    "revenue_share": s_revenue_share,
+                                    "revenue_share_pct": s_revenue_share_pct,
                                     "force_tmy": s_force_tmy,
                                     "custom_lat": s_custom_lat if s_use_custom_location else None,
                                     "custom_lon": s_custom_lon if s_use_custom_location else None,
