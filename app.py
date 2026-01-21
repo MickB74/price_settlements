@@ -411,7 +411,19 @@ def calculate_scenario(scenario, df_rtm):
     # Settlement
     vppa_price = scenario.get('vppa_price', scenario.get('strike_price', 50.0))
     df_hub['VPPA_Price'] = vppa_price
-    df_hub['Settlement_Price'] = df_hub['SPP'] - vppa_price
+    
+    # Revenue Share: If enabled, buyer only gets 50% of the upside when SPP > VPPA price
+    revenue_share = scenario.get('revenue_share', False)
+    revenue_share_pct = scenario.get('revenue_share_pct', 0.5)  # Default 50/50 split
+    
+    if revenue_share:
+        # When SPP > VPPA: Settlement = (SPP - VPPA) * share_pct (buyer gets only their share of upside)
+        # When SPP <= VPPA: Settlement = SPP - VPPA (full downside, no sharing)
+        upside = np.maximum(df_hub['SPP'] - vppa_price, 0)  # Positive when SPP > VPPA
+        downside = np.minimum(df_hub['SPP'] - vppa_price, 0)  # Negative when SPP < VPPA
+        df_hub['Settlement_Price'] = (upside * revenue_share_pct) + downside
+    else:
+        df_hub['Settlement_Price'] = df_hub['SPP'] - vppa_price
     
     # Curtailment
     if scenario.get('no_curtailment'):
@@ -922,6 +934,14 @@ else:
         s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
         s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
         
+        # Revenue Share Option (50/50 upside split)
+        s_revenue_share = st.checkbox(
+            "50/50 Revenue Share (when SPP > PPA)", 
+            value=False, 
+            help="If enabled, when the settlement price exceeds the PPA price, the upside is split 50/50 between buyer and seller.",
+            key="sb_revenue_share"
+        )
+        
         # Curtailment Option
         s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
 
@@ -993,6 +1013,9 @@ else:
                                 if s_no_curtailment:
                                     name += " [No Curtailment]"
                                 
+                                if s_revenue_share:
+                                    name += " [50/50 Share]"
+                                
                                 if s_force_tmy:
                                     name += " [TMY]"
                                 
@@ -1014,6 +1037,7 @@ else:
                                         "capacity_mw": s_capacity,
                                         "vppa_price": s_vppa_price,
                                         "no_curtailment": s_no_curtailment,
+                                        "revenue_share": s_revenue_share,
                                         "force_tmy": s_force_tmy,
                                         "custom_lat": s_custom_lat if s_use_custom_location else None,
                                         "custom_lon": s_custom_lon if s_use_custom_location else None,
@@ -1062,6 +1086,9 @@ else:
                                 if s_no_curtailment:
                                     name += " [No Curtailment]"
                                 
+                                if s_revenue_share:
+                                    name += " [50/50 Share]"
+                                
                                 if s_force_tmy:
                                     name += " [TMY]"
                                 
@@ -1080,6 +1107,7 @@ else:
                                     "capacity_mw": s_capacity,
                                     "vppa_price": s_vppa_price,
                                     "no_curtailment": s_no_curtailment,
+                                    "revenue_share": s_revenue_share,
                                     "force_tmy": s_force_tmy,
                                     "custom_lat": s_custom_lat if s_use_custom_location else None,
                                     "custom_lon": s_custom_lon if s_use_custom_location else None,
