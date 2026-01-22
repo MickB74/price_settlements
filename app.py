@@ -1655,6 +1655,20 @@ with tab_validation:
                 help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA, 50% = 50/50 split.",
                 key="val_revenue_share"
             )
+    
+    # Custom Location Option
+    val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
+    
+    val_custom_lat = None
+    val_custom_lon = None
+    if val_use_custom_location:
+        st.caption("💡 Enter your project's exact coordinates")
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            val_custom_lat = st.number_input("Latitude", min_value=25.5, max_value=36.5, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
+        with col_lon:
+            val_custom_lon = st.number_input("Longitude", min_value=-106.5, max_value=-93.5, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
+        st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
 
     # --- File Uploader ---
     uploaded_bill = st.file_uploader(
