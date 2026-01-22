@@ -661,443 +661,277 @@ def reset_defaults():
 st.sidebar.header("Scenario Builder")
 
 
-# Mode Selection (outside form)
-mode = st.sidebar.radio("Mode", ["Solar/Wind (Batch)", "Custom Upload"], index=0)
+# --- Solar/Wind (Batch) Mode ---
+# --- Map Location Picker (outside form) ---
+with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
+    st.caption("Search by name or click on the map")
+    
+    # Location search box
+    search_query = st.text_input("🔍 Search location", placeholder="e.g., Abilene, TX or 79601", key="location_search")
+    
+    if search_query:
+        try:
+            geolocator = Nominatim(user_agent="vppa_estimator")
+            # Append Texas to improve search accuracy
+            if "texas" not in search_query.lower() and "tx" not in search_query.lower():
+                search_with_state = f"{search_query}, Texas, USA"
+            else:
+                search_with_state = f"{search_query}, USA"
+            
+            location = geolocator.geocode(search_with_state, timeout=5)
+            
+            if location:
+                # Clamp to Texas bounds
+                found_lat = max(25.5, min(36.5, location.latitude))
+                found_lon = max(-106.5, min(-93.5, location.longitude))
+                
+                st.session_state.map_lat = found_lat
+                st.session_state.map_lon = found_lon
+                st.session_state.sb_custom_lat = found_lat
+                st.session_state.sb_custom_lon = found_lon
+                # Auto-check the "Use Custom Location" checkbox
+                st.session_state.sb_use_custom_location = True
+                st.success(f"📍 Found: {location.address[:50]}...")
+                st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
+            else:
+                st.warning("Location not found. Try a different name.")
+        except GeocoderTimedOut:
+            st.warning("Search timed out. Try again.")
+        except Exception as e:
+            st.error(f"Search error: {str(e)[:50]}")
+    
+    # Initialize map location from session state or defaults
+    if 'map_lat' not in st.session_state:
+        st.session_state.map_lat = 32.0
+    if 'map_lon' not in st.session_state:
+        st.session_state.map_lon = -100.0
+    
+    # Create map centered on Texas/ERCOT region
+    m = folium.Map(
+        location=[31.0, -100.0],  # Center of Texas
+        zoom_start=6,
+        tiles="OpenStreetMap"
+    )
+    
+    # Add marker for current selected location
+    folium.Marker(
+        [st.session_state.map_lat, st.session_state.map_lon],
+        popup=f"Selected: {st.session_state.map_lat:.4f}, {st.session_state.map_lon:.4f}",
+        icon=folium.Icon(color='red', icon='info-sign')
+    ).add_to(m)
+    
+    # Add ERCOT hub markers for reference
+    hub_locations = {
+        "HB_NORTH": (32.3865, -96.8475),
+        "HB_SOUTH": (26.9070, -99.2715),
+        "HB_WEST": (32.4518, -100.5371),
+        "HB_HOUSTON": (29.3013, -94.7977),
+        "HB_PAN": (35.2220, -101.8313),
+    }
+    for hub, (lat, lon) in hub_locations.items():
+        folium.CircleMarker(
+            [lat, lon],
+            radius=8,
+            popup=hub,
+            color='blue',
+            fill=True,
+            fillOpacity=0.6
+        ).add_to(m)
+    
+    # Display map and capture clicks
+    map_data = st_folium(m, height=300, width=280, returned_objects=["last_clicked"])
+    
+    if map_data and map_data.get("last_clicked"):
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lon = map_data["last_clicked"]["lng"]
+        # Clamp to Texas bounds to prevent errors in form inputs
+        clicked_lat = max(25.5, min(36.5, clicked_lat))
+        clicked_lon = max(-106.5, min(-93.5, clicked_lon))
+        st.session_state.map_lat = clicked_lat
+        st.session_state.map_lon = clicked_lon
+        # Also sync to form input keys so they update
+        st.session_state.sb_custom_lat = clicked_lat
+        st.session_state.sb_custom_lon = clicked_lon
+        # Auto-check the "Use Custom Location" checkbox
+        st.session_state.sb_use_custom_location = True
+        
+        # Calculate nearest hub on click and auto-select it
+        def calc_dist(lat1, lon1, lat2, lon2):
+            return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+        click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
+        nearest = min(click_distances, key=click_distances.get)
+        st.session_state.sb_hubs = [nearest]
+        
+        st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
+    
+    # Calculate and suggest nearest hub
+    def calc_distance(lat1, lon1, lat2, lon2):
+        """Simple Euclidean distance (good enough for nearby points)"""
+        return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+    
+    current_lat = st.session_state.get('map_lat', 32.0)
+    current_lon = st.session_state.get('map_lon', -100.0)
+    
+    distances = {}
+    for hub_name, (hub_lat, hub_lon) in hub_locations.items():
+        distances[hub_name] = calc_distance(current_lat, current_lon, hub_lat, hub_lon)
+    
+    nearest_hub = min(distances, key=distances.get)
+    nearest_dist_miles = distances[nearest_hub] * 69  # Rough lat/lon to miles
+    
+    st.info(f"💡 **Suggested Hub:** {nearest_hub} (~{nearest_dist_miles:.0f} mi)")
+    
+    # Store suggested hub in session state for form to use
+    st.session_state.suggested_hub = nearest_hub
+    
+    st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
 
-if mode == "Custom Upload":
-    # --- Custom Upload Section (No Form) ---
-    st.sidebar.subheader("Custom Upload")
-    st.sidebar.markdown("*Upload a file to auto-create scenario*")
+# --- Solar/Wind Batch Form ---
+with st.sidebar.form("add_scenario_form"):
+    st.subheader("Add Scenarios")
     
     available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
     common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
     
-    # Add "All Years" option to the dropdown
-    year_options = ["All Years"] + available_years
-    custom_year_selection = st.sidebar.selectbox("Year", year_options, index=0)
+    s_techs = st.multiselect("Generation Source", ["Solar", "Wind"], default=["Solar"], key="sb_techs")
+    if not s_techs:
+        st.warning("Please select at least one technology.")
+
+    st.markdown("*Select multiple years/hubs*")
     
-    # If "All Years" is selected, use all available years; otherwise use the selected year
-    if custom_year_selection == "All Years":
-        custom_years = available_years
-    else:
-        custom_years = [custom_year_selection]
-    custom_hub = st.sidebar.selectbox("Hub", common_hubs, index=0)
-    custom_capacity = st.sidebar.number_input("Capacity (MW)", value=80.0, step=10.0, key="custom_capacity")
-    custom_vppa_price = st.sidebar.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="custom_vppa")
-    custom_no_curtailment = st.sidebar.checkbox("Remove $0 floor (No Curtailment)", key="custom_curtail")
+    # Handle "Select All" logic for Years
+    if "sb_years" not in st.session_state:
+        st.session_state.sb_years = [2025]
+        
+    if "Select All" in st.session_state.sb_years:
+        st.session_state.sb_years = available_years
+        st.rerun()
+
+    s_years = st.multiselect("Years", ["Select All"] + available_years, key="sb_years")
+    if not s_years:
+        st.warning("Please select at least one year.")
     
-    st.sidebar.info("Upload a CSV file with your generation profile.")
-    with st.sidebar.expander("File Format Guidance"):
-        st.markdown("""
-        **Required Format:** CSV file
-        
-        **Columns:**
-        - `Gen_MW` (Required): Generation in MW.
-        - `Time` (Optional): Datetime column.
-        
-        **Notes:**
-        - If `Time` is missing, we assume data starts Jan 1st of the selected year.
-        - **Hourly Data**: 8,760 rows (regular year) or 8,784 rows (leap year)
-        - **15-Minute Data**: 35,040 rows (regular year) or 35,136 rows (leap year)
-        """)
+    # Use suggested hub from map if available, otherwise default to HB_NORTH
+    default_hub = st.session_state.get('suggested_hub', 'HB_NORTH')
+    if default_hub not in common_hubs:
+        default_hub = 'HB_NORTH'
     
-    uploaded_file = st.sidebar.file_uploader("Upload Profile (CSV)", type=["csv"], key="custom_uploader")
+    s_hubs = st.multiselect("Hubs", common_hubs, default=[default_hub], key="sb_hubs")
+    if not s_hubs:
+        st.warning("Please select at least one hub.")
     
-    # Auto-process on upload
-    if uploaded_file is not None:
-        import os
+    # Duration Selection
+    use_specific_month = st.checkbox("Filter by specific month", key="sb_use_specific_month")
+    s_duration = "Specific Month" if use_specific_month else "Full Year"
+    
+    s_months = None
+    if use_specific_month:
+        all_months = [
+            "January", "February", "March", "April", "May", "June", 
+            "July", "August", "September", "October", "November", "December"
+        ]
+        s_months = st.multiselect("Months", all_months, default=["January"], key="sb_months")
+        if not s_months:
+            st.warning("Please select at least one month.")
+    
+    s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
+    s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
+    
+    # Revenue Share Option (configurable upside split)
+    s_revenue_share_pct = st.number_input(
+        "Buyer's Upside Share % (when SPP > PPA)", 
+        min_value=0, 
+        max_value=100, 
+        value=100, 
+        step=5,
+        help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA (buyer keeps all upside). 50% = 50/50 split with seller.",
+        key="sb_revenue_share_pct"
+    )
+    
+    # Curtailment Option
+    s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
+
+    # TMY Override
+    s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
+    
+    # Custom Location Override
+    s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Use map picker above or enter coordinates. Overrides hub defaults.", key="sb_use_custom_location")
+    
+    s_custom_lat = None
+    s_custom_lon = None
+    if s_use_custom_location:
+        # Initialize session state for inputs if not set (avoid value= conflict)
+        if 'sb_custom_lat' not in st.session_state:
+            st.session_state.sb_custom_lat = st.session_state.get('map_lat', 32.0)
+        if 'sb_custom_lon' not in st.session_state:
+            st.session_state.sb_custom_lon = st.session_state.get('map_lon', -100.0)
         
-        # Ensure directory exists
-        upload_dir = "user_uploads"
-        if not os.path.exists(upload_dir):
-            os.makedirs(upload_dir)
-            
-        # Save file with unique name
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_filename = "".join(x for x in uploaded_file.name if x.isalnum() or x in "._- ")
-        save_path = os.path.join(upload_dir, f"{timestamp}_{safe_filename}")
-        
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        # Create scenario name
-        hub_map = {
-            "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
-        }
-        friendly_hub = hub_map.get(custom_hub, custom_hub)
-        
-        # Create scenarios for all selected years
-        added_count = 0
-        for custom_year in custom_years:
-            year_label = "All Years" if custom_year_selection == "All Years" else str(custom_year)
-            name = f"{custom_year} Custom in {friendly_hub} ({int(custom_capacity)}MW)"
-            if custom_no_curtailment:
-                name += " [No Curtailment]"
-            
-            # Check for duplicates
-            if not any(s['name'] == name for s in st.session_state.scenarios):
-                new_scenario = {
-                    "id": datetime.now().isoformat() + f"_{added_count}",
-                    "name": name,
-                    "year": custom_year,
-                    "hub": custom_hub,
-                    "tech": "Custom Upload",
-                    "duration": "Full Year",
-                    "month": None,
-                    "capacity_mw": custom_capacity,
-                    "vppa_price": custom_vppa_price,
-                    "no_curtailment": custom_no_curtailment,
-                    "custom_profile_path": save_path
-                }
-                st.session_state.scenarios.append(new_scenario)
-                added_count += 1
-        
-        if added_count > 0:
-            st.sidebar.success(f"✅ Added {added_count} scenario(s)")
+        st.caption("💡 Use map picker above to click-select location")
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            s_custom_lat = st.number_input("Latitude", min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
+        with col_lon:
+            s_custom_lon = st.number_input("Longitude", min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
+    
+    st.markdown("---")
+    
+    # Two buttons: Add (append) vs Clear & Run (reset)
+    # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
+    # Button Layout: 
+    # Row 1: Add (Primary Action)
+    add_button = st.form_submit_button("➕ Add Scenarios", type="primary", use_container_width=True)
+    
+    # Row 2: Secondary Actions
+    col_clear, col_reset = st.columns(2)
+    with col_clear:
+        clear_run_button = st.form_submit_button("🏃 Run", type="secondary", use_container_width=True)
+    with col_reset:
+        reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
+    
+    # Handle Add Scenarios (append mode)
+    if add_button:
+        if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
+            st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
         else:
-            st.sidebar.warning("⚠️ Scenario(s) already exist")
-
-else:
-    # --- Map Location Picker (outside form) ---
-    with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
-        st.caption("Search by name or click on the map")
-        
-        # Location search box
-        search_query = st.text_input("🔍 Search location", placeholder="e.g., Abilene, TX or 79601", key="location_search")
-        
-        if search_query:
-            try:
-                geolocator = Nominatim(user_agent="vppa_estimator")
-                # Append Texas to improve search accuracy
-                if "texas" not in search_query.lower() and "tx" not in search_query.lower():
-                    search_with_state = f"{search_query}, Texas, USA"
-                else:
-                    search_with_state = f"{search_query}, USA"
-                
-                location = geolocator.geocode(search_with_state, timeout=5)
-                
-                if location:
-                    # Clamp to Texas bounds
-                    found_lat = max(25.5, min(36.5, location.latitude))
-                    found_lon = max(-106.5, min(-93.5, location.longitude))
-                    
-                    st.session_state.map_lat = found_lat
-                    st.session_state.map_lon = found_lon
-                    st.session_state.sb_custom_lat = found_lat
-                    st.session_state.sb_custom_lon = found_lon
-                    # Auto-check the "Use Custom Location" checkbox
-                    st.session_state.sb_use_custom_location = True
-                    st.success(f"📍 Found: {location.address[:50]}...")
-                    st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
-                else:
-                    st.warning("Location not found. Try a different name.")
-            except GeocoderTimedOut:
-                st.warning("Search timed out. Try again.")
-            except Exception as e:
-                st.error(f"Search error: {str(e)[:50]}")
-        
-        # Initialize map location from session state or defaults
-        if 'map_lat' not in st.session_state:
-            st.session_state.map_lat = 32.0
-        if 'map_lon' not in st.session_state:
-            st.session_state.map_lon = -100.0
-        
-        # Create map centered on Texas/ERCOT region
-        m = folium.Map(
-            location=[31.0, -100.0],  # Center of Texas
-            zoom_start=6,
-            tiles="OpenStreetMap"
-        )
-        
-        # Add marker for current selected location
-        folium.Marker(
-            [st.session_state.map_lat, st.session_state.map_lon],
-            popup=f"Selected: {st.session_state.map_lat:.4f}, {st.session_state.map_lon:.4f}",
-            icon=folium.Icon(color='red', icon='info-sign')
-        ).add_to(m)
-        
-        # Add ERCOT hub markers for reference
-        hub_locations = {
-            "HB_NORTH": (32.3865, -96.8475),
-            "HB_SOUTH": (26.9070, -99.2715),
-            "HB_WEST": (32.4518, -100.5371),
-            "HB_HOUSTON": (29.3013, -94.7977),
-            "HB_PAN": (35.2220, -101.8313),
-        }
-        for hub, (lat, lon) in hub_locations.items():
-            folium.CircleMarker(
-                [lat, lon],
-                radius=8,
-                popup=hub,
-                color='blue',
-                fill=True,
-                fillOpacity=0.6
-            ).add_to(m)
-        
-        # Display map and capture clicks
-        map_data = st_folium(m, height=300, width=280, returned_objects=["last_clicked"])
-        
-        if map_data and map_data.get("last_clicked"):
-            clicked_lat = map_data["last_clicked"]["lat"]
-            clicked_lon = map_data["last_clicked"]["lng"]
-            # Clamp to Texas bounds to prevent errors in form inputs
-            clicked_lat = max(25.5, min(36.5, clicked_lat))
-            clicked_lon = max(-106.5, min(-93.5, clicked_lon))
-            st.session_state.map_lat = clicked_lat
-            st.session_state.map_lon = clicked_lon
-            # Also sync to form input keys so they update
-            st.session_state.sb_custom_lat = clicked_lat
-            st.session_state.sb_custom_lon = clicked_lon
-            # Auto-check the "Use Custom Location" checkbox
-            st.session_state.sb_use_custom_location = True
+            # Helper for friendly names
+            hub_map = {
+                "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
+            }
             
-            # Calculate nearest hub on click and auto-select it
-            def calc_dist(lat1, lon1, lat2, lon2):
-                return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
-            click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
-            nearest = min(click_distances, key=click_distances.get)
-            st.session_state.sb_hubs = [nearest]
+            added_count = 0
             
-            st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
-        
-        # Calculate and suggest nearest hub
-        def calc_distance(lat1, lon1, lat2, lon2):
-            """Simple Euclidean distance (good enough for nearby points)"""
-            return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
-        
-        current_lat = st.session_state.get('map_lat', 32.0)
-        current_lon = st.session_state.get('map_lon', -100.0)
-        
-        distances = {}
-        for hub_name, (hub_lat, hub_lon) in hub_locations.items():
-            distances[hub_name] = calc_distance(current_lat, current_lon, hub_lat, hub_lon)
-        
-        nearest_hub = min(distances, key=distances.get)
-        nearest_dist_miles = distances[nearest_hub] * 69  # Rough lat/lon to miles
-        
-        st.info(f"💡 **Suggested Hub:** {nearest_hub} (~{nearest_dist_miles:.0f} mi)")
-        
-        # Store suggested hub in session state for form to use
-        st.session_state.suggested_hub = nearest_hub
-        
-        st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
-    
-    # --- Solar/Wind Batch Form ---
-    with st.sidebar.form("add_scenario_form"):
-        st.subheader("Add Scenarios")
-        
-        available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
-        common_hubs = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"]
-        
-        s_techs = st.multiselect("Generation Source", ["Solar", "Wind"], default=["Solar"], key="sb_techs")
-        if not s_techs:
-            st.warning("Please select at least one technology.")
-
-        st.markdown("*Select multiple years/hubs*")
-        
-        # Handle "Select All" logic for Years
-        if "sb_years" not in st.session_state:
-            st.session_state.sb_years = [2025]
-            
-        if "Select All" in st.session_state.sb_years:
-            st.session_state.sb_years = available_years
-            st.rerun()
-
-        s_years = st.multiselect("Years", ["Select All"] + available_years, key="sb_years")
-        if not s_years:
-            st.warning("Please select at least one year.")
-        
-        # Use suggested hub from map if available, otherwise default to HB_NORTH
-        default_hub = st.session_state.get('suggested_hub', 'HB_NORTH')
-        if default_hub not in common_hubs:
-            default_hub = 'HB_NORTH'
-        
-        s_hubs = st.multiselect("Hubs", common_hubs, default=[default_hub], key="sb_hubs")
-        if not s_hubs:
-            st.warning("Please select at least one hub.")
-        
-        # Duration Selection
-        use_specific_month = st.checkbox("Filter by specific month", key="sb_use_specific_month")
-        s_duration = "Specific Month" if use_specific_month else "Full Year"
-        
-        s_months = None
-        if use_specific_month:
-            all_months = [
-                "January", "February", "March", "April", "May", "June", 
-                "July", "August", "September", "October", "November", "December"
-            ]
-            s_months = st.multiselect("Months", all_months, default=["January"], key="sb_months")
-            if not s_months:
-                st.warning("Please select at least one month.")
-        
-        s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
-        s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
-        
-        # Revenue Share Option (configurable upside split)
-        s_revenue_share_pct = st.number_input(
-            "Buyer's Upside Share % (when SPP > PPA)", 
-            min_value=0, 
-            max_value=100, 
-            value=100, 
-            step=5,
-            help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA (buyer keeps all upside). 50% = 50/50 split with seller.",
-            key="sb_revenue_share_pct"
-        )
-        
-        # Curtailment Option
-        s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
-
-        # TMY Override
-        s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
-        
-        # Custom Location Override
-        s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Use map picker above or enter coordinates. Overrides hub defaults.", key="sb_use_custom_location")
-        
-        s_custom_lat = None
-        s_custom_lon = None
-        if s_use_custom_location:
-            # Initialize session state for inputs if not set (avoid value= conflict)
-            if 'sb_custom_lat' not in st.session_state:
-                st.session_state.sb_custom_lat = st.session_state.get('map_lat', 32.0)
-            if 'sb_custom_lon' not in st.session_state:
-                st.session_state.sb_custom_lon = st.session_state.get('map_lon', -100.0)
-            
-            st.caption("💡 Use map picker above to click-select location")
-            col_lat, col_lon = st.columns(2)
-            with col_lat:
-                s_custom_lat = st.number_input("Latitude", min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
-            with col_lon:
-                s_custom_lon = st.number_input("Longitude", min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
-        
-        st.markdown("---")
-        
-        # Two buttons: Add (append) vs Clear & Run (reset)
-        # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
-        # Button Layout: 
-        # Row 1: Add (Primary Action)
-        add_button = st.form_submit_button("➕ Add Scenarios", type="primary", use_container_width=True)
-        
-        # Row 2: Secondary Actions
-        col_clear, col_reset = st.columns(2)
-        with col_clear:
-            clear_run_button = st.form_submit_button("🏃 Run", type="secondary", use_container_width=True)
-        with col_reset:
-            reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
-        
-        # Handle Add Scenarios (append mode)
-        if add_button:
-            if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
-                st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
-            else:
-                # Helper for friendly names
-                hub_map = {
-                    "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
-                }
-                
-                added_count = 0
-                
-                # Iterate through all combinations
-                for year in s_years:
-                    for hub in s_hubs:
-                        for tech in s_techs:
-                            friendly_hub = hub_map.get(hub, hub)
+            # Iterate through all combinations
+            for year in s_years:
+                for hub in s_hubs:
+                    for tech in s_techs:
+                        friendly_hub = hub_map.get(hub, hub)
+                        
+                        # Define list of monthly iterations
+                        month_iterator = s_months if use_specific_month else [None]
+                        
+                        for month in month_iterator:
+                            # Construct Name
+                            if use_specific_month:
+                                name = f"{month} {year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                            else:
+                                name = f"{year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
                             
-                            # Define list of monthly iterations
-                            month_iterator = s_months if use_specific_month else [None]
+                            if s_no_curtailment:
+                                name += " [No Curtailment]"
                             
-                            for month in month_iterator:
-                                # Construct Name
-                                if use_specific_month:
-                                    name = f"{month} {year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
-                                else:
-                                    name = f"{year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
-                                
-                                if s_no_curtailment:
-                                    name += " [No Curtailment]"
-                                
-                                if s_revenue_share_pct < 100:
-                                    name += f" [{s_revenue_share_pct}% Share]"
-                                
-                                if s_force_tmy:
-                                    name += " [TMY]"
-                                
-                                if s_use_custom_location and s_custom_lat is not None:
-                                    name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
-                                    
-                                # Check for duplicates
-                                if any(s['name'] == name for s in st.session_state.scenarios):
-                                    continue 
-                                else:
-                                    new_scenario = {
-                                        "id": datetime.now().isoformat() + f"_{added_count}",
-                                        "name": name,
-                                        "year": year,
-                                        "hub": hub,
-                                        "tech": tech,
-                                        "duration": s_duration,
-                                        "month": month,
-                                        "capacity_mw": s_capacity,
-                                        "vppa_price": s_vppa_price,
-                                        "no_curtailment": s_no_curtailment,
-                                        "revenue_share_pct": s_revenue_share_pct,
-                                        "force_tmy": s_force_tmy,
-                                        "custom_lat": s_custom_lat if s_use_custom_location else None,
-                                        "custom_lon": s_custom_lon if s_use_custom_location else None,
-                                        "custom_profile_path": None
-                                }
-                                st.session_state.scenarios.append(new_scenario)
-                                added_count += 1
-                
-                if added_count > 0:
-                    st.success(f"Added {added_count} scenarios!")
-                    st.rerun()
-                else:
-                    st.warning("No new scenarios added (duplicates or empty selection).")
-        
-        # Handle Clear & Run (reset mode)
-        if clear_run_button:
-            # Clear existing scenarios FIRST
-            st.session_state.scenarios = []
-            
-            if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
-                st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
-            else:
-                # Helper for friendly names
-                hub_map = {
-                    "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
-                }
-                
-                added_count = 0
-                
-                # Iterate through all combinations
-                for year in s_years:
-                    for hub in s_hubs:
-                        for tech in s_techs:
-                            friendly_hub = hub_map.get(hub, hub)
+                            if s_revenue_share_pct < 100:
+                                name += f" [{s_revenue_share_pct}% Share]"
                             
-                            # Define list of monthly iterations
-                            month_iterator = s_months if use_specific_month else [None]
+                            if s_force_tmy:
+                                name += " [TMY]"
                             
-                            for month in month_iterator:
-                                # Construct Name
-                                if use_specific_month:
-                                    name = f"{month} {year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
-                                else:
-                                    name = f"{year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                            if s_use_custom_location and s_custom_lat is not None:
+                                name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
                                 
-                                if s_no_curtailment:
-                                    name += " [No Curtailment]"
-                                
-                                if s_revenue_share_pct < 100:
-                                    name += f" [{s_revenue_share_pct}% Share]"
-                                
-                                if s_force_tmy:
-                                    name += " [TMY]"
-                                
-                                if s_use_custom_location and s_custom_lat is not None:
-                                    name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
-                                    
-                                # No need to check duplicates since we cleared the list
+                            # Check for duplicates
+                            if any(s['name'] == name for s in st.session_state.scenarios):
+                                continue 
+                            else:
                                 new_scenario = {
                                     "id": datetime.now().isoformat() + f"_{added_count}",
                                     "name": name,
@@ -1117,16 +951,86 @@ else:
                             }
                             st.session_state.scenarios.append(new_scenario)
                             added_count += 1
-                
-                if added_count > 0:
-                    st.success(f"Generated {added_count} scenarios!")
-                    st.rerun()
-                else:
-                    st.warning("No scenarios created.")
+            
+            if added_count > 0:
+                st.success(f"Added {added_count} scenarios!")
+                st.rerun()
+            else:
+                st.warning("No new scenarios added (duplicates or empty selection).")
+    
+    # Handle Clear & Run (reset mode)
+    if clear_run_button:
+        # Clear existing scenarios FIRST
+        st.session_state.scenarios = []
         
-        if reset_all_button:
-            # Logic handled in callback
-            st.rerun()
+        if not s_years or not s_hubs or not s_techs or (use_specific_month and not s_months):
+            st.error("Please ensure Years, Hubs, Types, and Months (if applicable) are selected.")
+        else:
+            # Helper for friendly names
+            hub_map = {
+                "HB_NORTH": "North Hub", "HB_SOUTH": "South Hub", "HB_WEST": "West Hub", "HB_HOUSTON": "Houston Hub"
+            }
+            
+            added_count = 0
+            
+            # Iterate through all combinations
+            for year in s_years:
+                for hub in s_hubs:
+                    for tech in s_techs:
+                        friendly_hub = hub_map.get(hub, hub)
+                        
+                        # Define list of monthly iterations
+                        month_iterator = s_months if use_specific_month else [None]
+                        
+                        for month in month_iterator:
+                            # Construct Name
+                            if use_specific_month:
+                                name = f"{month} {year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                            else:
+                                name = f"{year} {tech} in {friendly_hub} ({int(s_capacity)}MW)"
+                            
+                            if s_no_curtailment:
+                                name += " [No Curtailment]"
+                            
+                            if s_revenue_share_pct < 100:
+                                name += f" [{s_revenue_share_pct}% Share]"
+                            
+                            if s_force_tmy:
+                                name += " [TMY]"
+                            
+                            if s_use_custom_location and s_custom_lat is not None:
+                                name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
+                                
+                            # No need to check duplicates since we cleared the list
+                            new_scenario = {
+                                "id": datetime.now().isoformat() + f"_{added_count}",
+                                "name": name,
+                                "year": year,
+                                "hub": hub,
+                                "tech": tech,
+                                "duration": s_duration,
+                                "month": month,
+                                "capacity_mw": s_capacity,
+                                "vppa_price": s_vppa_price,
+                                "no_curtailment": s_no_curtailment,
+                                "revenue_share_pct": s_revenue_share_pct,
+                                "force_tmy": s_force_tmy,
+                                "custom_lat": s_custom_lat if s_use_custom_location else None,
+                                "custom_lon": s_custom_lon if s_use_custom_location else None,
+                                "custom_profile_path": None
+                        }
+                        st.session_state.scenarios.append(new_scenario)
+                        added_count += 1
+            
+            if added_count > 0:
+                st.success(f"Generated {added_count} scenarios!")
+                st.rerun()
+            else:
+                st.warning("No scenarios created.")
+    
+    if reset_all_button:
+        # Logic handled in callback
+        st.rerun()
 
 # Manage Scenarios
 if st.session_state.scenarios:
