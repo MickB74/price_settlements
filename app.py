@@ -38,7 +38,11 @@ st.markdown("""
 st.title("VPPA Settlement Estimator")
 st.markdown("Compare multiple Virtual Power Purchase Agreement (VPPA) scenarios in ERCOT.")
 
-# ... (Previous code)
+# --- State Management ---
+if 'scenarios' not in st.session_state:
+    st.session_state.scenarios = []
+
+
 
 # Create Tabs
 tab_scenarios, tab_validation = st.tabs(["Scenario Analysis", "Bill Validation"])
@@ -232,9 +236,6 @@ with tab_scenarios:
     # ... (Rest of the main content will be processed in subsequent steps)
 
 
-# --- State Management ---
-if 'scenarios' not in st.session_state:
-    st.session_state.scenarios = []
 
 # --- Data Fetching ---
 # --- Data Fetching ---
