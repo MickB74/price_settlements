@@ -868,23 +868,17 @@ with st.sidebar.form("add_scenario_form"):
     s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
     
     # Custom Location Override
-    s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Use map picker above or enter coordinates. Overrides hub defaults.", key="sb_use_custom_location")
+    s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Enter coordinates to override hub defaults.", key="sb_use_custom_location")
     
     s_custom_lat = None
     s_custom_lon = None
     if s_use_custom_location:
-        # Initialize session state for inputs if not set (avoid value= conflict)
-        if 'sb_custom_lat' not in st.session_state:
-            st.session_state.sb_custom_lat = st.session_state.get('map_lat', 32.0)
-        if 'sb_custom_lon' not in st.session_state:
-            st.session_state.sb_custom_lon = st.session_state.get('map_lon', -100.0)
-        
-        st.caption("💡 Use map picker above to click-select location")
+        st.caption("💡 Enter your project's coordinates (or use map picker above)")
         col_lat, col_lon = st.columns(2)
         with col_lat:
-            s_custom_lat = st.number_input("Latitude", min_value=25.5, max_value=36.5, step=0.01, format="%.4f", key="sb_custom_lat")
+            s_custom_lat = st.number_input("Latitude", min_value=25.5, max_value=36.5, value=32.0, step=0.01, format="%.4f", key="sb_custom_lat")
         with col_lon:
-            s_custom_lon = st.number_input("Longitude", min_value=-106.5, max_value=-93.5, step=0.01, format="%.4f", key="sb_custom_lon")
+            s_custom_lon = st.number_input("Longitude", min_value=-106.5, max_value=-93.5, value=-100.0, step=0.01, format="%.4f", key="sb_custom_lon")
     
     st.markdown("---")
     
