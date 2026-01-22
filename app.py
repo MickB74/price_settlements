@@ -713,11 +713,17 @@ with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
         except Exception as e:
             st.error(f"Search error: {str(e)[:50]}")
     
+    
     # Initialize map location from session state or defaults
     if 'map_lat' not in st.session_state:
         st.session_state.map_lat = 32.0
     if 'map_lon' not in st.session_state:
         st.session_state.map_lon = -100.0
+    
+    # Sync map with custom location inputs if manually entered
+    if 'sb_custom_lat' in st.session_state and 'sb_custom_lon' in st.session_state:
+        st.session_state.map_lat = st.session_state.sb_custom_lat
+        st.session_state.map_lon = st.session_state.sb_custom_lon
     
     # Create map centered on Texas/ERCOT region
     m = folium.Map(
