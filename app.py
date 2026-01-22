@@ -1722,99 +1722,214 @@ with tab_validation:
                 if 'User_Settlement_Amount' in df_bill.columns:
                     df_bill['User_Settlement_Amount'] = pd.to_numeric(df_bill['User_Settlement_Amount'], errors='coerce')
                 
-                # 3. Fetch Market Data
-                df_market = get_ercot_data(val_year)
+                # Detect if this is monthly summary data vs interval data
+                # Monthly summary typically has <= 12 rows (one per month)
+                is_monthly_summary = len(df_bill) <= 24 and 'User_Settlement_Amount' in df_bill.columns
                 
-                if df_market.empty:
-                    st.error(f"Could not find market data for {val_year}.")
-                else:
-                    # Filter for selected Hub
-                    df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                if is_monthly_summary:
+                    st.info("📊 Detected monthly summary data. Calculating expected totals from interval-level market data...")
                     
-                    # 4. Merge Data
-                    # Ensure timezone alignment - Market data is in UTC (Time) and Central (Time_Central)
-                    # We'll match on UTC 'Time' for safety if user provided UTC, or convert user to UTC if naive
+                    # 3. Fetch Market Data for the entire year
+                    df_market = get_ercot_data(val_year)
                     
-                    # Handle User Timezone
-                    if df_bill['Time'].dt.tz is None:
-                        st.warning("⚠️ User timestamp is timezone-naive. Assuming UTC.")
-                        df_bill['Time'] = df_bill['Time'].dt.tz_localize('UTC')
+                    if df_market.empty:
+                        st.error(f"Could not find market data for {val_year}.")
                     else:
-                        df_bill['Time'] = df_bill['Time'].dt.tz_convert('UTC')
-                    
-                    # Merge on Time (tolerance?)
-                    # Let's use merge_asof if indices are sorted, or simple merge
-                    df_bill = df_bill.sort_values('Time')
-                    df_market_hub = df_market_hub.sort_values('Time')
-                    
-                    # Using merge directly (exact match). If 15-min intervals match.
-                    df_merged = pd.merge(df_bill, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
-                    
-                    if df_merged.empty:
-                        st.error("❌ No matching timestamps found between User Data and Market Data. Check your year and timestamp format.")
-                    else:
-                        st.success(f"✅ Successfully matched {len(df_merged):,} intervals.")
+                        # Filter for selected Hub
+                        df_market_hub = df_market[df_market['Location'] == val_hub].copy()
                         
-                        # 5. Calculate Expected Settlement
-                        # Interval hours (assuming 15-min data if mostly consecutive)
-                        # Detect frequency?
-                        time_diff = df_merged['Time'].diff().median()
-                        freq_hours = time_diff.total_seconds() / 3600.0 if pd.notnull(time_diff) else 0.25 # Default 15 min
+                        # Parse user's time column to get months
+                        df_bill['Month'] = pd.to_datetime(df_bill[time_col]).dt.to_period('M')
                         
-                        # Assume data is POWER (MW) -> Energy (MWh) = MW * hours
-                        # If user data is already MWh? Column name might hint, but usually profiles are MW.
-                        # Let's assume MW.
+                        # Calculate expected settlement for the entire year using market data
+                        # We'll need generation profile - use user's total gen and distribute it
+                        # Actually, we just need total MWh per month from user, then calc settlement
                         
-                        df_merged['Calculated_Gen_MWh'] = df_merged['User_Gen_MW'] * freq_hours
-                        df_merged['Strike_Price'] = val_vppa_price
-                        df_merged['Market_Revenue'] = df_merged['Calculated_Gen_MWh'] * df_merged['SPP']
-                        df_merged['Fixed_Revenue'] = df_merged['Calculated_Gen_MWh'] * val_vppa_price
-                        df_merged['Expected_Settlement'] = df_merged['Market_Revenue'] - df_merged['Fixed_Revenue']
+                        st.subheader("Monthly Breakdown")
                         
-                        # 6. Display Results
+                        comparison_data = []
                         
-                        # Metrics
-                        total_gen_mwh = df_merged['Calculated_Gen_MWh'].sum()
-                        total_settlement = df_merged['Expected_Settlement'].sum()
-                        avg_spp = df_merged['SPP'].mean()
+                        for _, row in df_bill.iterrows():
+                            month_period = row['Month']
+                            user_gen_mwh = row['User_Gen_MW']  # Assuming this is MWh total for the month
+                            user_settlement = row.get('User_Settlement_Amount', 0)
+                            
+                            # Filter market data for this month
+                            month_start = month_period.to_timestamp()
+                            month_end = (month_period + 1).to_timestamp()
+                            
+                            df_month = df_market_hub[
+                                (df_market_hub['Time_Central'] >= month_start) & 
+                                (df_market_hub['Time_Central'] < month_end)
+                            ].copy()
+                            
+                            if not df_month.empty:
+                                # Calculate expected settlement
+                                # Settlement = Gen * (Market Price - Strike Price)
+                                # If we have total MWh, we need to distribute it across intervals
+                                # Simpler: use average market price for the month
+                                avg_market_price = df_month['SPP'].mean()
+                                
+                                # Expected settlement
+                                expected_settlement = user_gen_mwh * (avg_market_price - val_vppa_price)
+                                
+                                comparison_data.append({
+                                    'Month': month_period.strftime('%b %Y'),
+                                    'Generation (MWh)': user_gen_mwh,
+                                    'Avg Market Price': f"${avg_market_price:.2f}",
+                                    'Strike Price': f"${val_vppa_price:.2f}",
+                                    'Calculated Settlement': expected_settlement,
+                                    'User Reported': user_settlement,
+                                    'Difference': expected_settlement - user_settlement
+                                })
                         
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("Total Generation", f"{total_gen_mwh:,.0f} MWh")
-                        m2.metric("Calculated Net Settlement", f"${total_settlement:,.2f}")
-                        m3.metric("Avg Hub Price (SPP)", f"${avg_spp:.2f}/MWh")
+                        df_comparison = pd.DataFrame(comparison_data)
                         
-                        # Comparison if User provided settlement
-                        if 'User_Settlement_Amount' in df_merged.columns:
-                            user_total = df_merged['User_Settlement_Amount'].sum()
-                            diff = total_settlement - user_total
-                            st.write(f"**Discrepancy:** ${diff:,.2f} (Calculated - User Uploaded)")
-                            if abs(diff) > 100:
-                                st.warning("Significant discrepancy detected.")
-                            else:
-                                st.success("Matches closely!")
-
-                        # 7. Visualization
-                        st.subheader("Settlement Over Time")
+                        # Display summary
+                        total_calc = df_comparison['Calculated Settlement'].sum()
+                        total_user = df_comparison['User Reported'].sum()
+                        total_diff = total_calc - total_user
                         
-                        # Aggregate to Daily for cleaner chart
-                        df_merged['Date'] = df_merged['Time_Central'].dt.date
-                        daily_df = df_merged.groupby('Date')[['Expected_Settlement', 'Market_Revenue']].sum().reset_index()
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Calculated Total", f"${total_calc:,.2f}")
+                        col2.metric("User Reported Total", f"${total_user:,.2f}")
+                        col3.metric("Difference", f"${total_diff:,.2f}", delta=f"{(total_diff/total_user*100):.1f}%" if total_user != 0 else "N/A")
                         
-                        fig = px.bar(daily_df, x='Date', y='Expected_Settlement', title="Daily Net Settlement")
-                        fig.add_hline(y=0, line_dash="dash", line_color="black")
+                        # Show breakdown
+                        st.dataframe(df_comparison, use_container_width=True)
+                        
+                        # Chart
+                        fig = go.Figure()
+                        fig.add_trace(go.Bar(
+                            x=df_comparison['Month'],
+                            y=df_comparison['Calculated Settlement'],
+                            name='Calculated',
+                            marker_color='lightblue'
+                        ))
+                        fig.add_trace(go.Bar(
+                            x=df_comparison['Month'],
+                            y=df_comparison['User Reported'],
+                            name='User Reported',
+                            marker_color='coral'
+                        ))
+                        fig.update_layout(
+                            title="Monthly Settlement Comparison",
+                            barmode='group',
+                            yaxis_title="Settlement Amount ($)"
+                        )
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        with st.expander("View Detailed Data"):
-                            st.dataframe(df_merged[['Time_Central', 'User_Gen_MW', 'SPP', 'Expected_Settlement']])
+                        # Explanation
+                        with st.expander("📘 How We Calculated"):
+                            st.markdown(f"""
+                            **Calculation Method:**
+                            1. For each month, we used your reported generation (MWh)
+                            2. We calculated the average market price at **{val_hub}** for that month using ERCOT RTM data
+                            3. Settlement = Generation × (Avg Market Price - Strike Price)
                             
-                        # Download Results
-                        csv = df_merged.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="Download Validation Results CSV",
-                            data=csv,
-                            file_name="bill_validation_results.csv",
-                            mime="text/csv",
-                        )
+                            **Formula:**
+                            ```
+                            Monthly Settlement = Generation (MWh) × (Avg SPP - ${val_vppa_price:.2f})
+                            ```
+                            
+                            **Note:** This uses monthly average pricing. For precise validation, interval-level data is recommended.
+                            """)
+                
+                else:
+                    # Original interval-level validation logic
+                    # 3. Fetch Market Data
+                    df_market = get_ercot_data(val_year)
+                
+                    if df_market.empty:
+                        st.error(f"Could not find market data for {val_year}.")
+                    else:
+                        # Filter for selected Hub
+                        df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                        
+                        # 4. Merge Data
+                        # Ensure timezone alignment - Market data is in UTC (Time) and Central (Time_Central)
+                        # We'll match on UTC 'Time' for safety if user provided UTC, or convert user to UTC if naive
+                        
+                        # Handle User Timezone
+                        if df_bill['Time'].dt.tz is None:
+                            st.warning("⚠️ User timestamp is timezone-naive. Assuming UTC.")
+                            df_bill['Time'] = df_bill['Time'].dt.tz_localize('UTC')
+                        else:
+                            df_bill['Time'] = df_bill['Time'].dt.tz_convert('UTC')
+                        
+                        # Merge on Time (tolerance?)
+                        # Let's use merge_asof if indices are sorted, or simple merge
+                        df_bill = df_bill.sort_values('Time')
+                        df_market_hub = df_market_hub.sort_values('Time')
+                        
+                        # Using merge directly (exact match). If 15-min intervals match.
+                        df_merged = pd.merge(df_bill, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
+                        
+                        if df_merged.empty:
+                            st.error("❌ No matching timestamps found between User Data and Market Data. Check your year and timestamp format.")
+                        else:
+                            st.success(f"✅ Successfully matched {len(df_merged):,} intervals.")
+                            
+                            # 5. Calculate Expected Settlement
+                            # Interval hours (assuming 15-min data if mostly consecutive)
+                            # Detect frequency?
+                            time_diff = df_merged['Time'].diff().median()
+                            freq_hours = time_diff.total_seconds() / 3600.0 if pd.notnull(time_diff) else 0.25 # Default 15 min
+                            
+                            # Assume data is POWER (MW) -> Energy (MWh) = MW * hours
+                            # If user data is already MWh? Column name might hint, but usually profiles are MW.
+                            # Let's assume MW.
+                            
+                            df_merged['Calculated_Gen_MWh'] = df_merged['User_Gen_MW'] * freq_hours
+                            df_merged['Strike_Price'] = val_vppa_price
+                            df_merged['Market_Revenue'] = df_merged['Calculated_Gen_MWh'] * df_merged['SPP']
+                            df_merged['Fixed_Revenue'] = df_merged['Calculated_Gen_MWh'] * val_vppa_price
+                            df_merged['Expected_Settlement'] = df_merged['Market_Revenue'] - df_merged['Fixed_Revenue']
+                            
+                            # 6. Display Results
+                            
+                            # Metrics
+                            total_gen_mwh = df_merged['Calculated_Gen_MWh'].sum()
+                            total_settlement = df_merged['Expected_Settlement'].sum()
+                            avg_spp = df_merged['SPP'].mean()
+                            
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric("Total Generation", f"{total_gen_mwh:,.0f} MWh")
+                            m2.metric("Calculated Net Settlement", f"${total_settlement:,.2f}")
+                            m3.metric("Avg Hub Price (SPP)", f"${avg_spp:.2f}/MWh")
+                            
+                            # Comparison if User provided settlement
+                            if 'User_Settlement_Amount' in df_merged.columns:
+                                user_total = df_merged['User_Settlement_Amount'].sum()
+                                diff = total_settlement - user_total
+                                st.write(f"**Discrepancy:** ${diff:,.2f} (Calculated - User Uploaded)")
+                                if abs(diff) > 100:
+                                    st.warning("Significant discrepancy detected.")
+                                else:
+                                    st.success("Matches closely!")
+
+                            # 7. Visualization
+                            st.subheader("Settlement Over Time")
+                            
+                            # Aggregate to Daily for cleaner chart
+                            df_merged['Date'] = df_merged['Time_Central'].dt.date
+                            daily_df = df_merged.groupby('Date')[['Expected_Settlement', 'Market_Revenue']].sum().reset_index()
+                            
+                            fig = px.bar(daily_df, x='Date', y='Expected_Settlement', title="Daily Net Settlement")
+                            fig.add_hline(y=0, line_dash="dash", line_color="black")
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            with st.expander("View Detailed Data"):
+                                st.dataframe(df_merged[['Time_Central', 'User_Gen_MW', 'SPP', 'Expected_Settlement']])
+                                
+                            # Download Results
+                            csv = df_merged.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="Download Validation Results CSV",
+                                data=csv,
+                                file_name="bill_validation_results.csv",
+                                mime="text/csv",
+                            )
 
         except Exception as e:
             st.error(f"Error processing file: {e}")
