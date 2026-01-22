@@ -1638,13 +1638,23 @@ with tab_validation:
 
     # --- Configuration Inputs ---
     with st.container():
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             val_hub = st.selectbox("Settlement Hub", ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"], key="val_hub")
         with col2:
             val_year = st.selectbox("Year", [2026, 2025, 2024, 2023, 2022, 2021, 2020], key="val_year")
         with col3:
             val_vppa_price = st.number_input("VPPA / Strike Price ($/MWh)", value=50.0, step=0.5, key="val_price")
+        with col4:
+            val_revenue_share = st.number_input(
+                "Buyer's Upside Share %", 
+                min_value=0, 
+                max_value=100, 
+                value=100, 
+                step=5,
+                help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA, 50% = 50/50 split.",
+                key="val_revenue_share"
+            )
 
     # --- File Uploader ---
     uploaded_bill = st.file_uploader(
@@ -1764,14 +1774,21 @@ with tab_validation:
                             ].copy()
                             
                             if not df_month.empty:
-                                # Calculate expected settlement
-                                # Settlement = Gen * (Market Price - Strike Price)
-                                # If we have total MWh, we need to distribute it across intervals
-                                # Simpler: use average market price for the month
+                                # Calculate expected settlement with revenue sharing
                                 avg_market_price = df_month['SPP'].mean()
                                 
-                                # Expected settlement
-                                expected_settlement = user_gen_mwh * (avg_market_price - val_vppa_price)
+                                # Apply revenue share logic
+                                revenue_share_pct = val_revenue_share / 100.0
+                                if revenue_share_pct < 1.0:
+                                    # When SPP > VPPA: Settlement = (SPP - VPPA) * share_pct (buyer gets only their share of upside)
+                                    # When SPP <= VPPA: Settlement = SPP - VPPA (full downside, no sharing)
+                                    upside = max(avg_market_price - val_vppa_price, 0)
+                                    downside = min(avg_market_price - val_vppa_price, 0)
+                                    settlement_per_mwh = (upside * revenue_share_pct) + downside
+                                else:
+                                    settlement_per_mwh = avg_market_price - val_vppa_price
+                                
+                                expected_settlement = user_gen_mwh * settlement_per_mwh
                                 
                                 comparison_data.append({
                                     'Month': month_period.strftime('%b %Y'),
@@ -1821,19 +1838,37 @@ with tab_validation:
                         
                         # Explanation
                         with st.expander("📘 How We Calculated"):
-                            st.markdown(f"""
-                            **Calculation Method:**
-                            1. For each month, we used your reported generation (MWh)
-                            2. We calculated the average market price at **{val_hub}** for that month using ERCOT RTM data
-                            3. Settlement = Generation × (Avg Market Price - Strike Price)
-                            
-                            **Formula:**
-                            ```
-                            Monthly Settlement = Generation (MWh) × (Avg SPP - ${val_vppa_price:.2f})
-                            ```
-                            
-                            **Note:** This uses monthly average pricing. For precise validation, interval-level data is recommended.
-                            """)
+                            if val_revenue_share < 100:
+                                st.markdown(f"""
+                                **Calculation Method:**
+                                1. For each month, we used your reported generation (MWh)
+                                2. We calculated the average market price at **{val_hub}** for that month using ERCOT RTM data
+                                3. **Revenue Share Applied:** {val_revenue_share}% of upside (when SPP > ${val_vppa_price:.2f})
+                                   - Upside: (Avg SPP - Strike) × {val_revenue_share}% × Generation
+                                   - Downside: Full exposure (100%) when SPP < Strike
+                                
+                                **Formula:**
+                                ```
+                                When Avg SPP > Strike: Settlement = Gen × (Avg SPP - ${val_vppa_price:.2f}) × {val_revenue_share/100:.0%}
+                                When Avg SPP ≤ Strike: Settlement = Gen × (Avg SPP - ${val_vppa_price:.2f})
+                                ```
+                                
+                                **Note:** This uses monthly average pricing. For precise validation, interval-level data is recommended.
+                                """)
+                            else:
+                                st.markdown(f"""
+                                **Calculation Method:**
+                                1. For each month, we used your reported generation (MWh)
+                                2. We calculated the average market price at **{val_hub}** for that month using ERCOT RTM data
+                                3. Settlement = Generation × (Avg Market Price - Strike Price)
+                                
+                                **Formula:**
+                                ```
+                                Monthly Settlement = Generation (MWh) × (Avg SPP - ${val_vppa_price:.2f})
+                                ```
+                                
+                                **Note:** This uses monthly average pricing. For precise validation, interval-level data is recommended.
+                                """)
                 
                 else:
                     # Original interval-level validation logic
@@ -1882,9 +1917,21 @@ with tab_validation:
                             
                             df_merged['Calculated_Gen_MWh'] = df_merged['User_Gen_MW'] * freq_hours
                             df_merged['Strike_Price'] = val_vppa_price
+                            
+                            # Apply revenue share logic
+                            revenue_share_pct = val_revenue_share / 100.0
+                            if revenue_share_pct < 1.0:
+                                # When SPP > VPPA: Settlement = (SPP - VPPA) * share_pct (buyer gets only their share of upside)
+                                # When SPP <= VPPA: Settlement = SPP - VPPA (full downside, no sharing)
+                                upside = np.maximum(df_merged['SPP'] - val_vppa_price, 0)
+                                downside = np.minimum(df_merged['SPP'] - val_vppa_price, 0)
+                                settlement_price = (upside * revenue_share_pct) + downside
+                            else:
+                                settlement_price = df_merged['SPP'] - val_vppa_price
+                            
                             df_merged['Market_Revenue'] = df_merged['Calculated_Gen_MWh'] * df_merged['SPP']
                             df_merged['Fixed_Revenue'] = df_merged['Calculated_Gen_MWh'] * val_vppa_price
-                            df_merged['Expected_Settlement'] = df_merged['Market_Revenue'] - df_merged['Fixed_Revenue']
+                            df_merged['Expected_Settlement'] = df_merged['Calculated_Gen_MWh'] * settlement_price
                             
                             # 6. Display Results
                             
