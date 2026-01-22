@@ -1647,15 +1647,57 @@ with tab_validation:
             val_vppa_price = st.number_input("VPPA / Strike Price ($/MWh)", value=50.0, step=0.5, key="val_price")
 
     # --- File Uploader ---
-    uploaded_bill = st.file_uploader("Upload Generation Data (CSV)", type=["csv"], help="Required columns: 'Time' (or 'Date', 'Interval'), 'Generation' (or 'MW', 'Quantity'). Optional: 'Settlement' (for comparison).")
+    uploaded_bill = st.file_uploader(
+        "Upload Generation Data", 
+        type=["csv", "xlsx", "xls", "pdf"], 
+        help="Supported formats: CSV, Excel (.xlsx/.xls), PDF. Required columns: 'Time' (or 'Date', 'Interval'), 'Generation' (or 'MW', 'Quantity'). Optional: 'Settlement' (for comparison)."
+    )
 
     if uploaded_bill:
         try:
-            # 1. Load User Data
-            df_bill = pd.read_csv(uploaded_bill)
+            # 1. Load User Data based on file type
+            file_extension = uploaded_bill.name.split('.')[-1].lower()
+            
+            if file_extension == 'csv':
+                df_bill = pd.read_csv(uploaded_bill)
+            elif file_extension in ['xlsx', 'xls']:
+                df_bill = pd.read_excel(uploaded_bill, engine='openpyxl' if file_extension == 'xlsx' else None)
+            elif file_extension == 'pdf':
+                # PDF parsing - extract tables using pdfplumber
+                import pdfplumber
+                
+                with pdfplumber.open(uploaded_bill) as pdf:
+                    # Try to extract tables from all pages
+                    tables = []
+                    for page in pdf.pages:
+                        page_tables = page.extract_tables()
+                        if page_tables:
+                            tables.extend(page_tables)
+                    
+                    if not tables:
+                        st.error("❌ No tables found in PDF. Please ensure your PDF contains tabular data.")
+                        st.stop()
+                    
+                    # Use the first table found (or combine if multiple)
+                    # Assume first row is header
+                    if len(tables) == 1:
+                        table_data = tables[0]
+                        headers = table_data[0]
+                        rows = table_data[1:]
+                        df_bill = pd.DataFrame(rows, columns=headers)
+                    else:
+                        # Multiple tables - try to combine or use largest
+                        st.info(f"ℹ️ Found {len(tables)} tables in PDF. Using the largest table.")
+                        largest_table = max(tables, key=len)
+                        headers = largest_table[0]
+                        rows = largest_table[1:]
+                        df_bill = pd.DataFrame(rows, columns=headers)
+            else:
+                st.error(f"Unsupported file type: {file_extension}")
+                st.stop()
             
             # Normalize Columns
-            df_bill.columns = [c.lower().strip() for c in df_bill.columns]
+            df_bill.columns = [c.lower().strip() if c else f'col_{i}' for i, c in enumerate(df_bill.columns)]
             
             # Identify Key Columns
             time_col = next((c for c in df_bill.columns if any(x in c for x in ['time', 'date', 'interval', 'hour'])), None)
@@ -1674,6 +1716,11 @@ with tab_validation:
                 df_bill = df_bill.rename(columns={gen_col: 'User_Gen_MW'})
                 if settlement_col:
                     df_bill = df_bill.rename(columns={settlement_col: 'User_Settlement_Amount'})
+                
+                # Convert to numeric (in case PDF/Excel had strings)
+                df_bill['User_Gen_MW'] = pd.to_numeric(df_bill['User_Gen_MW'], errors='coerce')
+                if 'User_Settlement_Amount' in df_bill.columns:
+                    df_bill['User_Settlement_Amount'] = pd.to_numeric(df_bill['User_Settlement_Amount'], errors='coerce')
                 
                 # 3. Fetch Market Data
                 df_market = get_ercot_data(val_year)
@@ -1771,4 +1818,6 @@ with tab_validation:
 
         except Exception as e:
             st.error(f"Error processing file: {e}")
+            import traceback
+            st.code(traceback.format_exc())
 

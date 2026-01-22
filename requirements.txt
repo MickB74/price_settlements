@@ -7,6 +7,8 @@ reportlab
 kaleido
 Pillow
 xlsxwriter
+openpyxl
+pdfplumber
 folium
 streamlit-folium
 geopy
