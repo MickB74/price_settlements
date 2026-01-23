@@ -1689,6 +1689,36 @@ with tab_validation:
                 help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA, 50% = 50/50 split.",
                 key="val_revenue_share"
             )
+
+    # --- Month Selection ---
+    with st.expander("📅 Select Months for Validation", expanded=True):
+        st.caption("Select which months to include in the validation analysis")
+        
+        val_months = ["January", "February", "March", "April", "May", "June", 
+                      "July", "August", "September", "October", "November", "December"]
+        
+        # Select All / Clear All buttons
+        col_m1, col_m2 = st.columns([0.2, 0.8])
+        if col_m1.button("Select All", key="val_all_months"):
+            for m in val_months:
+                st.session_state[f"val_sel_{m}"] = True
+        if col_m2.button("Clear All", key="val_clear_months"):
+            for m in val_months:
+                st.session_state[f"val_sel_{m}"] = False
+
+        selected_month_names = []
+        cols = st.columns(4)
+        for i, month in enumerate(val_months):
+            with cols[i % 4]:
+                if st.checkbox(month, value=st.session_state.get(f"val_sel_{month}", True), key=f"val_sel_{month}"):
+                    selected_month_names.append(month)
+        
+        # Convert month names to numbers (1-12)
+        month_map = {m: i+1 for i, m in enumerate(val_months)}
+        selected_month_numbers = [month_map[m] for m in selected_month_names]
+        
+        if not selected_month_numbers:
+            st.warning("⚠️ No months selected. Please select at least one month.")
     
     # --- Location Picker Section ---
     with st.expander("🗺️ Pick Project Location", expanded=False):
@@ -1812,36 +1842,6 @@ with tab_validation:
         with col_lon:
             val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
         st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
-
-    # --- Month Selection ---
-    with st.expander("📅 Select Months for Validation", expanded=False):
-        st.caption("Select which months to include in the validation analysis")
-        
-        val_months = ["January", "February", "March", "April", "May", "June", 
-                      "July", "August", "September", "October", "November", "December"]
-        
-        # Select All / Clear All buttons
-        col_m1, col_m2 = st.columns([0.2, 0.8])
-        if col_m1.button("Select All", key="val_all_months"):
-            for m in val_months:
-                st.session_state[f"val_sel_{m}"] = True
-        if col_m2.button("Clear All", key="val_clear_months"):
-            for m in val_months:
-                st.session_state[f"val_sel_{m}"] = False
-
-        selected_month_names = []
-        cols = st.columns(4)
-        for i, month in enumerate(val_months):
-            with cols[i % 4]:
-                if st.checkbox(month, value=st.session_state.get(f"val_sel_{month}", True), key=f"val_sel_{month}"):
-                    selected_month_names.append(month)
-        
-        # Convert month names to numbers (1-12)
-        month_map = {m: i+1 for i, m in enumerate(val_months)}
-        selected_month_numbers = [month_map[m] for m in selected_month_names]
-        
-        if not selected_month_numbers:
-            st.warning("⚠️ No months selected. Please select at least one month.")
 
     # --- Data Preview Section (without file upload) ---
     st.markdown("---")
