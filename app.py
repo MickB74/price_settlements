@@ -1754,13 +1754,12 @@ with tab_validation:
             # Auto-check the "Use Custom Location" checkbox
             st.session_state.val_use_custom_location = True
             
-            # Calculate nearest hub on click and auto-select it
+            # Calculate nearest hub on click
             def calc_dist(lat1, lon1, lat2, lon2):
                 return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
             click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
             nearest_hub = min(click_distances, key=click_distances.get)
-            st.session_state.val_hub = nearest_hub
-            st.info(f"📍 Location set to: {clicked_lat:.4f}, {clicked_lon:.4f} | Nearest hub: **{nearest_hub}**")
+            st.info(f"📍 Location set to: {clicked_lat:.4f}, {clicked_lon:.4f} | Nearest hub: **{nearest_hub}** (select from dropdown above)")
         
         # Show current selected coordinates
         if st.session_state.get('val_use_custom_location', False):
