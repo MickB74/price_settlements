@@ -18,9 +18,19 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 import tempfile
 import folium
+from utils.pdf_generator import generate_settlement_pdf
 from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
+
+# --- Constants & Configuration ---
+HUB_LOCATIONS = {
+    "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
+    "HB_SOUTH": (26.9070, -99.2715),   # Zapata, TX (South Texas inland wind belt - where projects actually are)
+    "HB_WEST": (32.4518, -100.5371),   # Roscoe, TX ("Wind Energy Capital of Texas" - best West TX wind resource)
+    "HB_HOUSTON": (29.3013, -94.7977), # Galveston, TX (Houston Hub's only wind project - excellent coastal wind resource)
+    "HB_PAN": (35.2220, -101.8313),    # Amarillo, TX (Panhandle)
+}
 
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
@@ -350,16 +360,6 @@ def calculate_scenario(scenario, df_rtm):
     interval_hours = 0.25
     capacity_mw = scenario['capacity_mw']
     tech = scenario['tech']
-
-    # Hub Locations (Lat, Lon)
-    # Updated based on actual renewable project concentrations from ERCOT queue data
-    HUB_LOCATIONS = {
-        "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
-        "HB_SOUTH": (26.9070, -99.2715),   # Zapata, TX (South Texas inland wind belt - where projects actually are)
-        "HB_WEST": (32.4518, -100.5371),   # Roscoe, TX ("Wind Energy Capital of Texas" - best West TX wind resource)
-        "HB_HOUSTON": (29.3013, -94.7977), # Galveston, TX (Houston Hub's only wind project - excellent coastal wind resource)
-        "HB_PAN": (35.2220, -101.8313),    # Amarillo, TX (Panhandle)
-    }
     
     # Default to Abilene if hub not found
     default_loc = (32.4487, -99.7331)  # Abilene, TX
@@ -1680,6 +1680,11 @@ with tab_validation:
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             val_hub = st.selectbox("Settlement Hub", ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"], key="val_hub")
+            # Update map location if not using custom location
+            if not st.session_state.get('val_use_custom_location', False):
+                lat, lon = HUB_LOCATIONS.get(val_hub, (32.0, -100.0))
+                st.session_state.val_map_lat = lat
+                st.session_state.val_map_lon = lon
         with c2:
             val_year = st.selectbox("Year", [2026, 2025, 2024, 2023, 2022, 2021, 2020], key="val_year")
         with c3:
@@ -1716,8 +1721,7 @@ with tab_validation:
                             if st.session_state.get('val_use_custom_location'):
                                 lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
                             else:
-                                hub_locs = {"HB_NORTH": (32.3865, -96.8475), "HB_SOUTH": (26.9070, -99.2715), "HB_WEST": (32.4518, -100.5371), "HB_HOUSTON": (29.3013, -94.7977), "HB_PAN": (35.2220, -101.8313)}
-                                lat, lon = hub_locs.get(val_hub, (32.0, -100.0))
+                                lat, lon = HUB_LOCATIONS.get(val_hub, (32.0, -100.0))
                             
                             weather_opts = []
                             if preview_weather == "Actual Weather": weather_opts = [{"name": "Actual", "force_tmy": False}]
@@ -1850,14 +1854,7 @@ with tab_validation:
         ).add_to(val_map)
         
         # Add ERCOT hub markers for reference
-        hub_locations = {
-            "HB_NORTH": (32.3865, -96.8475),
-            "HB_SOUTH": (26.9070, -99.2715),
-            "HB_WEST": (32.4518, -100.5371),
-            "HB_HOUSTON": (29.3013, -94.7977),
-            "HB_PAN": (35.2220, -101.8313),
-        }
-        for hub, (lat, lon) in hub_locations.items():
+        for hub, (lat, lon) in HUB_LOCATIONS.items():
             folium.CircleMarker(
                 [lat, lon],
                 radius=8,
@@ -2113,6 +2110,25 @@ with tab_validation:
             file_name=f"{p_tech}_{val_hub}_{val_year}_{primary_name}_intervals.csv",
             mime="text/csv",
             key="download_preview_csv"
+        )
+
+        # Download PDF Bill
+        pdf_config = {
+            'hub': st.session_state.get('val_hub', val_hub),
+            'year': st.session_state.get('val_year', val_year),
+            'tech': st.session_state.get('preview_tech', 'Unknown'),
+            'capacity_mw': st.session_state.get('preview_capacity', 100.0),
+            'vppa_price': st.session_state.get('val_price', 0.0)
+        }
+        
+        pdf_data = generate_settlement_pdf(df_primary, pdf_config)
+        
+        st.download_button(
+            label="📄 Download Settlement Bill (PDF)",
+            data=pdf_data,
+            file_name=f"Settlement_Bill_{st.session_state.get('val_hub', 'HUB')}_{st.session_state.get('val_year', 'YEAR')}.pdf",
+            mime="application/pdf",
+            key="download_bill_pdf_final"
         )
     
     st.markdown("---")
