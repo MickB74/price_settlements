@@ -1656,13 +1656,123 @@ with tab_validation:
                 key="val_revenue_share"
             )
     
-    # Custom Location Option
+    # --- Location Picker Section ---
+    with st.expander("🗺️ Pick Project Location", expanded=False):
+        st.caption("Search by name or click on the map to select your project location")
+        
+        # Location search box
+        val_search_query = st.text_input("🔍 Search location", placeholder="e.g., Abilene, TX or 79601", key="val_location_search")
+        
+        if val_search_query:
+            try:
+                geolocator = Nominatim(user_agent="vppa_estimator")
+                # Append Texas to improve search accuracy
+                if "texas" not in val_search_query.lower() and "tx" not in val_search_query.lower():
+                    search_with_state = f"{val_search_query}, Texas, USA"
+                else:
+                    search_with_state = f"{val_search_query}, USA"
+                
+                location = geolocator.geocode(search_with_state, timeout=5)
+                
+                if location:
+                    # Clamp to Texas bounds
+                    found_lat = max(25.5, min(36.5, location.latitude))
+                    found_lon = max(-106.5, min(-93.5, location.longitude))
+                    
+                    st.session_state.val_map_lat = found_lat
+                    st.session_state.val_map_lon = found_lon
+                    st.session_state.val_custom_lat = found_lat
+                    st.session_state.val_custom_lon = found_lon
+                    # Auto-check the "Use Custom Location" checkbox
+                    st.session_state.val_use_custom_location = True
+                    st.success(f"📍 Found: {location.address[:50]}...")
+                    st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
+                else:
+                    st.warning("Location not found. Try a different name.")
+            except GeocoderTimedOut:
+                st.warning("Search timed out. Try again.")
+            except Exception as e:
+                st.error(f"Search error: {str(e)[:50]}")
+        
+        # Initialize map location from session state or defaults
+        if 'val_map_lat' not in st.session_state:
+            st.session_state.val_map_lat = 32.0
+        if 'val_map_lon' not in st.session_state:
+            st.session_state.val_map_lon = -100.0
+        
+        # Sync map with custom location inputs if manually entered
+        if 'val_custom_lat' in st.session_state and 'val_custom_lon' in st.session_state:
+            st.session_state.val_map_lat = st.session_state.val_custom_lat
+            st.session_state.val_map_lon = st.session_state.val_custom_lon
+        
+        # Create map centered on Texas/ERCOT region
+        val_map = folium.Map(
+            location=[31.0, -100.0],  # Center of Texas
+            zoom_start=6,
+            tiles="OpenStreetMap"
+        )
+        
+        # Add marker for current selected location
+        folium.Marker(
+            [st.session_state.val_map_lat, st.session_state.val_map_lon],
+            popup=f"Selected: {st.session_state.val_map_lat:.4f}, {st.session_state.val_map_lon:.4f}",
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(val_map)
+        
+        # Add ERCOT hub markers for reference
+        hub_locations = {
+            "HB_NORTH": (32.3865, -96.8475),
+            "HB_SOUTH": (26.9070, -99.2715),
+            "HB_WEST": (32.4518, -100.5371),
+            "HB_HOUSTON": (29.3013, -94.7977),
+            "HB_PAN": (35.2220, -101.8313),
+        }
+        for hub, (lat, lon) in hub_locations.items():
+            folium.CircleMarker(
+                [lat, lon],
+                radius=8,
+                popup=hub,
+                color='blue',
+                fill=True,
+                fillOpacity=0.6
+            ).add_to(val_map)
+        
+        # Display map and capture clicks
+        val_map_data = st_folium(val_map, height=400, width=None, returned_objects=["last_clicked"], key="val_map")
+        
+        if val_map_data and val_map_data.get("last_clicked"):
+            clicked_lat = val_map_data["last_clicked"]["lat"]
+            clicked_lon = val_map_data["last_clicked"]["lng"]
+            # Clamp to Texas bounds to prevent errors in form inputs
+            clicked_lat = max(25.5, min(36.5, clicked_lat))
+            clicked_lon = max(-106.5, min(-93.5, clicked_lon))
+            st.session_state.val_map_lat = clicked_lat
+            st.session_state.val_map_lon = clicked_lon
+            # Also sync to form input keys so they update
+            st.session_state.val_custom_lat = clicked_lat
+            st.session_state.val_custom_lon = clicked_lon
+            # Auto-check the "Use Custom Location" checkbox
+            st.session_state.val_use_custom_location = True
+            
+            # Calculate nearest hub on click and auto-select it
+            def calc_dist(lat1, lon1, lat2, lon2):
+                return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+            click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
+            nearest_hub = min(click_distances, key=click_distances.get)
+            st.session_state.val_hub = nearest_hub
+            st.info(f"📍 Location set to: {clicked_lat:.4f}, {clicked_lon:.4f} | Nearest hub: **{nearest_hub}**")
+        
+        # Show current selected coordinates
+        if st.session_state.get('val_use_custom_location', False):
+            st.success(f"✅ Using custom location: {st.session_state.val_map_lat:.4f}, {st.session_state.val_map_lon:.4f}")
+    
+    # Custom Location Toggle and Manual Input
     val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
     
     val_custom_lat = None
     val_custom_lon = None
     if val_use_custom_location:
-        st.caption("💡 Enter your project's exact coordinates")
+        st.caption("💡 Enter your project's exact coordinates or use the map above")
         col_lat, col_lon = st.columns(2)
         with col_lat:
             val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
