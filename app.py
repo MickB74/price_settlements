@@ -2118,7 +2118,10 @@ with tab_validation:
             'year': st.session_state.get('val_year', val_year),
             'tech': st.session_state.get('preview_tech', 'Unknown'),
             'capacity_mw': st.session_state.get('preview_capacity', 100.0),
-            'vppa_price': st.session_state.get('val_price', 0.0)
+            'vppa_price': st.session_state.get('val_price', 0.0),
+            'location_name': st.session_state.get('val_location_search', '') or 'Project Site',
+            'lat': st.session_state.get('val_map_lat', 0.0),
+            'lon': st.session_state.get('val_map_lon', 0.0)
         }
         
         pdf_data = generate_settlement_pdf(df_primary, pdf_config)

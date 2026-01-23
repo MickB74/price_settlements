@@ -80,6 +80,36 @@ def generate_settlement_pdf(df, config, company_name="Renewable Energy Project C
         ('LEFTPADDING', (0,0), (-1,-1), 0),
     ]))
     story.append(t_billto)
+    story.append(Spacer(1, 20))
+
+    # --- Project Details Section ---
+    story.append(Paragraph("Project Details", style_heading_left))
+    
+    project_data = [
+        [
+            Paragraph("<b>Project Location</b>", styles['Normal']), 
+            Paragraph("<b>Coordinates</b>", styles['Normal']), 
+            Paragraph("<b>Settlement Hub</b>", styles['Normal']), 
+            Paragraph("<b>Capacity</b>", styles['Normal'])
+        ],
+        [
+            Paragraph(config.get('location_name', 'Project Site'), styles['Normal']), 
+            Paragraph(f"{config.get('lat', 0.0):.4f}, {config.get('lon', 0.0):.4f}", styles['Normal']), 
+            Paragraph(config.get('hub', 'HUB'), styles['Normal']), 
+            Paragraph(f"{config.get('capacity_mw', 0)} MW", styles['Normal'])
+        ]
+    ]
+    
+    t_project = Table(project_data, colWidths=[2.5*inch, 2*inch, 1.5*inch, 1.5*inch])
+    t_project.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('PADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(t_project)
     story.append(Spacer(1, 30))
     
     # --- Summary Table ---
