@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import gridstatus
@@ -46,6 +47,39 @@ if 'scenarios' not in st.session_state:
 
 # Create Tabs
 tab_scenarios, tab_validation = st.tabs(["Scenario Analysis", "Bill Validation"])
+
+# --- Dynamic Sidebar Visibility ---
+# Hide sidebar on Bill Validation, show on Scenario Analysis
+components.html(
+    """
+    <script>
+        // Use window.parent.document to access the main Streamlit document
+        const doc = window.parent.document;
+        
+        function toggleSidebar() {
+            const tabs = doc.querySelectorAll('button[data-testid="stTab"]');
+            let hideSidebar = false;
+            
+            tabs.forEach(tab => {
+                if (tab.innerText.includes("Bill Validation") && tab.getAttribute("aria-selected") === "true") {
+                    hideSidebar = true;
+                }
+            });
+
+            const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+            if (sidebar) {
+                // If Bill Validation is active, hide. Otherwise show.
+                sidebar.style.display = hideSidebar ? "none" : "";
+            }
+        }
+
+        // Run frequently to handle tab switches and re-renders
+        setInterval(toggleSidebar, 300);
+    </script>
+    """,
+    height=0,
+    width=0,
+)
 
 with tab_scenarios:
     # Documentation Section
