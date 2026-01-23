@@ -1788,6 +1788,167 @@ with tab_validation:
             val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
         st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
 
+    # --- Data Preview Section (without file upload) ---
+    st.markdown("---")
+    st.subheader("📊 Data Preview")
+    st.caption("See expected settlement data based on your configuration")
+    
+    # Add technology selector for data preview
+    col_tech, col_cap = st.columns(2)
+    with col_tech:
+        preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
+    with col_cap:
+        preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
+    
+    if st.button("📈 Generate Preview", type="primary"):
+        with st.spinner("Loading market data and generating profile..."):
+            try:
+                # Load market data
+                df_market = get_ercot_data(val_year)
+                
+                if df_market.empty:
+                    st.error(f"Could not find market data for {val_year}.")
+                else:
+                    # Filter for selected hub
+                    df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                    
+                    if df_market_hub.empty:
+                        st.error(f"No data found for hub {val_hub}")
+                    else:
+                        # Generate or load generation profile
+                        if val_use_custom_location and val_custom_lat and val_custom_lon:
+                            # Use custom location
+                            lat, lon = val_custom_lat, val_custom_lon
+                        else:
+                            # Use hub default location
+                            hub_default_locs = {
+                                "HB_NORTH": (32.3865, -96.8475),
+                                "HB_SOUTH": (26.9070, -99.2715),
+                                "HB_WEST": (32.4518, -100.5371),
+                                "HB_HOUSTON": (29.3013, -94.7977),
+                                "HB_PAN": (35.2220, -101.8313),
+                            }
+                            lat, lon = hub_default_locs.get(val_hub, (32.0, -100.0))
+                        
+                        # Get generation profile
+                        gen_profile_df = get_generation_profile(
+                            year=val_year,
+                            tech=preview_tech,
+                            lat=lat,
+                            lon=lon,
+                            capacity_mw=preview_capacity,
+                            force_tmy=False
+                        )
+                        
+                        if gen_profile_df is None or gen_profile_df.empty:
+                            st.error(f"Could not generate {preview_tech} profile for {lat:.4f}, {lon:.4f}")
+                        else:
+                            # Merge market data with generation profile
+                            df_merged = pd.merge(
+                                gen_profile_df,
+                                df_market_hub[['Time', 'SPP', 'Time_Central']],
+                                on='Time',
+                                how='inner'
+                            )
+                            
+                            if df_merged.empty:
+                                st.error("No matching timestamps between generation and market data")
+                            else:
+                                # Calculate settlement
+                                revenue_share_pct = val_revenue_share / 100.0
+                                
+                                if revenue_share_pct < 1.0:
+                                    upside = np.maximum(df_merged['SPP'] - val_vppa_price, 0)
+                                    downside = np.minimum(df_merged['SPP'] - val_vppa_price, 0)
+                                    settlement_price = (upside * revenue_share_pct) + downside
+                                else:
+                                    settlement_price = df_merged['SPP'] - val_vppa_price
+                                
+                                df_merged['Settlement_$/MWh'] = settlement_price
+                                df_merged['Settlement_$'] = df_merged['Gen_Energy_MWh'] * settlement_price
+                                df_merged['Market_Revenue_$'] = df_merged['Gen_Energy_MWh'] * df_merged['SPP']
+                                df_merged['VPPA_Payment_$'] = df_merged['Gen_Energy_MWh'] * val_vppa_price
+                                
+                                # Display metrics
+                                st.markdown("### 📈 Summary Metrics")
+                                
+                                total_gen = df_merged['Gen_Energy_MWh'].sum()
+                                total_settlement = df_merged['Settlement_$'].sum()
+                                avg_spp = df_merged['SPP'].mean()
+                                avg_capture_rate = total_settlement / total_gen if total_gen > 0 else 0
+                                
+                                col1, col2, col3, col4 = st.columns(4)
+                                col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
+                                col2.metric("Total Settlement", f"${total_settlement:,.0f}")
+                                col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
+                                col4.metric("Avg Capture Rate", f"${avg_capture_rate:.2f}/MWh", 
+                                          delta=f"{avg_capture_rate - val_vppa_price:.2f}" if val_vppa_price else None)
+                                
+                                # Daily aggregation for chart
+                                df_merged['Date'] = df_merged['Time_Central'].dt.date
+                                daily_df = df_merged.groupby('Date').agg({
+                                    'Settlement_$': 'sum',
+                                    'Gen_Energy_MWh': 'sum',
+                                    'SPP': 'mean'
+                                }).reset_index()
+                                
+                                # Daily settlement chart
+                                st.markdown("### 📊 Daily Settlement")
+                                fig = go.Figure()
+                                fig.add_trace(go.Bar(
+                                    x=daily_df['Date'],
+                                    y=daily_df['Settlement_$'],
+                                    name='Daily Settlement',
+                                    marker_color=['green' if x > 0 else 'red' for x in daily_df['Settlement_$']]
+                                ))
+                                fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
+                                fig.update_layout(
+                                    title="Daily Net Settlement",
+                                    xaxis_title="Date",
+                                    yaxis_title="Settlement ($)",
+                                    hovermode="x unified",
+                                    height=400
+                                )
+                                fig.update_yaxes(tickprefix="$")
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                # 15-minute interval preview
+                                st.markdown("### 📋 15-Minute Interval Data Preview")
+                                st.caption("Showing first 100 intervals")
+                                
+                                display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$']
+                                preview_df = df_merged[display_cols].head(100).copy()
+                                preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
+                                
+                                st.dataframe(
+                                    preview_df.style.format({
+                                        'Gen_MW': '{:.2f}',
+                                        'Gen_Energy_MWh': '{:.4f}',
+                                        'SPP': '${:.2f}',
+                                        'Settlement_$/MWh': '${:.2f}',
+                                        'Settlement_$': '${:.2f}'
+                                    }),
+                                    use_container_width=True,
+                                    height=400
+                                )
+                                
+                                # Download full dataset
+                                csv = df_merged[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 Download Full Interval Data CSV",
+                                    data=csv,
+                                    file_name=f"{preview_tech}_{val_hub}_{val_year}_intervals.csv",
+                                    mime="text/csv",
+                                )
+                                
+            except Exception as e:
+                st.error(f"Error generating preview: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    st.markdown("---")
+    st.subheader("📤 Or Upload Your Bill for Validation")
+
     # --- File Uploader ---
     uploaded_bill = st.file_uploader(
         "Upload Generation Data", 
