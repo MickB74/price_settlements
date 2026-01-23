@@ -95,9 +95,9 @@ def generate_settlement_pdf(df, config, company_name="Renewable Energy Project C
     
     # Define styles for table cells to allow wrapping and styling
     style_cell_center = ParagraphStyle('CellCenter', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
-    style_cell_header = ParagraphStyle('CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=10)
+    style_cell_header = ParagraphStyle('CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=9)
     style_cell_left = ParagraphStyle('CellLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=10)
-    style_cell_right_bold = ParagraphStyle('CellRightBold', parent=styles['Normal'], alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12)
+    style_cell_right_bold = ParagraphStyle('CellRightBold', parent=styles['Normal'], alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=11)
 
     summary_data = [
         [
@@ -118,7 +118,8 @@ def generate_settlement_pdf(df, config, company_name="Renewable Energy Project C
     
     # Adjusted column widths to prevent overlap
     # Total width available ~ 7.5 inches
-    col_widths = [2.0*inch, 1.25*inch, 1.4*inch, 1.45*inch, 1.4*inch]
+    # Description reduced, Price columns increased
+    col_widths = [1.7*inch, 1.25*inch, 1.5*inch, 1.55*inch, 1.5*inch]
     
     t_summary = Table(summary_data, colWidths=col_widths)
     t_summary.setStyle(TableStyle([
@@ -133,9 +134,9 @@ def generate_settlement_pdf(df, config, company_name="Renewable Energy Project C
     story.append(Spacer(1, 20))
     
     # Total Box
-    # Using Paragraphs to render HTML tags like <b>
+    # Using Paragraphs to render styled text. Tags removed as style is already bold.
     total_data = [
-        ["", "", "", Paragraph(f"<b>{total_label}</b>", style_cell_right_bold), Paragraph(f"<b>${abs(total_settlement):,.2f}</b>", style_cell_right_bold)]
+        ["", "", "", Paragraph(f"{total_label}", style_cell_right_bold), Paragraph(f"${abs(total_settlement):,.2f}", style_cell_right_bold)]
     ]
     
     # Match the last two column widths from the summary table for alignment
