@@ -1670,25 +1670,89 @@ with tab_validation:
     st.header("Bill Validation")
     st.markdown("Upload your generation data (and optional settlement data) to validate against official ERCOT market prices.")
 
-    # --- Configuration Inputs ---
+    # --- Configuration & Preview Header ---
+    st.subheader("⚙️ Analysis Configuration")
+    st.caption("Configure market parameters and project profiles for validation")
+
+    # --- Integrated Configuration & Preview Controls ---
     with st.container():
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
+        # Row 1: Market Settings
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
             val_hub = st.selectbox("Settlement Hub", ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"], key="val_hub")
-        with col2:
+        with c2:
             val_year = st.selectbox("Year", [2026, 2025, 2024, 2023, 2022, 2021, 2020], key="val_year")
-        with col3:
+        with c3:
             val_vppa_price = st.number_input("VPPA / Strike Price ($/MWh)", value=50.0, step=0.5, key="val_price")
-        with col4:
+        with c4:
             val_revenue_share = st.number_input(
                 "Buyer's Upside Share %", 
-                min_value=0, 
-                max_value=100, 
-                value=100, 
-                step=5,
-                help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA, 50% = 50/50 split.",
+                min_value=0, max_value=100, value=100, step=5,
+                help="% of upside buyer receives when SPP > PPA price.",
                 key="val_revenue_share"
             )
+
+        # Row 2: Technology & Preview Settings + Action Button
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
+        with c6:
+            preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
+        with c7:
+            preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
+        with c8:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("📈 Generate Preview", type="primary", use_container_width=True):
+                with st.spinner("Generating profile..."):
+                    try:
+                        # Market Data
+                        df_market = get_ercot_data(val_year)
+                        if df_market.empty:
+                            st.error(f"No market data for {val_year}")
+                        else:
+                            df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                            
+                            # Location handling
+                            if st.session_state.get('val_use_custom_location'):
+                                lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
+                            else:
+                                hub_locs = {"HB_NORTH": (32.3865, -96.8475), "HB_SOUTH": (26.9070, -99.2715), "HB_WEST": (32.4518, -100.5371), "HB_HOUSTON": (29.3013, -94.7977), "HB_PAN": (35.2220, -101.8313)}
+                                lat, lon = hub_locs.get(val_hub, (32.0, -100.0))
+                            
+                            weather_opts = []
+                            if preview_weather == "Actual Weather": weather_opts = [{"name": "Actual", "force_tmy": False}]
+                            elif preview_weather == "Typical Year (TMY)": weather_opts = [{"name": "TMY", "force_tmy": True}]
+                            else: weather_opts = [{"name": "Actual", "force_tmy": False}, {"name": "TMY", "force_tmy": True}]
+                            
+                            preview_results = {}
+                            for source in weather_opts:
+                                profile = fetch_tmy.get_profile_for_year(year=val_year, tech=preview_tech, lat=lat, lon=lon, capacity_mw=preview_capacity, force_tmy=source["force_tmy"])
+                                if profile is not None:
+                                    pc = profile.tz_convert('US/Central')
+                                    pdf = pd.DataFrame({'Gen_MW': pc.values, 'Time': pc.index.tz_convert('UTC')})
+                                    pdf['Gen_Energy_MWh'] = pdf['Gen_MW'] * 0.25
+                                    merged = pd.merge(pdf, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
+                                    
+                                    # Filter by selected months
+                                    m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+                                    sel_m_nums = [i+1 for i, m in enumerate(m_list) if st.session_state.get(f"val_sel_{m}", True)]
+                                    if sel_m_nums:
+                                        merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
+                                    
+                                    if not merged.empty:
+                                        rs_pct = val_revenue_share / 100.0
+                                        settle_p = (np.maximum(merged['SPP'] - val_vppa_price, 0) * rs_pct) + np.minimum(merged['SPP'] - val_vppa_price, 0) if rs_pct < 1.0 else merged['SPP'] - val_vppa_price
+                                        merged['Settlement_$'] = merged['Gen_Energy_MWh'] * settle_p
+                                        merged['Market_Revenue_$'] = merged['Gen_Energy_MWh'] * merged['SPP']
+                                        preview_results[source["name"]] = merged
+                            
+                            if preview_results:
+                                st.session_state['val_preview_results'] = preview_results
+                                st.session_state['val_preview_tech'] = preview_tech
+                            else:
+                                st.error("No data generated for criteria.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     # --- Month Selection ---
     with st.expander("📅 Select Months for Validation", expanded=True):
@@ -1843,133 +1907,6 @@ with tab_validation:
             val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
         st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
 
-    # --- Data Preview Section (without file upload) ---
-    st.markdown("---")
-    st.subheader("📊 Data Preview")
-    st.caption("See expected settlement data based on your configuration")
-    
-    # Add technology selector for data preview
-    col_tech, col_cap, col_weather = st.columns(3)
-    with col_tech:
-        preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
-    with col_cap:
-        preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
-    with col_weather:
-        preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
-    
-    if st.button("📈 Generate Preview", type="primary"):
-        with st.spinner("Loading market data and generating profile..."):
-            try:
-                # Clear previous results to force fresh load
-                if 'val_preview_results' in st.session_state:
-                    del st.session_state['val_preview_results']
-                # Load market data
-                df_market = get_ercot_data(val_year)
-                
-                if df_market.empty:
-                    st.error(f"Could not find market data for {val_year}.")
-                else:
-                    # Filter for selected hub
-                    df_market_hub = df_market[df_market['Location'] == val_hub].copy()
-                    
-                    if df_market_hub.empty:
-                        st.error(f"No data found for hub {val_hub}")
-                    else:
-                        # Generate or load generation profile
-                        if val_use_custom_location and val_custom_lat and val_custom_lon:
-                            # Use custom location
-                            lat, lon = val_custom_lat, val_custom_lon
-                        else:
-                            # Use hub default location
-                            hub_default_locs = {
-                                "HB_NORTH": (32.3865, -96.8475),
-                                "HB_SOUTH": (26.9070, -99.2715),
-                                "HB_WEST": (32.4518, -100.5371),
-                                "HB_HOUSTON": (29.3013, -94.7977),
-                                "HB_PAN": (35.2220, -101.8313),
-                            }
-                            lat, lon = hub_default_locs.get(val_hub, (32.0, -100.0))
-                        
-                        # Weather source handling
-                        weather_options = []
-                        if preview_weather == "Actual Weather":
-                            weather_options = [{"name": "Actual", "force_tmy": False}]
-                        elif preview_weather == "Typical Year (TMY)":
-                            weather_options = [{"name": "TMY", "force_tmy": True}]
-                        else: # Compare Both
-                            weather_options = [
-                                {"name": "Actual", "force_tmy": False},
-                                {"name": "TMY", "force_tmy": True}
-                            ]
-                        
-                        preview_results = {}
-                        
-                        for source in weather_options:
-                            # Get generation profile
-                            profile_series = fetch_tmy.get_profile_for_year(
-                                year=val_year,
-                                tech=preview_tech,
-                                lat=lat,
-                                lon=lon,
-                                capacity_mw=preview_capacity,
-                                force_tmy=source["force_tmy"]
-                            )
-                            
-                            if profile_series is None or profile_series.empty:
-                                st.warning(f"Could not generate {source['name']} profile.")
-                                continue
-                                
-                            # Convert to Central time and create dataframe
-                            profile_central = profile_series.tz_convert('US/Central')
-                            gen_profile_df = pd.DataFrame({
-                                'Gen_MW': profile_central.values,
-                                'Time': profile_central.index.tz_convert('UTC')
-                            })
-                            gen_profile_df['Gen_Energy_MWh'] = gen_profile_df['Gen_MW'] * 0.25
-                            
-                            # Merge market data
-                            df_merged = pd.merge(
-                                gen_profile_df,
-                                df_market_hub[['Time', 'SPP', 'Time_Central']],
-                                on='Time',
-                                how='inner'
-                            )
-                            
-                            if selected_month_numbers:
-                                df_merged = df_merged[df_merged['Time_Central'].dt.month.isin(selected_month_numbers)].copy()
-                            
-                            if df_merged.empty:
-                                continue
-                                
-                            # Calculate settlement
-                            revenue_share_pct = val_revenue_share / 100.0
-                            if revenue_share_pct < 1.0:
-                                upside = np.maximum(df_merged['SPP'] - val_vppa_price, 0)
-                                downside = np.minimum(df_merged['SPP'] - val_vppa_price, 0)
-                                settlement_price = (upside * revenue_share_pct) + downside
-                            else:
-                                settlement_price = df_merged['SPP'] - val_vppa_price
-                            
-                            df_merged['Settlement_$/MWh'] = settlement_price
-                            df_merged['Settlement_$'] = df_merged['Gen_Energy_MWh'] * settlement_price
-                            df_merged['Market_Revenue_$'] = df_merged['Gen_Energy_MWh'] * df_merged['SPP']
-                            df_merged['VPPA_Payment_$'] = df_merged['Gen_Energy_MWh'] * val_vppa_price
-                            
-                            preview_results[source["name"]] = df_merged
-                        
-                        if not preview_results:
-                            if not selected_month_numbers:
-                                st.error("No months selected. Please select months to view data.")
-                            else:
-                                st.error("Could not generate data for the selected configuration.")
-                        else:
-                            st.session_state['val_preview_results'] = preview_results
-                            st.session_state['val_preview_tech'] = preview_tech # For filename
-                                
-            except Exception as e:
-                st.error(f"Error generating preview: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
     
     # --- Display Results Section (Cached) ---
     if 'val_preview_results' in st.session_state:
