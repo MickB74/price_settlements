@@ -1742,8 +1742,10 @@ with tab_validation:
                                     if not merged.empty:
                                         rs_pct = val_revenue_share / 100.0
                                         settle_p = (np.maximum(merged['SPP'] - val_vppa_price, 0) * rs_pct) + np.minimum(merged['SPP'] - val_vppa_price, 0) if rs_pct < 1.0 else merged['SPP'] - val_vppa_price
+                                        merged['Settlement_$/MWh'] = settle_p
                                         merged['Settlement_$'] = merged['Gen_Energy_MWh'] * settle_p
                                         merged['Market_Revenue_$'] = merged['Gen_Energy_MWh'] * merged['SPP']
+                                        merged['VPPA_Payment_$'] = merged['Gen_Energy_MWh'] * val_vppa_price
                                         preview_results[source["name"]] = merged
                             
                             if preview_results:
