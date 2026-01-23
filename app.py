@@ -1849,11 +1849,13 @@ with tab_validation:
     st.caption("See expected settlement data based on your configuration")
     
     # Add technology selector for data preview
-    col_tech, col_cap = st.columns(2)
+    col_tech, col_cap, col_weather = st.columns(3)
     with col_tech:
         preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
     with col_cap:
         preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
+    with col_weather:
+        preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
     
     if st.button("📈 Generate Preview", type="primary"):
         with st.spinner("Loading market data and generating profile..."):
@@ -1885,28 +1887,44 @@ with tab_validation:
                             }
                             lat, lon = hub_default_locs.get(val_hub, (32.0, -100.0))
                         
-                        # Get generation profile
-                        profile_series = fetch_tmy.get_profile_for_year(
-                            year=val_year,
-                            tech=preview_tech,
-                            lat=lat,
-                            lon=lon,
-                            capacity_mw=preview_capacity,
-                            force_tmy=False
-                        )
+                        # Weather source handling
+                        weather_options = []
+                        if preview_weather == "Actual Weather":
+                            weather_options = [{"name": "Actual", "force_tmy": False}]
+                        elif preview_weather == "Typical Year (TMY)":
+                            weather_options = [{"name": "TMY", "force_tmy": True}]
+                        else: # Compare Both
+                            weather_options = [
+                                {"name": "Actual", "force_tmy": False},
+                                {"name": "TMY", "force_tmy": True}
+                            ]
                         
-                        if profile_series is None or profile_series.empty:
-                            st.error(f"Could not generate {preview_tech} profile for {lat:.4f}, {lon:.4f}")
-                        else:
+                        preview_results = {}
+                        
+                        for source in weather_options:
+                            # Get generation profile
+                            profile_series = fetch_tmy.get_profile_for_year(
+                                year=val_year,
+                                tech=preview_tech,
+                                lat=lat,
+                                lon=lon,
+                                capacity_mw=preview_capacity,
+                                force_tmy=source["force_tmy"]
+                            )
+                            
+                            if profile_series is None or profile_series.empty:
+                                st.warning(f"Could not generate {source['name']} profile.")
+                                continue
+                                
                             # Convert to Central time and create dataframe
                             profile_central = profile_series.tz_convert('US/Central')
                             gen_profile_df = pd.DataFrame({
                                 'Gen_MW': profile_central.values,
-                                'Time': profile_central.index.tz_convert('UTC')  # Use UTC for merge
+                                'Time': profile_central.index.tz_convert('UTC')
                             })
-                            gen_profile_df['Gen_Energy_MWh'] = gen_profile_df['Gen_MW'] * 0.25  # 15-min intervals
+                            gen_profile_df['Gen_Energy_MWh'] = gen_profile_df['Gen_MW'] * 0.25
                             
-                            # Merge market data with generation profile
+                            # Merge market data
                             df_merged = pd.merge(
                                 gen_profile_df,
                                 df_market_hub[['Time', 'SPP', 'Time_Central']],
@@ -1914,102 +1932,136 @@ with tab_validation:
                                 how='inner'
                             )
                             
-                            # Filter by selected months
                             if selected_month_numbers:
                                 df_merged = df_merged[df_merged['Time_Central'].dt.month.isin(selected_month_numbers)].copy()
                             
                             if df_merged.empty:
-                                if not selected_month_numbers:
-                                    st.error("No months selected. Please select months to view data.")
-                                else:
-                                    st.error("No data found for the selected months and hub.")
+                                continue
+                                
+                            # Calculate settlement
+                            revenue_share_pct = val_revenue_share / 100.0
+                            if revenue_share_pct < 1.0:
+                                upside = np.maximum(df_merged['SPP'] - val_vppa_price, 0)
+                                downside = np.minimum(df_merged['SPP'] - val_vppa_price, 0)
+                                settlement_price = (upside * revenue_share_pct) + downside
                             else:
-                                # Calculate settlement
-                                revenue_share_pct = val_revenue_share / 100.0
+                                settlement_price = df_merged['SPP'] - val_vppa_price
+                            
+                            df_merged['Settlement_$/MWh'] = settlement_price
+                            df_merged['Settlement_$'] = df_merged['Gen_Energy_MWh'] * settlement_price
+                            df_merged['Market_Revenue_$'] = df_merged['Gen_Energy_MWh'] * df_merged['SPP']
+                            df_merged['VPPA_Payment_$'] = df_merged['Gen_Energy_MWh'] * val_vppa_price
+                            
+                            preview_results[source["name"]] = df_merged
+                        
+                        if not preview_results:
+                            if not selected_month_numbers:
+                                st.error("No months selected. Please select months to view data.")
+                            else:
+                                st.error("Could not generate data for the selected configuration.")
+                        else:
+                            # --- Display Results ---
+                            
+                            # 1. Comparison Table if multiple sources
+                            if len(preview_results) > 1:
+                                st.markdown("### 📊 Contrast: Actual vs Typical (TMY)")
+                                comp_summary = []
+                                for name, df in preview_results.items():
+                                    t_gen = df['Gen_Energy_MWh'].sum()
+                                    t_settle = df['Settlement_$'].sum()
+                                    avg_rate = t_settle / t_gen if t_gen > 0 else 0
+                                    comp_summary.append({
+                                        "Source": name,
+                                        "Generation (MWh)": f"{t_gen:,.0f}",
+                                        "Net Settlement ($)": f"${t_settle:,.0f}",
+                                        "Capture Rate ($/MWh)": f"${avg_rate:.2f}"
+                                    })
+                                st.table(pd.DataFrame(comp_summary))
+                                st.markdown("---")
+                            
+                            # 2. Main Metrics (show either first one or Actual if available)
+                            primary_name = "Actual" if "Actual" in preview_results else list(preview_results.keys())[0]
+                            df_primary = preview_results[primary_name]
+                            
+                            st.markdown(f"### 📈 Summary Metrics ({primary_name})")
+                            total_gen = df_primary['Gen_Energy_MWh'].sum()
+                            total_settlement = df_primary['Settlement_$'].sum()
+                            avg_spp = df_primary['SPP'].mean()
+                            avg_capture_rate = total_settlement / total_gen if total_gen > 0 else 0
+                            
+                            col1, col2, col3, col4 = st.columns(4)
+                            col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
+                            col2.metric("Total Settlement", f"${total_settlement:,.0f}")
+                            col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
+                            col4.metric("Avg Capture Rate", f"${avg_capture_rate:.2f}/MWh", 
+                                      delta=f"{avg_capture_rate - val_vppa_price:.2f}" if val_vppa_price else None)
+                            
+                            # 3. Charts
+                            st.markdown("### 📊 Daily Settlement")
+                            fig = go.Figure()
+                            
+                            for name, df in preview_results.items():
+                                df['Date'] = df['Time_Central'].dt.date
+                                daily_df = df.groupby('Date').agg({'Settlement_$': 'sum'}).reset_index()
                                 
-                                if revenue_share_pct < 1.0:
-                                    upside = np.maximum(df_merged['SPP'] - val_vppa_price, 0)
-                                    downside = np.minimum(df_merged['SPP'] - val_vppa_price, 0)
-                                    settlement_price = (upside * revenue_share_pct) + downside
+                                if len(preview_results) > 1:
+                                    # Use Line when comparing
+                                    fig.add_trace(go.Scatter(
+                                        x=daily_df['Date'],
+                                        y=daily_df['Settlement_$'],
+                                        name=f'{name} Settlement',
+                                        mode='lines',
+                                        opacity=0.8
+                                    ))
                                 else:
-                                    settlement_price = df_merged['SPP'] - val_vppa_price
-                                
-                                df_merged['Settlement_$/MWh'] = settlement_price
-                                df_merged['Settlement_$'] = df_merged['Gen_Energy_MWh'] * settlement_price
-                                df_merged['Market_Revenue_$'] = df_merged['Gen_Energy_MWh'] * df_merged['SPP']
-                                df_merged['VPPA_Payment_$'] = df_merged['Gen_Energy_MWh'] * val_vppa_price
-                                
-                                # Display metrics
-                                st.markdown("### 📈 Summary Metrics")
-                                
-                                total_gen = df_merged['Gen_Energy_MWh'].sum()
-                                total_settlement = df_merged['Settlement_$'].sum()
-                                avg_spp = df_merged['SPP'].mean()
-                                avg_capture_rate = total_settlement / total_gen if total_gen > 0 else 0
-                                
-                                col1, col2, col3, col4 = st.columns(4)
-                                col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
-                                col2.metric("Total Settlement", f"${total_settlement:,.0f}")
-                                col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
-                                col4.metric("Avg Capture Rate", f"${avg_capture_rate:.2f}/MWh", 
-                                          delta=f"{avg_capture_rate - val_vppa_price:.2f}" if val_vppa_price else None)
-                                
-                                # Daily aggregation for chart
-                                df_merged['Date'] = df_merged['Time_Central'].dt.date
-                                daily_df = df_merged.groupby('Date').agg({
-                                    'Settlement_$': 'sum',
-                                    'Gen_Energy_MWh': 'sum',
-                                    'SPP': 'mean'
-                                }).reset_index()
-                                
-                                # Daily settlement chart
-                                st.markdown("### 📊 Daily Settlement")
-                                fig = go.Figure()
-                                fig.add_trace(go.Bar(
-                                    x=daily_df['Date'],
-                                    y=daily_df['Settlement_$'],
-                                    name='Daily Settlement',
-                                    marker_color=['green' if x > 0 else 'red' for x in daily_df['Settlement_$']]
-                                ))
-                                fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
-                                fig.update_layout(
-                                    title="Daily Net Settlement",
-                                    xaxis_title="Date",
-                                    yaxis_title="Settlement ($)",
-                                    hovermode="x unified",
-                                    height=400
-                                )
-                                fig.update_yaxes(tickprefix="$")
-                                st.plotly_chart(fig, use_container_width=True)
-                                
-                                # 15-minute interval preview
-                                st.markdown("### 📋 15-Minute Interval Data Preview")
-                                st.caption("Showing first 100 intervals")
-                                
-                                display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$']
-                                preview_df = df_merged[display_cols].head(100).copy()
-                                preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
-                                
-                                st.dataframe(
-                                    preview_df.style.format({
-                                        'Gen_MW': '{:.2f}',
-                                        'Gen_Energy_MWh': '{:.4f}',
-                                        'SPP': '${:.2f}',
-                                        'Settlement_$/MWh': '${:.2f}',
-                                        'Settlement_$': '${:.2f}'
-                                    }),
-                                    use_container_width=True,
-                                    height=400
-                                )
-                                
-                                # Download full dataset
-                                csv = df_merged[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
-                                st.download_button(
-                                    label="📥 Download Full Interval Data CSV",
-                                    data=csv,
-                                    file_name=f"{preview_tech}_{val_hub}_{val_year}_intervals.csv",
-                                    mime="text/csv",
-                                )
+                                    # Use Bar for single source
+                                    fig.add_trace(go.Bar(
+                                        x=daily_df['Date'],
+                                        y=daily_df['Settlement_$'],
+                                        name='Daily Settlement',
+                                        marker_color=['green' if x > 0 else 'red' for x in daily_df['Settlement_$']]
+                                    ))
+                                    
+                            fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
+                            fig.update_layout(
+                                title="Daily Net Settlement Comparison" if len(preview_results) > 1 else "Daily Net Settlement",
+                                xaxis_title="Date",
+                                yaxis_title="Settlement ($)",
+                                hovermode="x unified",
+                                height=450
+                            )
+                            fig.update_yaxes(tickprefix="$")
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # 4. Preview and Download for Primary
+                            st.markdown(f"### 📋 15-Minute Interval Data Preview ({primary_name})")
+                            st.caption("Showing first 100 intervals")
+                            
+                            display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$']
+                            preview_df = df_primary[display_cols].head(100).copy()
+                            preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
+                            
+                            st.dataframe(
+                                preview_df.style.format({
+                                    'Gen_MW': '{:.2f}',
+                                    'Gen_Energy_MWh': '{:.4f}',
+                                    'SPP': '${:.2f}',
+                                    'Settlement_$/MWh': '${:.2f}',
+                                    'Settlement_$': '${:.2f}'
+                                }),
+                                use_container_width=True,
+                                height=400
+                            )
+                            
+                            # Download full dataset
+                            csv = df_primary[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label=f"📥 Download Full {primary_name} Intervals CSV",
+                                data=csv,
+                                file_name=f"{preview_tech}_{val_hub}_{val_year}_{primary_name}_intervals.csv",
+                                mime="text/csv",
+                                key="download_preview_csv"
+                            )
                                 
             except Exception as e:
                 st.error(f"Error generating preview: {str(e)}")
