@@ -1849,13 +1849,15 @@ with tab_validation:
     st.caption("See expected settlement data based on your configuration")
     
     # Add technology selector for data preview
-    col_tech, col_cap, col_weather = st.columns(3)
-    with col_tech:
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
         preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
-    with col_cap:
+    with col2:
         preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
-    with col_weather:
+    with col3:
         preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
+    with col4:
+        preview_view = st.selectbox("Chart View", ["Daily", "Monthly"], key="preview_view")
     
     if st.button("📈 Generate Preview", type="primary"):
         with st.spinner("Loading market data and generating profile..."):
@@ -1997,35 +1999,56 @@ with tab_validation:
                                       delta=f"{avg_capture_rate - val_vppa_price:.2f}" if val_vppa_price else None)
                             
                             # 3. Charts
-                            st.markdown("### 📊 Daily Settlement")
+                            st.markdown(f"### 📊 {preview_view} Settlement")
                             fig = go.Figure()
                             
                             for name, df in preview_results.items():
-                                df['Date'] = df['Time_Central'].dt.date
-                                daily_df = df.groupby('Date').agg({'Settlement_$': 'sum'}).reset_index()
+                                if preview_view == "Monthly":
+                                    df['Month'] = df['Time_Central'].dt.to_period('M').astype(str)
+                                    chart_df = df.groupby('Month').agg({'Settlement_$': 'sum'}).reset_index()
+                                    x_col = 'Month'
+                                else: # Daily
+                                    df['Date'] = df['Time_Central'].dt.date
+                                    chart_df = df.groupby('Date').agg({'Settlement_$': 'sum'}).reset_index()
+                                    x_col = 'Date'
                                 
                                 if len(preview_results) > 1:
-                                    # Use Line when comparing
-                                    fig.add_trace(go.Scatter(
-                                        x=daily_df['Date'],
-                                        y=daily_df['Settlement_$'],
-                                        name=f'{name} Settlement',
-                                        mode='lines',
-                                        opacity=0.8
-                                    ))
+                                    if preview_view == "Monthly":
+                                        # Use grouped bars for monthly comparison
+                                        fig.add_trace(go.Bar(
+                                            x=chart_df['Month'],
+                                            y=chart_df['Settlement_$'],
+                                            name=f'{name} Settlement'
+                                        ))
+                                    else:
+                                        # Use Line when comparing daily
+                                        fig.add_trace(go.Scatter(
+                                            x=chart_df['Date'],
+                                            y=chart_df['Settlement_$'],
+                                            name=f'{name} Settlement',
+                                            mode='lines',
+                                            opacity=0.8
+                                        ))
                                 else:
                                     # Use Bar for single source
                                     fig.add_trace(go.Bar(
-                                        x=daily_df['Date'],
-                                        y=daily_df['Settlement_$'],
-                                        name='Daily Settlement',
-                                        marker_color=['green' if x > 0 else 'red' for x in daily_df['Settlement_$']]
+                                        x=chart_df[x_col],
+                                        y=chart_df['Settlement_$'],
+                                        name=f'{preview_view} Settlement',
+                                        marker_color=['green' if x > 0 else 'red' for x in chart_df['Settlement_$']]
                                     ))
                                     
                             fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
+                            
+                            chart_title = f"{preview_view} Net Settlement"
+                            if len(preview_results) > 1:
+                                chart_title += " Comparison"
+                                if preview_view == "Monthly":
+                                    fig.update_layout(barmode='group')
+                                    
                             fig.update_layout(
-                                title="Daily Net Settlement Comparison" if len(preview_results) > 1 else "Daily Net Settlement",
-                                xaxis_title="Date",
+                                title=chart_title,
+                                xaxis_title="Month" if preview_view == "Monthly" else "Date",
                                 yaxis_title="Settlement ($)",
                                 hovermode="x unified",
                                 height=450
