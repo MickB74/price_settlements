@@ -92,39 +92,60 @@ def generate_settlement_pdf(df, config, company_name="Renewable Energy Project C
     else:
         payment_direction = "Payment Due to Offtaker"
         total_label = "TOTAL TO PAY (USD)"
-        
+    
+    # Define styles for table cells to allow wrapping and styling
+    style_cell_center = ParagraphStyle('CellCenter', parent=styles['Normal'], alignment=TA_CENTER, fontSize=10)
+    style_cell_header = ParagraphStyle('CellHeader', parent=styles['Normal'], alignment=TA_CENTER, fontName='Helvetica-Bold', fontSize=10)
+    style_cell_left = ParagraphStyle('CellLeft', parent=styles['Normal'], alignment=TA_LEFT, fontSize=10)
+    style_cell_right_bold = ParagraphStyle('CellRightBold', parent=styles['Normal'], alignment=TA_RIGHT, fontName='Helvetica-Bold', fontSize=12)
+
     summary_data = [
-        ["Description", "Quantity (MWh)", "Strike Price ($/MWh)", "Realized Price ($/MWh)", "Amount ($)"],
-        [f"VPPA Settlement - {config.get('hub', 'HUB')}", 
-         f"{total_gen:,.3f}", 
-         f"${fixed_price:,.2f}", 
-         f"${weighted_avg_spp:,.2f}", 
-         f"${total_settlement:,.2f}"]
+        [
+            Paragraph("Description", style_cell_header), 
+            Paragraph("Quantity (MWh)", style_cell_header), 
+            Paragraph("Strike Price ($/MWh)", style_cell_header), 
+            Paragraph("Realized Price ($/MWh)", style_cell_header), 
+            Paragraph("Amount ($)", style_cell_header)
+        ],
+        [
+            Paragraph(f"VPPA Settlement - {config.get('hub', 'HUB')}", style_cell_left), 
+            Paragraph(f"{total_gen:,.3f}", style_cell_center), 
+            Paragraph(f"${fixed_price:,.2f}", style_cell_center), 
+            Paragraph(f"${weighted_avg_spp:,.2f}", style_cell_center), 
+            Paragraph(f"${total_settlement:,.2f}", style_cell_center)
+        ]
     ]
     
-    t_summary = Table(summary_data, colWidths=[2.5*inch, 1.25*inch, 1.25*inch, 1.25*inch, 1.25*inch])
+    # Adjusted column widths to prevent overlap
+    # Total width available ~ 7.5 inches
+    col_widths = [2.0*inch, 1.25*inch, 1.4*inch, 1.45*inch, 1.4*inch]
+    
+    t_summary = Table(summary_data, colWidths=col_widths)
     t_summary.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.whitesmoke),
         ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,1), (0,-1), 'LEFT'), # Description align left
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'), # Vertical align is handled by Paragraph, but this helps cell alignment
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('GRID', (0,0), (-1,-1), 1, colors.grey),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('PADDING', (0,0), (-1,-1), 6),
     ]))
     story.append(t_summary)
     story.append(Spacer(1, 20))
     
     # Total Box
+    # Using Paragraphs to render HTML tags like <b>
     total_data = [
-        ["", "", "", f"<b>{total_label}</b>", f"<b>${abs(total_settlement):,.2f}</b>"]
+        ["", "", "", Paragraph(f"<b>{total_label}</b>", style_cell_right_bold), Paragraph(f"<b>${abs(total_settlement):,.2f}</b>", style_cell_right_bold)]
     ]
-    t_total = Table(total_data, colWidths=[2.5*inch, 1.25*inch, 1.25*inch, 1.25*inch, 1.25*inch])
+    
+    # Match the last two column widths from the summary table for alignment
+    total_col_widths = [col_widths[0], col_widths[1], col_widths[2], col_widths[3], col_widths[4]]
+    
+    t_total = Table(total_data, colWidths=total_col_widths)
     t_total.setStyle(TableStyle([
         ('ALIGN', (-2,-1), (-1,-1), 'RIGHT'),
-        ('TEXTCOLOR', (-1,-1), (-1,-1), colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ('LINEABOVE', (-2,-1), (-1,-1), 1, colors.black),
-        ('FONTSIZE', (-2,-1), (-1,-1), 12),
     ]))
     story.append(t_total)
     
