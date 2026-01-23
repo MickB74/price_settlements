@@ -1847,9 +1847,8 @@ with tab_validation:
                             profile_central = profile_series.tz_convert('US/Central')
                             gen_profile_df = pd.DataFrame({
                                 'Gen_MW': profile_central.values,
-                                'Time_Central': profile_central.index
+                                'Time': profile_central.index.tz_convert('UTC')  # Use UTC for merge
                             })
-                            gen_profile_df['Time'] = gen_profile_df['Time_Central'].dt.tz_convert('UTC')
                             gen_profile_df['Gen_Energy_MWh'] = gen_profile_df['Gen_MW'] * 0.25  # 15-min intervals
                             
                             # Merge market data with generation profile
