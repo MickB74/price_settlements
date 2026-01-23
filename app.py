@@ -1972,11 +1972,13 @@ with tab_validation:
                                     t_gen = df['Gen_Energy_MWh'].sum()
                                     t_settle = df['Settlement_$'].sum()
                                     avg_rate = t_settle / t_gen if t_gen > 0 else 0
+                                    rec_cost = -avg_rate
                                     comp_summary.append({
                                         "Source": name,
                                         "Generation (MWh)": f"{t_gen:,.0f}",
                                         "Net Settlement ($)": f"${t_settle:,.0f}",
-                                        "Capture Rate ($/MWh)": f"${avg_rate:.2f}"
+                                        "Capture Rate ($/MWh)": f"${avg_rate:.2f}",
+                                        "Implied REC Cost ($/MWh)": f"${rec_cost:.2f}"
                                     })
                                 st.table(pd.DataFrame(comp_summary))
                                 st.markdown("---")
@@ -1990,13 +1992,16 @@ with tab_validation:
                             total_settlement = df_primary['Settlement_$'].sum()
                             avg_spp = df_primary['SPP'].mean()
                             avg_capture_rate = total_settlement / total_gen if total_gen > 0 else 0
+                            implied_rec_cost = -avg_capture_rate
                             
-                            col1, col2, col3, col4 = st.columns(4)
+                            col1, col2, col3, col4, col5 = st.columns(5)
                             col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
                             col2.metric("Total Settlement", f"${total_settlement:,.0f}")
                             col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
                             col4.metric("Avg Capture Rate", f"${avg_capture_rate:.2f}/MWh", 
                                       delta=f"{avg_capture_rate - val_vppa_price:.2f}" if val_vppa_price else None)
+                            col5.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
+                                       help="Calculated as -(Settlement / Generation). Positive = net cost to buyer, Negative = net credit.")
                             
                             # 3. Charts
                             st.markdown(f"### 📊 {preview_view} Settlement")
@@ -2060,7 +2065,9 @@ with tab_validation:
                             st.markdown(f"### 📋 15-Minute Interval Data Preview ({primary_name})")
                             st.caption("Showing first 100 intervals")
                             
-                            display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$']
+                            df_primary['Implied_REC_Cost_$/MWh'] = -(df_primary['Settlement_$'] / df_primary['Gen_Energy_MWh']).fillna(0)
+                            
+                            display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$/MWh']
                             preview_df = df_primary[display_cols].head(100).copy()
                             preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
                             
@@ -2070,7 +2077,8 @@ with tab_validation:
                                     'Gen_Energy_MWh': '{:.4f}',
                                     'SPP': '${:.2f}',
                                     'Settlement_$/MWh': '${:.2f}',
-                                    'Settlement_$': '${:.2f}'
+                                    'Settlement_$': '${:.2f}',
+                                    'Implied_REC_Cost_$/MWh': '${:.2f}'
                                 }),
                                 use_container_width=True,
                                 height=400
