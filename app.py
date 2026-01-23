@@ -2083,6 +2083,65 @@ with tab_validation:
         fig.update_yaxes(tickprefix="$")
         st.plotly_chart(fig, use_container_width=True)
         
+        # 3b. Generation Chart
+        st.markdown("---")
+        st.markdown("### ⚡ Generation Chart")
+        
+        fig_gen = go.Figure()
+        
+        for name, df in preview_results.items():
+            if preview_view == "Monthly":
+                # derivating Month aggregator
+                df['Month'] = df['Time_Central'].dt.to_period('M').astype(str)
+                gen_df = df.groupby('Month').agg({'Gen_Energy_MWh': 'sum'}).reset_index()
+                x_col = 'Month'
+            else: # Daily
+                df['Date'] = df['Time_Central'].dt.date
+                gen_df = df.groupby('Date').agg({'Gen_Energy_MWh': 'sum'}).reset_index()
+                x_col = 'Date'
+            
+            if len(preview_results) > 1:
+                if preview_view == "Monthly":
+                    # Use grouped bars for monthly comparison
+                    fig_gen.add_trace(go.Bar(
+                        x=gen_df['Month'],
+                        y=gen_df['Gen_Energy_MWh'],
+                        name=f'{name} Generation'
+                    ))
+                else:
+                    # Use Line when comparing daily
+                    fig_gen.add_trace(go.Scatter(
+                        x=gen_df['Date'],
+                        y=gen_df['Gen_Energy_MWh'],
+                        name=f'{name} Generation',
+                        mode='lines',
+                        opacity=0.8
+                    ))
+            else:
+                # Use Bar for single source
+                fig_gen.add_trace(go.Bar(
+                    x=gen_df[x_col],
+                    y=gen_df['Gen_Energy_MWh'],
+                    name=f'{preview_view} Generation',
+                    marker_color='#1f77b4' # Muted blue
+                ))
+                
+        gen_title = f"{preview_view} Renewable Generation"
+        if len(preview_results) > 1:
+            gen_title += " Comparison"
+            if preview_view == "Monthly":
+                fig_gen.update_layout(barmode='group')
+                
+        fig_gen.update_layout(
+            title=gen_title,
+            xaxis_title="Month" if preview_view == "Monthly" else "Date",
+            yaxis_title="Generation (MWh)",
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            height=450
+        )
+        st.plotly_chart(fig_gen, use_container_width=True)
+        
         # 4. Preview and Download for Primary
         st.markdown(f"### 📋 15-Minute Interval Data Preview ({primary_name})")
         st.caption("Showing first 100 intervals")
