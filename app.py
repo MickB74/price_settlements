@@ -1831,7 +1831,7 @@ with tab_validation:
                             lat, lon = hub_default_locs.get(val_hub, (32.0, -100.0))
                         
                         # Get generation profile
-                        gen_profile_df = get_generation_profile(
+                        profile_series = fetch_tmy.get_profile_for_year(
                             year=val_year,
                             tech=preview_tech,
                             lat=lat,
@@ -1840,9 +1840,18 @@ with tab_validation:
                             force_tmy=False
                         )
                         
-                        if gen_profile_df is None or gen_profile_df.empty:
+                        if profile_series is None or profile_series.empty:
                             st.error(f"Could not generate {preview_tech} profile for {lat:.4f}, {lon:.4f}")
                         else:
+                            # Convert to Central time and create dataframe
+                            profile_central = profile_series.tz_convert('US/Central')
+                            gen_profile_df = pd.DataFrame({
+                                'Gen_MW': profile_central.values,
+                                'Time_Central': profile_central.index
+                            })
+                            gen_profile_df['Time'] = gen_profile_df['Time_Central'].dt.tz_convert('UTC')
+                            gen_profile_df['Gen_Energy_MWh'] = gen_profile_df['Gen_MW'] * 0.25  # 15-min intervals
+                            
                             # Merge market data with generation profile
                             df_merged = pd.merge(
                                 gen_profile_df,
