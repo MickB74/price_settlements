@@ -1705,10 +1705,10 @@ with tab_validation:
             st.session_state.val_map_lat = st.session_state.val_custom_lat
             st.session_state.val_map_lon = st.session_state.val_custom_lon
         
-        # Create map centered on Texas/ERCOT region
+        # Create map centered on selected location (not just Texas center)
         val_map = folium.Map(
-            location=[31.0, -100.0],  # Center of Texas
-            zoom_start=6,
+            location=[st.session_state.val_map_lat, st.session_state.val_map_lon],  # Center on selected location
+            zoom_start=7,
             tiles="OpenStreetMap"
         )
         
