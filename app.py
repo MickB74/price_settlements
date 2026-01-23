@@ -1633,15 +1633,6 @@ if st.session_state.scenarios:
 
 # --- Bill Validation Tab ---
 with tab_validation:
-    # Hide sidebar on this tab
-    st.markdown("""
-        <style>
-            [data-testid="stSidebar"] {
-                display: none;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
     st.header("Bill Validation")
     st.markdown("Upload your generation data (and optional settlement data) to validate against official ERCOT market prices.")
 
