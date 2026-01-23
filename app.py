@@ -2251,8 +2251,8 @@ with tab_validation:
                             user_settlement = row.get('User_Settlement_Amount', 0)
                             
                             # Filter market data for this month
-                            month_start = month_period.to_timestamp()
-                            month_end = (month_period + 1).to_timestamp()
+                            month_start = month_period.to_timestamp().tz_localize('US/Central')
+                            month_end = (month_period + 1).to_timestamp().tz_localize('US/Central')
                             
                             df_month = df_market_hub[
                                 (df_market_hub['Time_Central'] >= month_start) & 
