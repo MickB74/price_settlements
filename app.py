@@ -1849,19 +1849,20 @@ with tab_validation:
     st.caption("See expected settlement data based on your configuration")
     
     # Add technology selector for data preview
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
+    col_tech, col_cap, col_weather = st.columns(3)
+    with col_tech:
         preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
-    with col2:
+    with col_cap:
         preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
-    with col3:
+    with col_weather:
         preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
-    with col4:
-        preview_view = st.selectbox("Chart View", ["Daily", "Monthly"], key="preview_view")
     
     if st.button("📈 Generate Preview", type="primary"):
         with st.spinner("Loading market data and generating profile..."):
             try:
+                # Clear previous results to force fresh load
+                if 'val_preview_results' in st.session_state:
+                    del st.session_state['val_preview_results']
                 # Load market data
                 df_market = get_ercot_data(val_year)
                 
@@ -1962,137 +1963,159 @@ with tab_validation:
                             else:
                                 st.error("Could not generate data for the selected configuration.")
                         else:
-                            # --- Display Results ---
-                            
-                            # 1. Comparison Table if multiple sources
-                            if len(preview_results) > 1:
-                                st.markdown("### 📊 Contrast: Actual vs Typical (TMY)")
-                                comp_summary = []
-                                for name, df in preview_results.items():
-                                    t_gen = df['Gen_Energy_MWh'].sum()
-                                    t_settle = df['Settlement_$'].sum()
-                                    avg_rate = t_settle / t_gen if t_gen > 0 else 0
-                                    rec_cost = -avg_rate
-                                    comp_summary.append({
-                                        "Source": name,
-                                        "Generation (MWh)": f"{t_gen:,.0f}",
-                                        "Net Settlement ($)": f"${t_settle:,.0f}",
-                                        "Capture Rate ($/MWh)": f"${avg_rate:.2f}",
-                                        "Implied REC Cost ($/MWh)": f"${rec_cost:.2f}"
-                                    })
-                                st.table(pd.DataFrame(comp_summary))
-                                st.markdown("---")
-                            
-                            # 2. Main Metrics (show either first one or Actual if available)
-                            primary_name = "Actual" if "Actual" in preview_results else list(preview_results.keys())[0]
-                            df_primary = preview_results[primary_name]
-                            
-                            st.markdown(f"### 📈 Summary Metrics ({primary_name})")
-                            total_gen = df_primary['Gen_Energy_MWh'].sum()
-                            total_settlement = df_primary['Settlement_$'].sum()
-                            avg_spp = df_primary['SPP'].mean()
-                            avg_capture_rate = total_settlement / total_gen if total_gen > 0 else 0
-                            implied_rec_cost = -avg_capture_rate
-                            
-                            col1, col2, col3, col4, col5 = st.columns(5)
-                            col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
-                            col2.metric("Total Settlement", f"${total_settlement:,.0f}")
-                            col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
-                            col4.metric("Avg Capture Rate", f"${avg_capture_rate:.2f}/MWh", 
-                                      delta=f"{avg_capture_rate - val_vppa_price:.2f}" if val_vppa_price else None)
-                            col5.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
-                                       help="Calculated as -(Settlement / Generation). Positive = net cost to buyer, Negative = net credit.")
-                            
-                            # 3. Charts
-                            st.markdown(f"### 📊 {preview_view} Settlement")
-                            fig = go.Figure()
-                            
-                            for name, df in preview_results.items():
-                                if preview_view == "Monthly":
-                                    df['Month'] = df['Time_Central'].dt.to_period('M').astype(str)
-                                    chart_df = df.groupby('Month').agg({'Settlement_$': 'sum'}).reset_index()
-                                    x_col = 'Month'
-                                else: # Daily
-                                    df['Date'] = df['Time_Central'].dt.date
-                                    chart_df = df.groupby('Date').agg({'Settlement_$': 'sum'}).reset_index()
-                                    x_col = 'Date'
+                            st.session_state['val_preview_results'] = preview_results
+                            st.session_state['val_preview_tech'] = preview_tech # For filename
                                 
-                                if len(preview_results) > 1:
-                                    if preview_view == "Monthly":
-                                        # Use grouped bars for monthly comparison
-                                        fig.add_trace(go.Bar(
-                                            x=chart_df['Month'],
-                                            y=chart_df['Settlement_$'],
-                                            name=f'{name} Settlement'
-                                        ))
-                                    else:
-                                        # Use Line when comparing daily
-                                        fig.add_trace(go.Scatter(
-                                            x=chart_df['Date'],
-                                            y=chart_df['Settlement_$'],
-                                            name=f'{name} Settlement',
-                                            mode='lines',
-                                            opacity=0.8
-                                        ))
-                                else:
-                                    # Use Bar for single source
-                                    fig.add_trace(go.Bar(
-                                        x=chart_df[x_col],
-                                        y=chart_df['Settlement_$'],
-                                        name=f'{preview_view} Settlement',
-                                        marker_color=['green' if x > 0 else 'red' for x in chart_df['Settlement_$']]
-                                    ))
-                                    
-                            fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
-                            
-                            chart_title = f"{preview_view} Net Settlement"
-                            if len(preview_results) > 1:
-                                chart_title += " Comparison"
-                                if preview_view == "Monthly":
-                                    fig.update_layout(barmode='group')
-                                    
-                            fig.update_layout(
-                                title=chart_title,
-                                xaxis_title="Month" if preview_view == "Monthly" else "Date",
-                                yaxis_title="Settlement ($)",
-                                hovermode="x unified",
-                                height=450
-                            )
-                            fig.update_yaxes(tickprefix="$")
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            # 4. Preview and Download for Primary
-                            st.markdown(f"### 📋 15-Minute Interval Data Preview ({primary_name})")
-                            st.caption("Showing first 100 intervals")
-                            
-                            df_primary['Implied_REC_Cost_$/MWh'] = -(df_primary['Settlement_$'] / df_primary['Gen_Energy_MWh']).fillna(0)
-                            
-                            display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$/MWh']
-                            preview_df = df_primary[display_cols].head(100).copy()
-                            preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
-                            
-                            st.dataframe(
-                                preview_df.style.format({
-                                    'Gen_MW': '{:.2f}',
-                                    'Gen_Energy_MWh': '{:.4f}',
-                                    'SPP': '${:.2f}',
-                                    'Settlement_$/MWh': '${:.2f}',
-                                    'Settlement_$': '${:.2f}',
-                                    'Implied_REC_Cost_$/MWh': '${:.2f}'
-                                }),
-                                use_container_width=True,
-                                height=400
-                            )
-                            
-                            # Download full dataset
-                            csv = df_primary[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label=f"📥 Download Full {primary_name} Intervals CSV",
-                                data=csv,
-                                file_name=f"{preview_tech}_{val_hub}_{val_year}_{primary_name}_intervals.csv",
-                                mime="text/csv",
-                                key="download_preview_csv"
-                            )
+            except Exception as e:
+                st.error(f"Error generating preview: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+    
+    # --- Display Results Section (Cached) ---
+    if 'val_preview_results' in st.session_state:
+        preview_results = st.session_state['val_preview_results']
+        
+        # 1. Comparison Table if multiple sources
+        if len(preview_results) > 1:
+            st.markdown("### 📊 Contrast: Actual vs Typical (TMY)")
+            comp_summary = []
+            for name, df in preview_results.items():
+                t_gen = df['Gen_Energy_MWh'].sum()
+                t_settle = df['Settlement_$'].sum()
+                t_rev = df['Market_Revenue_$'].sum()
+                
+                c_price = t_rev / t_gen if t_gen > 0 else 0
+                rec_cost = -(t_settle / t_gen) if t_gen > 0 else 0
+                
+                comp_summary.append({
+                    "Source": name,
+                    "Generation (MWh)": f"{t_gen:,.0f}",
+                    "Capture Price ($/MWh)": f"${c_price:.2f}",
+                    "Implied REC Cost ($/MWh)": f"${rec_cost:.2f}",
+                    "Net Settlement ($)": f"${t_settle:,.0f}"
+                })
+            st.table(pd.DataFrame(comp_summary))
+            st.markdown("---")
+        
+        # 2. Main Metrics (show either first one or Actual if available)
+        primary_name = "Actual" if "Actual" in preview_results else list(preview_results.keys())[0]
+        df_primary = preview_results[primary_name]
+        
+        st.markdown(f"### 📈 Summary Metrics ({primary_name})")
+        total_gen = df_primary['Gen_Energy_MWh'].sum()
+        total_settlement = df_primary['Settlement_$'].sum()
+        total_market_revenue = df_primary['Market_Revenue_$'].sum()
+        
+        avg_spp = df_primary['SPP'].mean()
+        capture_price = total_market_revenue / total_gen if total_gen > 0 else 0
+        implied_rec_cost = - (total_settlement / total_gen) if total_gen > 0 else 0
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
+        col2.metric("Total Settlement", f"${total_settlement:,.0f}")
+        col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
+        col4.metric("Capture Price", f"${capture_price:.2f}/MWh", 
+                  help="Weighted average market value of generated energy (Market Revenue / Generation)")
+        col5.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
+                   help="Net cost (positive) or credit (negative) paid due to PPA settlement. Calculated as -(Settlement / Generation).")
+        
+        # 3. Charts with own View Selector
+        st.markdown("---")
+        chart_col, view_col = st.columns([0.7, 0.3])
+        with chart_col:
+            st.markdown("### 📊 Settlement Chart")
+        with view_col:
+            preview_view = st.selectbox("Chart Time Aggregation", ["Daily", "Monthly"], key="preview_view_internal")
+
+        fig = go.Figure()
+        
+        for name, df in preview_results.items():
+            if preview_view == "Monthly":
+                df['Month'] = df['Time_Central'].dt.to_period('M').astype(str)
+                chart_df = df.groupby('Month').agg({'Settlement_$': 'sum'}).reset_index()
+                x_col = 'Month'
+            else: # Daily
+                df['Date'] = df['Time_Central'].dt.date
+                chart_df = df.groupby('Date').agg({'Settlement_$': 'sum'}).reset_index()
+                x_col = 'Date'
+            
+            if len(preview_results) > 1:
+                if preview_view == "Monthly":
+                    # Use grouped bars for monthly comparison
+                    fig.add_trace(go.Bar(
+                        x=chart_df['Month'],
+                        y=chart_df['Settlement_$'],
+                        name=f'{name} Settlement'
+                    ))
+                else:
+                    # Use Line when comparing daily
+                    fig.add_trace(go.Scatter(
+                        x=chart_df['Date'],
+                        y=chart_df['Settlement_$'],
+                        name=f'{name} Settlement',
+                        mode='lines',
+                        opacity=0.8
+                    ))
+            else:
+                # Use Bar for single source
+                fig.add_trace(go.Bar(
+                    x=chart_df[x_col],
+                    y=chart_df['Settlement_$'],
+                    name=f'{preview_view} Settlement',
+                    marker_color=['green' if x > 0 else 'red' for x in chart_df['Settlement_$']]
+                ))
+                
+        fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
+        
+        chart_title = f"{preview_view} Net Settlement"
+        if len(preview_results) > 1:
+            chart_title += " Comparison"
+            if preview_view == "Monthly":
+                fig.update_layout(barmode='group')
+                
+        fig.update_layout(
+            title=chart_title,
+            xaxis_title="Month" if preview_view == "Monthly" else "Date",
+            yaxis_title="Settlement ($)",
+            hovermode="x unified",
+            height=450
+        )
+        fig.update_yaxes(tickprefix="$")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 4. Preview and Download for Primary
+        st.markdown(f"### 📋 15-Minute Interval Data Preview ({primary_name})")
+        st.caption("Showing first 100 intervals")
+        
+        df_primary['Implied_REC_Cost_$/MWh'] = -(df_primary['Settlement_$'] / df_primary['Gen_Energy_MWh']).fillna(0)
+        
+        display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$/MWh']
+        preview_df = df_primary[display_cols].head(100).copy()
+        preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
+        
+        st.dataframe(
+            preview_df.style.format({
+                'Gen_MW': '{:.2f}',
+                'Gen_Energy_MWh': '{:.4f}',
+                'SPP': '${:.2f}',
+                'Settlement_$/MWh': '${:.2f}',
+                'Settlement_$': '${:.2f}',
+                'Implied_REC_Cost_$/MWh': '${:.2f}'
+            }),
+            use_container_width=True,
+            height=400
+        )
+        
+        # Download full dataset
+        csv = df_primary[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
+        p_tech = st.session_state.get('val_preview_tech', 'profile')
+        st.download_button(
+            label=f"📥 Download Full {primary_name} Intervals CSV",
+            data=csv,
+            file_name=f"{p_tech}_{val_hub}_{val_year}_{primary_name}_intervals.csv",
+            mime="text/csv",
+            key="download_preview_csv"
+        )
                                 
             except Exception as e:
                 st.error(f"Error generating preview: {str(e)}")
