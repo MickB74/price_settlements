@@ -2116,11 +2116,6 @@ with tab_validation:
             mime="text/csv",
             key="download_preview_csv"
         )
-                                
-            except Exception as e:
-                st.error(f"Error generating preview: {str(e)}")
-                import traceback
-                st.code(traceback.format_exc())
     
     st.markdown("---")
     st.subheader("📤 Or Upload Your Bill for Validation")
