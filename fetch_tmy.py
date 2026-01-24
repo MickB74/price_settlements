@@ -154,6 +154,14 @@ def get_openmeteo_data(year, lat, lon):
         "hourly": "shortwave_radiation,wind_speed_10m",
         "timezone": "UTC"
     }
+
+    # Cap end_date at today if year is current year (or future)
+    today = pd.Timestamp.now().date()
+    if year >= today.year:
+        # Use yesterday to be safe, or today if supported
+        safe_end = min(pd.Timestamp(f"{year}-12-31").date(), today)
+        params["end_date"] = str(safe_end)
+
     
     print(f"Fetching Open-Meteo {year} data (10m) for {lat}, {lon}...")
     
