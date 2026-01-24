@@ -1810,6 +1810,20 @@ with tab_validation:
         if not selected_month_numbers:
             st.warning("⚠️ No months selected. Please select at least one month.")
     
+    # Custom Location Toggle and Manual Input
+    val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
+    
+    val_custom_lat = None
+    val_custom_lon = None
+    if val_use_custom_location:
+        st.caption("💡 Enter your project's exact coordinates or use the map below")
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
+        with col_lon:
+            val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
+        st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
+
     # --- Location Picker Section ---
     with st.expander("🗺️ Pick Project Location", expanded=False):
         st.caption("Search by name or click on the map to select your project location")
@@ -1912,19 +1926,7 @@ with tab_validation:
         if st.session_state.get('val_use_custom_location', False):
             st.success(f"✅ Using custom location: {st.session_state.val_map_lat:.4f}, {st.session_state.val_map_lon:.4f}")
     
-    # Custom Location Toggle and Manual Input
-    val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
-    
-    val_custom_lat = None
-    val_custom_lon = None
-    if val_use_custom_location:
-        st.caption("💡 Enter your project's exact coordinates or use the map above")
-        col_lat, col_lon = st.columns(2)
-        with col_lat:
-            val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
-        with col_lon:
-            val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
-        st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
+
 
     
     # --- Display Results Section (Cached) ---
