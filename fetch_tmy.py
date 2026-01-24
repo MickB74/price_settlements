@@ -150,17 +150,17 @@ def get_openmeteo_data(year, lat, lon):
         "latitude": lat,
         "longitude": lon,
         "start_date": f"{year}-01-01",
-        "end_date": f"{year}-12-31",
+        "end_date": f"{year+1}-01-01", # Fetch one extra day to cover UTC-Central offset at year end
         "hourly": "shortwave_radiation,wind_speed_10m",
         "timezone": "UTC"
     }
 
     # Cap end_date at today if year is current year (or future)
     today = pd.Timestamp.now().date()
-    if year >= today.year:
-        # Use yesterday to be safe, or today if supported
-        safe_end = min(pd.Timestamp(f"{year}-12-31").date(), today)
-        params["end_date"] = str(safe_end)
+    # We want to fetch up to Jan 1st of next year if possible, but no further than today
+    target_end = pd.Timestamp(f"{year+1}-01-01").date()
+    safe_end = min(target_end, today)
+    params["end_date"] = str(safe_end)
 
     
     print(f"Fetching Open-Meteo {year} data (10m) for {lat}, {lon}...")
@@ -315,10 +315,14 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         s_hourly = s_hourly[~s_hourly.index.duplicated(keep='first')]
         s_15min = s_hourly.resample('15min').interpolate(method='linear')
         
-        # Reindex to full year
-        start_date = f"{year}-01-01"
-        end_date = f"{year}-12-31 23:45"
-        target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
+        # Reindex to full year (aligned to US/Central)
+        target_index_cst = pd.date_range(
+            start=f"{year}-01-01 00:00", 
+            end=f"{year}-12-31 23:45", 
+            freq='15min', 
+            tz='US/Central'
+        )
+        target_index = target_index_cst.tz_convert('UTC')
         
         s_final = s_15min.reindex(target_index).ffill().bfill()
         return s_final.fillna(0)
