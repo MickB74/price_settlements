@@ -2216,139 +2216,140 @@ with tab_validation:
             key="download_bill_pdf_final"
         )
         
-        # --- NEW: Actual Asset Benchmarking Section ---
-        st.markdown("---")
-        st.markdown("### 🏆 Actual Asset Benchmarking & Data Retrieval")
-        st.info("Retrieve and compare **real-world production** from ERCOT assets against our model. (Note: Data is subject to 60-day ERCOT disclosure delay)")
-        
-        # Load registry and candidate list
-        try:
-            with open('ercot_assets.json', 'r') as f:
-                asset_registry = json.load(f)
-        except Exception:
-            asset_registry = {}
-            
-        try:
-            with open('ercot_renewable_assets.txt', 'r') as f:
-                candidate_units = [line.strip() for line in f if line.strip()]
-        except Exception:
-            candidate_units = []
-
-        # Asset Selection Logic
-        col_reg, col_cust = st.columns([0.6, 0.4])
-        with col_reg:
-            benchmark_asset_name = st.selectbox("Select Curated Project", options=["None (Use Custom ID)"] + list(asset_registry.keys()), index=1)
-        with col_cust:
-            custom_resource_id = st.text_input("OR Enter Custom Resource ID (from ercot_renewable_assets.txt)", help="Example: FRYE_SLR_UNIT1, MONTECR1_WIND1")
-
-        # Determine target asset
-        final_resource_id = None
-        asset_meta = None
-        
-        if custom_resource_id:
-            final_resource_id = custom_resource_id.strip().upper()
-            # Try to find tech/lat/lon if it happens to be in our registry
-            for name, meta in asset_registry.items():
-                if meta['resource_name'] == final_resource_id:
-                    asset_meta = meta
-                    break
-        elif benchmark_asset_name != "None (Use Custom ID)":
-            asset_meta = asset_registry[benchmark_asset_name]
-            final_resource_id = asset_meta['resource_name']
-
-        if final_resource_id:
-            # Date Range Picker
-            max_date = (datetime.now() - timedelta(days=65)).date()
-            min_date = max_date - timedelta(days=365) # Allow 1 year lookback within disclosure
-            
-            st.markdown(f"**Targeting:** `{final_resource_id}`")
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                start_bench = st.date_input("Start Date", value=max_date - timedelta(days=1), min_value=min_date, max_value=max_date)
-            with col_d2:
-                end_bench = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
-
-            if asset_meta:
-                st.caption(f"**Asset Details:** {asset_meta['tech']} | {asset_meta['capacity_mw']} MW | {asset_meta['hub']} Hub")
-            else:
-                st.warning("⚠️ Manual Override: Metadata (lat/lon) missing for this ID. Modeling comparison will use current scenario settings.")
-
-            if st.button(f"🚀 Fetch & Benchmark {final_resource_id}"):
-                if start_bench > end_bench:
-                    st.error("Start date must be before end date.")
-                else:
-                    with st.spinner(f"Retrieving actual production for {final_resource_id}..."):
-                        # 1. Fetch Actual Data
-                        df_actual = sced_fetcher.get_asset_period_data(final_resource_id, start_bench, end_bench)
-                        
-                        if not df_actual.empty:
-                            # 2. Run Model for comparison
-                            # Use metadata if available, otherwise use page settings
-                            compare_lat = asset_meta['lat'] if asset_meta else lat
-                            compare_lon = asset_meta['lon'] if asset_meta else lon
-                            compare_tech = asset_meta['tech'] if asset_meta else st.session_state.get('preview_tech', 'Solar')
-                            compare_cap = asset_meta['capacity_mw'] if asset_meta else st.session_state.get('preview_capacity', 100.0)
-                            
-                            # Run model for all years in range
-                            target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
-                            model_dfs = []
-                            for yr in target_years:
-                                m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon)
-                                model_dfs.append(m_df)
-                            df_modeled_full = pd.concat(model_dfs)
-                            
-                            # Slice to match
-                            actual_times = df_actual['Time']
-                            df_modeled_slice = df_modeled_full[df_modeled_full.index.isin(actual_times)].copy()
-                            
-                            # 3. Merge and Compare
-                            df_comp = pd.merge(df_actual, df_modeled_slice.reset_index().rename(columns={'index': 'Time'}), on='Time')
-                            df_comp = df_comp.rename(columns={'Gen_MW': 'Modeled_MW'})
-                            
-                            # Calculate Metrics
-                            mae = (df_comp['Actual_MW'] - df_comp['Modeled_MW']).abs().mean()
-                            r2 = np.corrcoef(df_comp['Actual_MW'], df_comp['Modeled_MW'])[0, 1]**2 if len(df_comp) > 1 else 0
-                            
-                            # Display Metrics
-                            m1, m2, m3 = st.columns(3)
-                            m1.metric("Mean Absolute Error", f"{mae:.2f} MW")
-                            m2.metric("Correlation (R²)", f"{r2:.2%}")
-                            m3.metric("Data Points", f"{len(df_comp)}")
-                            
-                            # Visual Overlay
-                            fig_bench = go.Figure()
-                            fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Actual_MW'], name='Real Production (ERCOT)', line=dict(color='orange', width=2)))
-                            fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Modeled_MW'], name='Our Model (ERA5)', line=dict(color='blue', dash='dash', width=1.5)))
-                            
-                            fig_bench.update_layout(
-                                title=f"Benchmarking: {final_resource_id} ({start_bench} to {end_bench})",
-                                xaxis_title="Time (UTC)",
-                                yaxis_title="Generation (MW)",
-                                hovermode="x unified",
-                                height=500,
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                            )
-                            st.plotly_chart(fig_bench, use_container_width=True)
-                            
-                            # Export Section
-                            st.markdown("#### 📥 Export Data")
-                            csv_actual = df_actual[['Time', 'Actual_MW']].to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label=f"📥 Download Actual Generation CSV ({final_resource_id})",
-                                data=csv_actual,
-                                file_name=f"actual_gen_{final_resource_id}_{start_bench}_{end_bench}.csv",
-                                mime="text/csv"
-                            )
-                            
-                            st.success(f"Successfully retrieved **{len(df_actual)}** interval points.")
-                        else:
-                            st.error(f"No generation data found for `{final_resource_id}` in this period. Note: Data stops ~60 days before today.")
-        else:
-            st.warning("Please select a project or enter a Resource ID.")
-
+    st.markdown("---")
     
+    # --- Actual Asset Benchmarking Section (Always Visible) ---
+    st.markdown("### 🏆 Actual Asset Benchmarking & Data Retrieval")
+    st.info("Retrieve and compare **real-world production** from ERCOT assets against our model. (Note: Data is subject to 60-day ERCOT disclosure delay)")
+    
+    # Load registry and candidate list
+    try:
+        with open('ercot_assets.json', 'r') as f:
+            asset_registry = json.load(f)
+    except Exception:
+        asset_registry = {}
+        
+    try:
+        with open('ercot_renewable_assets.txt', 'r') as f:
+            candidate_units = [line.strip() for line in f if line.strip()]
+    except Exception:
+        candidate_units = []
+
+    # Asset Selection Logic
+    col_reg, col_cust = st.columns([0.6, 0.4])
+    with col_reg:
+        benchmark_asset_name = st.selectbox("Select Curated Project", options=["None (Use Custom ID)"] + list(asset_registry.keys()), index=1)
+    with col_cust:
+        custom_resource_id = st.text_input("OR Enter Custom Resource ID (from ercot_renewable_assets.txt)", help="Example: FRYE_SLR_UNIT1, MONTECR1_WIND1")
+
+    # Determine target asset
+    final_resource_id = None
+    asset_meta = None
+    
+    if custom_resource_id:
+        final_resource_id = custom_resource_id.strip().upper()
+        # Try to find tech/lat/lon if it happens to be in our registry
+        for name, meta in asset_registry.items():
+            if meta['resource_name'] == final_resource_id:
+                asset_meta = meta
+                break
+    elif benchmark_asset_name != "None (Use Custom ID)":
+        asset_meta = asset_registry[benchmark_asset_name]
+        final_resource_id = asset_meta['resource_name']
+
+    if final_resource_id:
+        # Date Range Picker
+        max_date = (datetime.now() - timedelta(days=65)).date()
+        min_date = max_date - timedelta(days=365) # Allow 1 year lookback within disclosure
+        
+        st.markdown(f"**Targeting:** `{final_resource_id}`")
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            start_bench = st.date_input("Start Date", value=max_date - timedelta(days=1), min_value=min_date, max_value=max_date)
+        with col_d2:
+            end_bench = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
+
+        if asset_meta:
+            st.caption(f"**Asset Details:** {asset_meta['tech']} | {asset_meta['capacity_mw']} MW | {asset_meta['hub']} Hub")
+        else:
+            st.warning("⚠️ Manual Override: Metadata (lat/lon) missing for this ID. Modeling comparison will use current scenario settings.")
+
+        if st.button(f"🚀 Fetch & Benchmark {final_resource_id}"):
+            if start_bench > end_bench:
+                st.error("Start date must be before end date.")
+            else:
+                with st.spinner(f"Retrieving actual production for {final_resource_id}..."):
+                    # 1. Fetch Actual Data
+                    df_actual = sced_fetcher.get_asset_period_data(final_resource_id, start_bench, end_bench)
+                    
+                    if not df_actual.empty:
+                        # 2. Run Model for comparison
+                        # Use metadata if available, otherwise use page settings
+                        compare_lat = asset_meta['lat'] if asset_meta else lat
+                        compare_lon = asset_meta['lon'] if asset_meta else lon
+                        compare_tech = asset_meta['tech'] if asset_meta else st.session_state.get('preview_tech', 'Solar')
+                        compare_cap = asset_meta['capacity_mw'] if asset_meta else st.session_state.get('preview_capacity', 100.0)
+                        
+                        # Run model for all years in range
+                        target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
+                        model_dfs = []
+                        for yr in target_years:
+                            m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon)
+                            model_dfs.append(m_df)
+                        df_modeled_full = pd.concat(model_dfs)
+                        
+                        # Slice to match
+                        actual_times = df_actual['Time']
+                        df_modeled_slice = df_modeled_full[df_modeled_full.index.isin(actual_times)].copy()
+                        
+                        # 3. Merge and Compare
+                        df_comp = pd.merge(df_actual, df_modeled_slice.reset_index().rename(columns={'index': 'Time'}), on='Time')
+                        df_comp = df_comp.rename(columns={'Gen_MW': 'Modeled_MW'})
+                        
+                        # Calculate Metrics
+                        mae = (df_comp['Actual_MW'] - df_comp['Modeled_MW']).abs().mean()
+                        r2 = np.corrcoef(df_comp['Actual_MW'], df_comp['Modeled_MW'])[0, 1]**2 if len(df_comp) > 1 else 0
+                        
+                        # Display Metrics
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("Mean Absolute Error", f"{mae:.2f} MW")
+                        m2.metric("Correlation (R²)", f"{r2:.2%}")
+                        m3.metric("Data Points", f"{len(df_comp)}")
+                        
+                        # Visual Overlay
+                        fig_bench = go.Figure()
+                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Actual_MW'], name='Real Production (ERCOT)', line=dict(color='orange', width=2)))
+                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Modeled_MW'], name='Our Model (ERA5)', line=dict(color='blue', dash='dash', width=1.5)))
+                        
+                        fig_bench.update_layout(
+                            title=f"Benchmarking: {final_resource_id} ({start_bench} to {end_bench})",
+                            xaxis_title="Time (UTC)",
+                            yaxis_title="Generation (MW)",
+                            hovermode="x unified",
+                            height=500,
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        st.plotly_chart(fig_bench, use_container_width=True)
+                        
+                        # Export Section
+                        st.markdown("#### 📥 Export Data")
+                        csv_actual = df_actual[['Time', 'Actual_MW']].to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label=f"📥 Download Actual Generation CSV ({final_resource_id})",
+                            data=csv_actual,
+                            file_name=f"actual_gen_{final_resource_id}_{start_bench}_{end_bench}.csv",
+                            mime="text/csv"
+                        )
+                        
+                        st.success(f"Successfully retrieved **{len(df_actual)}** interval points.")
+                    else:
+                        st.error(f"No generation data found for `{final_resource_id}` in this period. Note: Data stops ~60 days before today.")
+    else:
+        st.warning("Please select a project or enter a Resource ID.")
+
     st.markdown("---")
     st.subheader("📤 Upload Your Bill for Validation")
+
 
     # --- File Uploader ---
     uploaded_bill = st.file_uploader(
