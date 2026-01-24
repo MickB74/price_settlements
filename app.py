@@ -2277,7 +2277,106 @@ with tab_validation:
                 # Monthly summary typically has <= 12 rows (one per month)
                 is_monthly_summary = len(df_bill) <= 24 and 'User_Settlement_Amount' in df_bill.columns
                 
-                if is_monthly_summary:
+                # --- 3. Model vs. Actual Comparison Logic ---
+                # Check if we have modeled results in session state to compare against
+                modeled_results = st.session_state.get('val_preview_results')
+                
+                if modeled_results:
+                    st.success("✅ Modeled scenario found! Comparing your Uploaded Bill against the Model.")
+                    
+                    # Get primary modeled dataframe (Actual or first available)
+                    primary_name = "Actual" if "Actual" in modeled_results else list(modeled_results.keys())[0]
+                    df_model = modeled_results[primary_name].copy()
+                    
+                    # Align Data for Comparison
+                    # We need to aggregate both to the same granularity (Monthly or Totals) for high-level variance
+                    
+                    # Aggregate Model to Monthly
+                    df_model['MonthPeriod'] = df_model['Time_Central'].dt.to_period('M')
+                    model_monthly = df_model.groupby('MonthPeriod').agg({
+                        'Gen_Energy_MWh': 'sum',
+                        'Settlement_$': 'sum',
+                        'Market_Revenue_$': 'sum',
+                        'VPPA_Payment_$': 'sum'
+                    }).reset_index()
+                    model_monthly['Month'] = model_monthly['MonthPeriod'].dt.strftime('%b %Y')
+                    
+                    # Process User Bill Data (ensure it has Month Period)
+                    if 'Month' not in df_bill.columns and time_col:
+                        df_bill['MonthPeriod'] = pd.to_datetime(df_bill[time_col]).dt.to_period('M')
+                        df_bill['Month'] = df_bill['MonthPeriod'].dt.strftime('%b %Y')
+                    elif 'Month' not in df_bill.columns:
+                        # Fallback if no time column (unlikely given previous checks)
+                        st.error("Cannot align data: Missing time column in bill.")
+                        st.stop()
+                        
+                    # Aggregate User Bill to Monthly (handling if it's already monthly or interval)
+                    user_monthly = df_bill.groupby('Month').agg({
+                        'User_Gen_MW': 'sum', # If interval, this needs freq adjustment!
+                        'User_Settlement_Amount': 'sum'
+                    }).reset_index()
+                    
+                    # Fix User Generation Unit if it was Interval MW -> needs MWh
+                    # If the bill was monthly summary, User_Gen_MW is likely MWh already.
+                    # If it was 15-min interval MW, we need to divide by 4.
+                    # Heuristic: Check number of rows.
+                    if len(df_bill) > 100: # detailed interval data
+                        # Estimate frequency
+                        time_diff = pd.to_datetime(df_bill[time_col]).diff().median()
+                        freq_hours = time_diff.total_seconds() / 3600.0 if pd.notnull(time_diff) else 0.25
+                        user_monthly['User_Gen_MW'] = user_monthly['User_Gen_MW'] * freq_hours
+                        
+                    # Rename for clarity
+                    user_monthly = user_monthly.rename(columns={'User_Gen_MW': 'Actual_Gen_MWh', 'User_Settlement_Amount': 'Actual_Settlement_$'})
+                    
+                    # Merge Comparison
+                    df_comparison = pd.merge(model_monthly, user_monthly, on='Month', how='outer').fillna(0)
+                    
+                    # Calculate Variances
+                    df_comparison['Gen_Diff_MWh'] = df_comparison['Gen_Energy_MWh'] - df_comparison['Actual_Gen_MWh']
+                    df_comparison['Settlement_Diff_$'] = df_comparison['Settlement_$'] - df_comparison['Actual_Settlement_$']
+                    
+                    # Formatting Dashboard
+                    st.markdown("### 🎯 Model Accuracy Dashboard")
+                    
+                    # Totals
+                    tot_mod_gen = df_comparison['Gen_Energy_MWh'].sum()
+                    tot_act_gen = df_comparison['Actual_Gen_MWh'].sum()
+                    tot_mod_set = df_comparison['Settlement_$'].sum()
+                    tot_act_set = df_comparison['Actual_Settlement_$'].sum()
+                    
+                    var_gen_pct = ((tot_mod_gen - tot_act_gen) / tot_act_gen) * 100 if tot_act_gen != 0 else 0
+                    var_set_pct = ((tot_mod_set - tot_act_set) / tot_act_set) * 100 if tot_act_set != 0 else 0
+                    
+                    # Display Variances
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Modeled Generation", f"{tot_mod_gen:,.0f} MWh")
+                    m2.metric("Actual Generation", f"{tot_act_gen:,.0f} MWh", delta=f"{var_gen_pct:+.1f}% Variance", delta_color="inverse")
+                    
+                    m3.metric("Modeled Settlement", f"${tot_mod_set:,.0f}")
+                    m4.metric("Actual Settlement", f"${tot_act_set:,.0f}", delta=f"{var_set_pct:+.1f}% Variance", delta_color="inverse")
+                    
+                    # Charts
+                    st.markdown("#### Monthly Comparison")
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(name='Modeled Limit', x=df_comparison['Month'], y=df_comparison['Settlement_$'], marker_color='lightblue'))
+                    fig.add_trace(go.Bar(name='Actual Bill', x=df_comparison['Month'], y=df_comparison['Actual_Settlement_$'], marker_color='coral'))
+                    fig.update_layout(barmode='group', title='Monthly Settlement: Modeled vs Actual')
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    with st.expander("Detailed Comparison Table"):
+                        st.dataframe(df_comparison.style.format({
+                            'Gen_Energy_MWh': '{:,.0f}',
+                            'Actual_Gen_MWh': '{:,.0f}',
+                            'Settlement_$': '${:,.2f}',
+                            'Actual_Settlement_$': '${:,.2f}',
+                            'Gen_Diff_MWh': '{:+,.0f}',
+                            'Settlement_Diff_$': '${:+,.2f}'
+                        }))
+                        
+                elif is_monthly_summary:
+                    # Fallback to existing fetch & calculate logic
+                    st.warning("⚠️ No recent model run found. Calculating expected settlement from scratch based on current settings.")
                     st.info("📊 Detected monthly summary data. Calculating expected totals from interval-level market data...")
                     
                     # 3. Fetch Market Data for the entire year
