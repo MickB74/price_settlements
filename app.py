@@ -1840,9 +1840,9 @@ with tab_validation:
     st.caption("💡 Enter your project's exact coordinates or use the map below")
     col_lat, col_lon = st.columns(2)
     with col_lat:
-        val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
+        val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, step=0.01, format="%.4f", key="val_custom_lat")
     with col_lon:
-        val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
+        val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, step=0.01, format="%.4f", key="val_custom_lon")
     
     st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
 
