@@ -1942,17 +1942,23 @@ with tab_validation:
         total_settlement = df_primary['Settlement_$'].sum()
         total_market_revenue = df_primary['Market_Revenue_$'].sum()
         
+        # Calculate Split Breakdown
+        total_received = df_primary[df_primary['Settlement_$'] > 0]['Settlement_$'].sum()
+        total_paid = df_primary[df_primary['Settlement_$'] < 0]['Settlement_$'].sum()
+
         avg_spp = df_primary['SPP'].mean()
         capture_price = total_market_revenue / total_gen if total_gen > 0 else 0
         implied_rec_cost = - (total_settlement / total_gen) if total_gen > 0 else 0
         
-        col1, col2, col3, col4, col5 = st.columns(5)
+        col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
         col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
         col2.metric("Total Settlement", f"${total_settlement:,.0f}")
-        col3.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
-        col4.metric("Capture Price", f"${capture_price:.2f}/MWh", 
+        col3.metric("Total Paid", f"${total_paid:,.0f}", help="Total amount paid to the counterparty (settlement < 0)")
+        col4.metric("Total Received", f"${total_received:,.0f}", help="Total amount received from the counterparty (settlement > 0)")
+        col5.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
+        col6.metric("Capture Price", f"${capture_price:.2f}/MWh", 
                   help="Weighted average market value of generated energy (Market Revenue / Generation)")
-        col5.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
+        col7.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
                    help="Net cost (positive) or credit (negative) paid due to PPA settlement. Calculated as -(Settlement / Generation).")
         
         # 3. Charts with own View Selector
