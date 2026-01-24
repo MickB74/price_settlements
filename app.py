@@ -1704,20 +1704,22 @@ with tab_validation:
             )
 
         # Row 2: Technology & Preview Settings + Action Button
-        # Row 2: Technology & Preview Settings + Action Button
-        c5, c6, c7, c8, c9 = st.columns([1, 1, 1, 1, 1])
+        # Row 2: Technology & Preview Settings
+        c5, c6, c7 = st.columns(3)
         with c5:
             preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
         with c6:
             preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
         with c7:
             preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
+            
+        # Row 3: Actions
+        c8, c9 = st.columns([3, 1])
         with c8:
-            st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             curtail_neg = st.checkbox("Curtail when Price < $0", value=False, help="Set Generation to 0 MWh when Hub Price is negative")
         with c9:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("📈 Generate Preview", type="primary", use_container_width=True):
+             if st.button("📈 Generate Preview", type="primary", use_container_width=True):
                 with st.spinner("Generating profile..."):
                     try:
                         # Market Data
