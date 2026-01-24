@@ -2195,7 +2195,7 @@ with tab_validation:
         )
     
     st.markdown("---")
-    st.subheader("📤 Or Upload Your Bill for Validation")
+    st.subheader("📤 Upload Your Bill for Validation")
 
     # --- File Uploader ---
     uploaded_bill = st.file_uploader(
