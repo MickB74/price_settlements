@@ -2270,8 +2270,16 @@ with tab_validation:
                 
                 # Convert to numeric (in case PDF/Excel had strings)
                 df_bill['User_Gen_MW'] = pd.to_numeric(df_bill['User_Gen_MW'], errors='coerce')
+                
                 if 'User_Settlement_Amount' in df_bill.columns:
-                    df_bill['User_Settlement_Amount'] = pd.to_numeric(df_bill['User_Settlement_Amount'], errors='coerce')
+                    # Clean currency formatting if string
+                    if df_bill['User_Settlement_Amount'].dtype == 'object':
+                        df_bill['User_Settlement_Amount'] = df_bill['User_Settlement_Amount'].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False).str.replace(')', '', regex=False).str.replace('(', '-', regex=False)
+                    
+                    df_bill['User_Settlement_Amount'] = pd.to_numeric(df_bill['User_Settlement_Amount'], errors='coerce').fillna(0)
+                else:
+                    # Ensure column exists for aggregation later, defaulting to 0
+                    df_bill['User_Settlement_Amount'] = 0.0
                 
                 # Detect if this is monthly summary data vs interval data
                 # Monthly summary typically has <= 12 rows (one per month)
