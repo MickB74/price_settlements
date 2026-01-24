@@ -325,6 +325,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         target_index = target_index_cst.tz_convert('UTC')
         
         s_final = s_15min.reindex(target_index).ffill().bfill()
+        s_final.name = "Gen_MW"
         return s_final.fillna(0)
 
         
