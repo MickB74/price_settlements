@@ -150,15 +150,15 @@ def get_openmeteo_data(year, lat, lon):
         "latitude": lat,
         "longitude": lon,
         "start_date": f"{year}-01-01",
-        "end_date": f"{year+1}-01-01", # Fetch one extra day to cover UTC-Central offset at year end
+        "end_date": f"{year+1}-01-02", # Fetch TWO extra days to cover UTC-Central offset at year end and avoid boundary issues
         "hourly": "shortwave_radiation,wind_speed_10m",
         "timezone": "UTC"
     }
 
     # Cap end_date at today if year is current year (or future)
     today = pd.Timestamp.now().date()
-    # We want to fetch up to Jan 1st of next year if possible, but no further than today
-    target_end = pd.Timestamp(f"{year+1}-01-01").date()
+    # We want to fetch up to Jan 2nd of next year if possible, but no further than today
+    target_end = pd.Timestamp(f"{year+1}-01-02").date()
     safe_end = min(target_end, today)
     params["end_date"] = str(safe_end)
 

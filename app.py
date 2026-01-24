@@ -2260,7 +2260,12 @@ with tab_validation:
             else:
                 # 2. Process User Data
                 # Parse Time
-                df_bill['Time'] = pd.to_datetime(df_bill[time_col], utc=True)
+                # Parse Time - Localize to Central if naive
+                df_bill['Time'] = pd.to_datetime(df_bill[time_col])
+                if df_bill['Time'].dt.tz is None:
+                    df_bill['Time'] = df_bill['Time'].dt.tz_localize('US/Central', ambiguous='infer').dt.tz_convert('UTC')
+                else:
+                    df_bill['Time'] = df_bill['Time'].dt.tz_convert('UTC')
                 
                 # Resample/Align if needed? For now assume it matches roughly or we align to Market Data
                 # Rename for clarity
@@ -2546,8 +2551,8 @@ with tab_validation:
                         
                         # Handle User Timezone
                         if df_bill['Time'].dt.tz is None:
-                            st.warning("⚠️ User timestamp is timezone-naive. Assuming UTC.")
-                            df_bill['Time'] = df_bill['Time'].dt.tz_localize('UTC')
+                            st.warning("⚠️ User timestamp is timezone-naive. Assuming US/Central.")
+                            df_bill['Time'] = df_bill['Time'].dt.tz_localize('US/Central', ambiguous='infer').dt.tz_convert('UTC')
                         else:
                             df_bill['Time'] = df_bill['Time'].dt.tz_convert('UTC')
                         
