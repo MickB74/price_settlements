@@ -23,6 +23,8 @@ from utils.pdf_generator import generate_settlement_pdf
 from streamlit_folium import st_folium
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
+import sced_fetcher
+import json
 
 # --- Constants & Configuration ---
 HUB_LOCATIONS = {
@@ -2193,6 +2195,85 @@ with tab_validation:
             mime="application/pdf",
             key="download_bill_pdf_final"
         )
+        
+        # --- NEW: Actual Asset Benchmarking Section ---
+        st.markdown("---")
+        st.markdown("### 🏆 Actual Asset Benchmarking")
+        st.info("Compare our model against **real-world production** from ERCOT assets. (Note: Data is subject to 60-day ERCOT disclosure delay)")
+        
+        # Load registry
+        try:
+            with open('ercot_assets.json', 'r') as f:
+                asset_registry = json.load(f)
+        except Exception:
+            asset_registry = {}
+            
+        if asset_registry:
+            benchmark_asset_name = st.selectbox("Select Benchmark Asset", options=list(asset_registry.keys()), index=0)
+            asset_meta = asset_registry[benchmark_asset_name]
+            
+            # Determine benchmarking period (latest available disclosure day)
+            latest_disclosure_date = (datetime.now() - timedelta(days=65)).date()
+            
+            st.markdown(f"**Asset Info:** {asset_meta['tech']} | {asset_meta['capacity_mw']} MW | {asset_meta['hub']} Hub")
+            
+            if st.button(f"🚀 Run Benchmark vs {benchmark_asset_name}"):
+                with st.spinner(f"Fetching real production for {asset_meta['resource_name']}..."):
+                    # 1. Fetch Actual Data
+                    # We'll fetch for the latest available date for this analysis
+                    df_actual = sced_fetcher.get_asset_actual_gen(asset_meta['resource_name'], latest_disclosure_date)
+                    
+                    if not df_actual.empty:
+                        # 2. Run Model for SAME date and coordinates
+                        # We need to run get_profile_for_year for just this day
+                        # Since get_profile_for_year returns full year, we'll slice it
+                        year_to_run = latest_disclosure_date.year
+                        
+                        df_modeled = fetch_tmy.get_profile_for_year(
+                            year=year_to_run,
+                            tech=asset_meta['tech'],
+                            capacity=asset_meta['capacity_mw'],
+                            lat=asset_meta['lat'],
+                            lon=asset_meta['lon']
+                        )
+                        # Slice to match actual data timestamps
+                        actual_times = df_actual['Time']
+                        df_modeled_slice = df_modeled[df_modeled.index.isin(actual_times)].copy()
+                        
+                        # 3. Merge and Compare
+                        df_comp = pd.merge(df_actual, df_modeled_slice.reset_index().rename(columns={'index': 'Time'}), on='Time')
+                        df_comp = df_comp.rename(columns={'Gen_MW': 'Modeled_MW'})
+                        
+                        # Calculate Metrics
+                        mae = (df_comp['Actual_MW'] - df_comp['Modeled_MW']).abs().mean()
+                        r2 = np.corrcoef(df_comp['Actual_MW'], df_comp['Modeled_MW'])[0, 1]**2 if len(df_comp) > 1 else 0
+                        
+                        # Display Metrics
+                        b1, b2, b3 = st.columns(3)
+                        b1.metric("Mean Absolute Error", f"{mae:.2f} MW")
+                        b2.metric("Correlation (R²)", f"{r2:.2%}")
+                        b3.metric("Sample Points", f"{len(df_comp)}")
+                        
+                        # Visual Overlay
+                        fig_bench = go.Figure()
+                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Actual_MW'], name='Real Production (ERCOT)', line=dict(color='orange', width=3)))
+                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Modeled_MW'], name='Our Model (ERA5)', line=dict(color='blue', dash='dash')))
+                        
+                        fig_bench.update_layout(
+                            title=f"Benchmarking Results: {benchmark_asset_name} ({latest_disclosure_date})",
+                            xaxis_title="Time (UTC)",
+                            yaxis_title="Generation (MW)",
+                            hovermode="x unified",
+                            height=450
+                        )
+                        st.plotly_chart(fig_bench, use_container_width=True)
+                        
+                        st.success(f"Model shows a **{r2:.0%} correlation** with real-world sensors at this location.")
+                    else:
+                        st.error("No disclosure data found for this asset on the target date.")
+        else:
+            st.warning("Asset registry not found.")
+
     
     st.markdown("---")
     st.subheader("📤 Upload Your Bill for Validation")

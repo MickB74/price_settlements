@@ -1,0 +1,42 @@
+{
+    "Frye Solar": {
+        "resource_name": "FRYE_SLR_UNIT1",
+        "tech": "Solar",
+        "capacity_mw": 200,
+        "hub": "West",
+        "lat": 34.4067,
+        "lon": -101.5966
+    },
+    "Roseland Solar": {
+        "resource_name": "ROSELAND_SOLAR1",
+        "tech": "Solar",
+        "capacity_mw": 250,
+        "hub": "North",
+        "lat": 31.4612,
+        "lon": -96.8249
+    },
+    "Ajax Wind": {
+        "resource_name": "AJAXWIND_UNIT1",
+        "tech": "Wind",
+        "capacity_mw": 200,
+        "hub": "West",
+        "lat": 33.8525,
+        "lon": -99.0651
+    },
+    "Monte Cristo Wind": {
+        "resource_name": "MONTECR1_WIND1",
+        "tech": "Wind",
+        "capacity_mw": 238,
+        "hub": "South",
+        "lat": 26.4175,
+        "lon": -98.3231
+    },
+    "Shaffer Wind": {
+        "resource_name": "SHAFFER_UNIT1",
+        "tech": "Wind",
+        "capacity_mw": 200,
+        "hub": "South",
+        "lat": 27.6021,
+        "lon": -97.6471
+    }
+}
