@@ -2270,7 +2270,17 @@ with tab_validation:
             end_bench = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
 
         if asset_meta:
-            st.caption(f"**Asset Details:** {asset_meta['tech']} | {asset_meta['capacity_mw']} MW | {asset_meta['hub']} Hub")
+            # Rich Metadata Display
+            with st.container():
+                st.markdown(f"#### 📍 {asset_meta.get('project_name', final_resource_id)}")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Capacity", f"{asset_meta['capacity_mw']} MW")
+                m2.metric("Technology", asset_meta['tech'])
+                m3.metric("Hub", asset_meta['hub'])
+                m4.metric("County", asset_meta.get('county', 'Unknown'))
+                
+                # Coordinates with small map link conceptual
+                st.caption(f"**Coordinates:** {asset_meta['lat']:.4f}, {asset_meta['lon']:.4f}  (Mapped from Interconnection Queue)")
         else:
             st.warning("⚠️ Manual Override: Metadata (lat/lon) missing for this ID. Modeling comparison will use current scenario settings.")
 
