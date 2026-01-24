@@ -2378,6 +2378,8 @@ with tab_validation:
                             'Actual_Gen_MWh': '{:,.0f}',
                             'Settlement_$': '${:,.2f}',
                             'Actual_Settlement_$': '${:,.2f}',
+                            'Market_Revenue_$': '${:,.2f}',
+                            'VPPA_Payment_$': '${:,.2f}',
                             'Gen_Diff_MWh': '{:+,.0f}',
                             'Settlement_Diff_$': '${:+,.2f}'
                         }))
