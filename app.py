@@ -7,7 +7,7 @@ import gridstatus
 import patch_gridstatus # Apply monkey patch
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, timedelta
 import zipfile
 import io
 import fetch_tmy # New module for TMY data
