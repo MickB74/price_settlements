@@ -1682,13 +1682,28 @@ with tab_validation:
 
     # --- Integrated Configuration & Preview Controls ---
     with st.container():
-        # Row 1: Market Settings
-        c1, c2, c3, c4 = st.columns(4)
+        if 'val_custom_lat' not in st.session_state: st.session_state.val_custom_lat = 32.0
+        if 'val_custom_lon' not in st.session_state: st.session_state.val_custom_lon = -100.0
+
+        def update_loc_from_hub():
+            # Only update if custom location is NOT checked (acting as a lock)
+            if not st.session_state.get('val_use_custom_location', False):
+                h_lat, h_lon = HUB_LOCATIONS.get(st.session_state.val_hub, (32.0, -100.0))
+                st.session_state.val_custom_lat = h_lat
+                st.session_state.val_custom_lon = h_lon
+                st.session_state.val_map_lat = h_lat
+                st.session_state.val_map_lon = h_lon
+
+        # Row 1: Hub & Year & Price
+        # c1, c2, c3, c4 = st.columns(4)
+        c0, c1, c2, c3, c4 = st.columns([0.1, 1, 1, 1, 1]) # spacer
         with c1:
-            val_hub = st.selectbox("Settlement Hub", ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON", "HB_PAN"], key="val_hub")
+            # Hub Selection with Callback
+            val_hub = st.selectbox("Select Hub", list(HUB_LOCATIONS.keys()), key="val_hub", on_change=update_loc_from_hub)
             # Update map location if not using custom location
             if not st.session_state.get('val_use_custom_location', False):
                 lat, lon = HUB_LOCATIONS.get(val_hub, (32.0, -100.0))
+                # Update map session state if not custom
                 st.session_state.val_map_lat = lat
                 st.session_state.val_map_lon = lon
         with c2:
@@ -1733,10 +1748,8 @@ with tab_validation:
                             df_market_hub = df_market[df_market['Location'] == val_hub].copy()
                             
                             # Location handling
-                            if st.session_state.get('val_use_custom_location'):
-                                lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
-                            else:
-                                lat, lon = HUB_LOCATIONS.get(val_hub, (32.0, -100.0))
+                            # Location handling - Always use custom/synced lat/lon
+                            lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
                             
                             weather_opts = []
                             if preview_weather == "Actual Weather": weather_opts = [{"name": "Actual", "force_tmy": False}]
@@ -1758,13 +1771,21 @@ with tab_validation:
                                     if sel_m_nums:
                                         merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
                                     
+                                    # Calculate Potential Curtailment (Always)
+                                    merged['Potential_Curtailed_MWh'] = 0.0
+                                    mask_neg_price = merged['SPP'] < 0
+                                    if not merged.empty:
+                                        merged.loc[mask_neg_price, 'Potential_Curtailed_MWh'] = merged.loc[mask_neg_price, 'Gen_Energy_MWh']
+
                                     merged['Curtailed_MWh'] = 0.0
                                     if not merged.empty:
                                         # Apply Curtailment if selected
                                         if curtail_neg:
-                                            mask_curtail = merged['SPP'] < 0
-                                            merged.loc[mask_curtail, 'Curtailed_MWh'] = merged.loc[mask_curtail, 'Gen_Energy_MWh']
-                                            merged.loc[mask_curtail, 'Gen_Energy_MWh'] = 0
+                                            merged.loc[mask_neg_price, 'Curtailed_MWh'] = merged.loc[mask_neg_price, 'Gen_Energy_MWh']
+                                            merged.loc[mask_neg_price, 'Gen_Energy_MWh'] = 0
+                                        else:
+                                            # If not curtailed, 'Curtailed_MWh' is 0, but we have 'Potential' stored
+                                            pass
                                         
                                         rs_pct = val_revenue_share / 100.0
                                         settle_p = (np.maximum(merged['SPP'] - val_vppa_price, 0) * rs_pct) + np.minimum(merged['SPP'] - val_vppa_price, 0) if rs_pct < 1.0 else merged['SPP'] - val_vppa_price
@@ -1813,18 +1834,17 @@ with tab_validation:
             st.warning("⚠️ No months selected. Please select at least one month.")
     
     # Custom Location Toggle and Manual Input
+    # Custom Location Toggle and Manual Input
     val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
     
-    val_custom_lat = None
-    val_custom_lon = None
-    if val_use_custom_location:
-        st.caption("💡 Enter your project's exact coordinates or use the map below")
-        col_lat, col_lon = st.columns(2)
-        with col_lat:
-            val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
-        with col_lon:
-            val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
-        st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
+    st.caption("💡 Enter your project's exact coordinates or use the map below")
+    col_lat, col_lon = st.columns(2)
+    with col_lat:
+        val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="val_custom_lat")
+    with col_lon:
+        val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="val_custom_lon")
+    
+    st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
 
     # --- Location Picker Section ---
     with st.expander("🗺️ Pick Project Location", expanded=False):
@@ -1961,9 +1981,17 @@ with tab_validation:
         primary_name = "Actual" if "Actual" in preview_results else list(preview_results.keys())[0]
         df_primary = preview_results[primary_name]
         
-        st.markdown(f"### 📈 Summary Metrics ({primary_name})")
         total_gen = df_primary['Gen_Energy_MWh'].sum()
-        total_curtailed = df_primary['Curtailed_MWh'].sum() if 'Curtailed_MWh' in df_primary.columns else 0
+        
+        # Determine what to show for curtailment metric
+        # Use Potential if it exists, otherwise fallback
+        pot_curtailed = df_primary['Potential_Curtailed_MWh'].sum() if 'Potential_Curtailed_MWh' in df_primary.columns else 0
+        act_curtailed = df_primary['Curtailed_MWh'].sum() if 'Curtailed_MWh' in df_primary.columns else 0
+        
+        curtail_metric_val = act_curtailed if curtail_neg else pot_curtailed
+        curtail_metric_label = "Curtailed Gen" if curtail_neg else "Neg. Price Gen"
+        curtail_metric_help = "Actual curtailed MWh" if curtail_neg else "MWh generated during negative prices (Potential Curtailment)"
+
         total_settlement = df_primary['Settlement_$'].sum()
         total_market_revenue = df_primary['Market_Revenue_$'].sum()
         
@@ -1977,7 +2005,7 @@ with tab_validation:
         
         col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
         col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
-        col2.metric("Curtailed Gen", f"{total_curtailed:,.0f} MWh", help="Amount of generation curtailed due to negative pricing")
+        col2.metric(curtail_metric_label, f"{curtail_metric_val:,.0f} MWh", help=curtail_metric_help)
         col3.metric("Total Settlement", f"${total_settlement:,.0f}")
         col4.metric("Total Paid", f"${total_paid:,.0f}", help="Total fixed amount paid (Generation × VPPA Price)")
         col5.metric("Total Received", f"${total_received:,.0f}", help="Total market revenue received (Generation × Market Price)")
