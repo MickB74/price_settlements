@@ -2,41 +2,127 @@
     "Frye Solar": {
         "resource_name": "FRYE_SLR_UNIT1",
         "tech": "Solar",
-        "capacity_mw": 200,
+        "capacity_mw": 200.0,
         "hub": "West",
         "lat": 34.4067,
-        "lon": -101.5966
+        "lon": -101.5966,
+        "county": "Swisher"
     },
     "Roseland Solar": {
         "resource_name": "ROSELAND_SOLAR1",
         "tech": "Solar",
-        "capacity_mw": 250,
+        "capacity_mw": 250.0,
         "hub": "North",
         "lat": 31.4612,
-        "lon": -96.8249
+        "lon": -96.8249,
+        "county": "Falls"
     },
     "Ajax Wind": {
         "resource_name": "AJAXWIND_UNIT1",
         "tech": "Wind",
-        "capacity_mw": 200,
+        "capacity_mw": 200.0,
         "hub": "West",
         "lat": 33.8525,
-        "lon": -99.0651
+        "lon": -99.0651,
+        "county": "Wilbarger"
     },
     "Monte Cristo Wind": {
         "resource_name": "MONTECR1_WIND1",
         "tech": "Wind",
-        "capacity_mw": 238,
+        "capacity_mw": 234.5,
         "hub": "South",
         "lat": 26.4175,
-        "lon": -98.3231
+        "lon": -98.3231,
+        "county": "Hidalgo"
     },
     "Shaffer Wind": {
         "resource_name": "SHAFFER_UNIT1",
         "tech": "Wind",
-        "capacity_mw": 200,
+        "capacity_mw": 200.0,
         "hub": "South",
         "lat": 27.6021,
-        "lon": -97.6471
+        "lon": -97.6471,
+        "county": "Nueces"
+    },
+    "Nazareth Solar": {
+        "resource_name": "AZSP_SLR_SOLAR1",
+        "tech": "Solar",
+        "capacity_mw": 203.0,
+        "hub": "West",
+        "lat": 34.5445,
+        "lon": -102.1005,
+        "county": "Castro"
+    },
+    "Maryneal Wind": {
+        "resource_name": "MROW_SLR_SOLAR1",
+        "tech": "Wind",
+        "capacity_mw": 182.4,
+        "hub": "West",
+        "lat": 32.2285,
+        "lon": -100.4346,
+        "county": "Nolan"
+    },
+    "Norton Solar": {
+        "resource_name": "NRTN_SLR_SOLAR1",
+        "tech": "Solar",
+        "capacity_mw": 128.48,
+        "hub": "West",
+        "lat": 31.7924,
+        "lon": -100.0826,
+        "county": "Runnels"
+    },
+    "Long Point Solar": {
+        "resource_name": "LNP_SOLAR1",
+        "tech": "Solar",
+        "capacity_mw": 120.7,
+        "hub": "Houston",
+        "lat": 29.308,
+        "lon": -95.895,
+        "county": "Fort Bend"
+    },
+    "Blue Jay Solar": {
+        "resource_name": "JKLP_SLR_PV1",
+        "tech": "Solar",
+        "capacity_mw": 141.05,
+        "hub": "North",
+        "lat": 30.8252,
+        "lon": -96.5358,
+        "county": "Robertson"
+    },
+    "Azalea Springs Solar": {
+        "resource_name": "ASCK_SLR_SOLAR1",
+        "tech": "Solar",
+        "capacity_mw": 181.0,
+        "hub": "Houston",
+        "lat": 31.3341,
+        "lon": -94.7291,
+        "county": "Angelina"
+    },
+    "Castro Solar": {
+        "resource_name": "AZSP_SLR_SOLAR2",
+        "tech": "Solar",
+        "capacity_mw": 224.67,
+        "hub": "West",
+        "lat": 34.5445,
+        "lon": -102.1005,
+        "county": "Castro"
+    },
+    "Wildwind": {
+        "resource_name": "WILDWIND_UNIT1",
+        "tech": "Wind",
+        "capacity_mw": 180.08,
+        "hub": "West",
+        "lat": 33.1678,
+        "lon": -101.4086,
+        "county": "Brazoria"
+    },
+    "Pine Forest Solar": {
+        "resource_name": "PISGAH_SOLAR1",
+        "tech": "Solar",
+        "capacity_mw": 301.51,
+        "hub": "Houston",
+        "lat": 30.6724,
+        "lon": -93.8837,
+        "county": "Newton"
     }
 }
