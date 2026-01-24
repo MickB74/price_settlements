@@ -284,8 +284,8 @@ with tab_scenarios:
 # --- Data Fetching ---
 # --- Data Fetching ---
 @st.cache_data(show_spinner="Fetching data from ERCOT (this may take 1-2 minutes for the first load)...")
-def get_ercot_data(year):
-    """Fetches and caches ERCOT RTM data for a given year."""
+def get_ercot_data(year, _mtime=None):
+    """Fetches and caches ERCOT RTM data for a given year. _mtime used for cache invalidation."""
     # Local cache file path
     cache_file = f"ercot_rtm_{year}.parquet"
     
@@ -1105,7 +1105,9 @@ if st.session_state.scenarios:
 
         for i, scenario in enumerate(st.session_state.scenarios):
             # Fetch Data
-            df_rtm = get_ercot_data(scenario['year'])
+            cache_path = f"ercot_rtm_{scenario['year']}.parquet"
+            mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+            df_rtm = get_ercot_data(scenario['year'], _mtime=mtime)
             if df_rtm.empty:
                 st.warning(f"Could not fetch data for {scenario['name']}")
                 continue
@@ -1482,7 +1484,10 @@ if st.session_state.scenarios:
                 selected_scenario_config = next(s for s in st.session_state.scenarios if s['name'] == selected_scenario_name)
         
                 # Re-calculate on demand
-                df_rtm = get_ercot_data(selected_scenario_config['year'])
+                year_val = selected_scenario_config['year']
+                cache_path = f"ercot_rtm_{year_val}.parquet"
+                mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+                df_rtm = get_ercot_data(year_val, _mtime=mtime)
                 if not df_rtm.empty:
                     df_display = calculate_scenario(selected_scenario_config, df_rtm)
             
@@ -1698,7 +1703,8 @@ with tab_validation:
             )
 
         # Row 2: Technology & Preview Settings + Action Button
-        c5, c6, c7, c8 = st.columns(4)
+        # Row 2: Technology & Preview Settings + Action Button
+        c5, c6, c7, c8, c9 = st.columns([1, 1, 1, 1, 1])
         with c5:
             preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
         with c6:
@@ -1706,12 +1712,18 @@ with tab_validation:
         with c7:
             preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
         with c8:
+            st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+            curtail_neg = st.checkbox("Curtail when Price < $0", value=False, help="Set Generation to 0 MWh when Hub Price is negative")
+        with c9:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             if st.button("📈 Generate Preview", type="primary", use_container_width=True):
                 with st.spinner("Generating profile..."):
                     try:
                         # Market Data
-                        df_market = get_ercot_data(val_year)
+                        cache_path = f"ercot_rtm_{val_year}.parquet"
+                        mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+                        
+                        df_market = get_ercot_data(val_year, _mtime=mtime)
                         if df_market.empty:
                             st.error(f"No market data for {val_year}")
                         else:
@@ -1743,7 +1755,14 @@ with tab_validation:
                                     if sel_m_nums:
                                         merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
                                     
+                                    merged['Curtailed_MWh'] = 0.0
                                     if not merged.empty:
+                                        # Apply Curtailment if selected
+                                        if curtail_neg:
+                                            mask_curtail = merged['SPP'] < 0
+                                            merged.loc[mask_curtail, 'Curtailed_MWh'] = merged.loc[mask_curtail, 'Gen_Energy_MWh']
+                                            merged.loc[mask_curtail, 'Gen_Energy_MWh'] = 0
+                                        
                                         rs_pct = val_revenue_share / 100.0
                                         settle_p = (np.maximum(merged['SPP'] - val_vppa_price, 0) * rs_pct) + np.minimum(merged['SPP'] - val_vppa_price, 0) if rs_pct < 1.0 else merged['SPP'] - val_vppa_price
                                         merged['Settlement_$/MWh'] = settle_p
@@ -1939,6 +1958,7 @@ with tab_validation:
         
         st.markdown(f"### 📈 Summary Metrics ({primary_name})")
         total_gen = df_primary['Gen_Energy_MWh'].sum()
+        total_curtailed = df_primary['Curtailed_MWh'].sum() if 'Curtailed_MWh' in df_primary.columns else 0
         total_settlement = df_primary['Settlement_$'].sum()
         total_market_revenue = df_primary['Market_Revenue_$'].sum()
         
@@ -1948,17 +1968,18 @@ with tab_validation:
 
         avg_spp = df_primary['SPP'].mean()
         capture_price = total_market_revenue / total_gen if total_gen > 0 else 0
-        implied_rec_cost = - (total_settlement / total_gen) if total_gen > 0 else 0
+        implied_rec_cost = -(total_settlement / total_gen) if total_gen > 0 else 0
         
-        col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
         col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
-        col2.metric("Total Settlement", f"${total_settlement:,.0f}")
-        col3.metric("Total Paid", f"${total_paid:,.0f}", help="Total fixed amount paid (Generation × VPPA Price)")
-        col4.metric("Total Received", f"${total_received:,.0f}", help="Total market revenue received (Generation × Market Price)")
-        col5.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
-        col6.metric("Capture Price", f"${capture_price:.2f}/MWh", 
+        col2.metric("Curtailed Gen", f"{total_curtailed:,.0f} MWh", help="Amount of generation curtailed due to negative pricing")
+        col3.metric("Total Settlement", f"${total_settlement:,.0f}")
+        col4.metric("Total Paid", f"${total_paid:,.0f}", help="Total fixed amount paid (Generation × VPPA Price)")
+        col5.metric("Total Received", f"${total_received:,.0f}", help="Total market revenue received (Generation × Market Price)")
+        col6.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
+        col7.metric("Capture Price", f"${capture_price:.2f}/MWh", 
                   help="Weighted average market value of generated energy (Market Revenue / Generation)")
-        col7.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
+        col8.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
                    help="Net cost (positive) or credit (negative) paid due to PPA settlement. Calculated as -(Settlement / Generation).")
         
         # 3. Charts with own View Selector
@@ -2227,7 +2248,9 @@ with tab_validation:
                     st.info("📊 Detected monthly summary data. Calculating expected totals from interval-level market data...")
                     
                     # 3. Fetch Market Data for the entire year
-                    df_market = get_ercot_data(val_year)
+                    cache_path = f"ercot_rtm_{val_year}.parquet"
+                    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+                    df_market = get_ercot_data(val_year, _mtime=mtime)
                     
                     if df_market.empty:
                         st.error(f"Could not find market data for {val_year}.")
@@ -2365,7 +2388,9 @@ with tab_validation:
                 else:
                     # Original interval-level validation logic
                     # 3. Fetch Market Data
-                    df_market = get_ercot_data(val_year)
+                    cache_path = f"ercot_rtm_{val_year}.parquet"
+                    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+                    df_market = get_ercot_data(val_year, _mtime=mtime)
                 
                     if df_market.empty:
                         st.error(f"Could not find market data for {val_year}.")
