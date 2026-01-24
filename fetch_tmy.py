@@ -336,10 +336,14 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         s_hourly = pd.Series(mw_hourly.values, index=dummy_index_hourly)
         s_15min = s_hourly.resample('15min').interpolate(method='linear')
         
-        # Reindex to full year
-        start_date = f"{year}-01-01"
-        end_date = f"{year}-12-31 23:45"
-        target_index = pd.date_range(start=start_date, end=end_date, freq='15min', tz='UTC')
+        # Reindex to full year (aligned to US/Central)
+        target_index_cst = pd.date_range(
+            start=f"{year}-01-01 00:00", 
+            end=f"{year}-12-31 23:45", 
+            freq='15min', 
+            tz='US/Central'
+        )
+        target_index = target_index_cst.tz_convert('UTC')
         
         values = s_15min.values
         target_len = len(target_index)
