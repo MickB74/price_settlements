@@ -2340,14 +2340,28 @@ with tab_validation:
                         df_comp = df_comp.dropna(subset=['Actual_MW', 'Modeled_MW'])
                         
                         # Calculate Metrics
+                        # Total Energy (MWh) = Sum(MW) / 4 (for 15-min intervals)
+                        actual_mwh = df_comp['Actual_MW'].sum() / 4.0
+                        modeled_mwh = df_comp['Modeled_MW'].sum() / 4.0
+                        
                         mae = (df_comp['Actual_MW'] - df_comp['Modeled_MW']).abs().mean()
                         r2 = np.corrcoef(df_comp['Actual_MW'], df_comp['Modeled_MW'])[0, 1]**2 if len(df_comp) > 1 else 0
                         
-                        # Display Metrics
+                        # Bias / % Diff
+                        mwh_diff_pct = ((modeled_mwh - actual_mwh) / actual_mwh) if actual_mwh > 0 else 0
+                        
+                        # Display Metrics row 1: Energy Totals
+                        st.markdown("#### 📊 Numerical Summary")
+                        mc1, mc2, mc3 = st.columns(3)
+                        mc1.metric("Actual Production", f"{actual_mwh:,.1f} MWh")
+                        mc2.metric("Model Estimate", f"{modeled_mwh:,.1f} MWh", delta=f"{mwh_diff_pct:+.1%}", delta_color="inverse")
+                        mc3.metric("Bias (Error)", f"{modeled_mwh - actual_mwh:+.1f} MWh")
+                        
+                        # Display Metrics row 2: Statistical Fit
                         m1, m2, m3 = st.columns(3)
-                        m1.metric("Mean Absolute Error", f"{mae:.2f} MW")
+                        m1.metric("Mean Abs Error (MAE)", f"{mae:.1f} MW")
                         m2.metric("Correlation (R²)", f"{r2:.2%}")
-                        m3.metric("Data Points", f"{len(df_comp)}")
+                        m3.metric("Data Points", f"{len(df_comp):,}")
                         
                         # Visual Overlay
                         fig_bench = go.Figure()
