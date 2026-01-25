@@ -1738,20 +1738,19 @@ with tab_validation:
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
         if preview_tech == "Wind":
-            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
+            turbine_opts = ["Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
             c_turb1, c_turb2, c_turb3 = st.columns(3)
             with c_turb1:
                 val_turb_ui = st.selectbox("Turbine Model", turbine_opts, key="val_preview_turbine")
             
             turbine_override_map = {
-                "Auto-Detect": None,
                 "Generic (IEC Class 2)": "GENERIC",
                 "Vestas V163 (Low Wind)": "VESTAS_V163",
                 "GE 2.x (Workhorse)": "GE_2X",
                 "GE 3.6-154 (Modern Mainstream)": "GE_3X",
                 "Nordex N163 (5.X MW)": "NORDEX_N163"
             }
-            if turbine_override_map[val_turb_ui]:
+            if val_turb_ui in turbine_override_map:
                 selected_turbine = turbine_override_map[val_turb_ui]
 
         # Row 3: Actions
