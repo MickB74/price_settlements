@@ -2675,6 +2675,108 @@ with tab_validation:
             import traceback
             st.code(traceback.format_exc())
 
+
+
+
+with tab_performance:
+    st.header("🎯 Model Performance & Benchmarking")
+    st.markdown("""
+    This tab showcases the accuracy of our **high-fidelity synthetic generation models**. 
+    We benchmark our profiles against actual **ERCOT SCED (Security Constrained Economic Dispatch)** generation data for 2024.
+    """)
+
+    # Load Results
+    try:
+        with open('benchmark_results_wind.json', 'r') as f:
+            wind_res = pd.DataFrame(json.load(f))
+        with open('benchmark_results_solar.json', 'r') as f:
+            solar_res = pd.DataFrame(json.load(f))
+    except Exception as e:
+        st.error(f"Error loading benchmark results: {e}")
+        st.stop()
+
+    coll1, coll2 = st.tabs(["💨 Wind Performance", "☀️ Solar Performance"])
+
+    with coll1:
+        st.subheader("Wind Model Benchmarking (Q4 2024)")
+        
+        # Metrics Overview
+        # Filter for Advanced model
+        wind_advanced = wind_res[wind_res['Model'].str.contains('Advanced')]
+        avg_r_wind = wind_advanced['R'].mean()
+        max_r_wind = wind_advanced['R'].max()
+        
+        m1, m2 = st.columns(2)
+        m1.metric("Avg Correlation (R)", f"{avg_r_wind:.2f}", help="Correlation between synthetic and actual generation")
+        m2.metric("Top Correlation", f"{max_r_wind:.2f}")
+
+        st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
+        top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
+        st.dataframe(
+            top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
+            column_config={
+                "R": st.column_config.NumberColumn(
+                    "Correlation (R)",
+                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
+                    format="%.2f"
+                ),
+                "MBE (MW)": st.column_config.NumberColumn(
+                    "MBE (MW)",
+                    help="Mean Bias Error. The average difference between Modeled and Actual MW. Positive = Model Overestimates, Negative = Model Underestimates.",
+                    format="%.2f"
+                ),
+                "RMSE (MW)": st.column_config.NumberColumn(
+                    "RMSE (MW)",
+                    help="Root Mean Square Error. Measures the typical magnitude of error in MW, penalizing larger errors more heavily.",
+                    format="%.2f"
+                )
+            },
+            use_container_width=True
+        )
+
+        st.info("💡 **Insight:** Advanced models (using actual hub heights and turbine curves) reduce bias by ~15% on average compared to baseline models.")
+
+    with coll2:
+        st.subheader("Solar Model Benchmarking (Q4 2024)")
+        
+        # Metrics Overview
+        solar_advanced = solar_res[solar_res['Model'].str.contains('Advanced')]
+        avg_r_solar = solar_advanced['R'].mean()
+        max_r_solar = solar_advanced['R'].max()
+        
+        m1, m2 = st.columns(2)
+        m1.metric("Avg Correlation (R)", f"{avg_r_solar:.2f}")
+        m2.metric("Top Correlation", f"{max_r_solar:.2f}")
+
+        st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
+        top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
+        st.dataframe(
+            top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
+            column_config={
+                "R": st.column_config.NumberColumn(
+                    "Correlation (R)",
+                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
+                    format="%.2f"
+                ),
+                "MBE (MW)": st.column_config.NumberColumn(
+                    "MBE (MW)",
+                    help="Mean Bias Error. The average difference between Modeled and Actual MW. Positive = Model Overestimates, Negative = Model Underestimates.",
+                    format="%.2f"
+                ),
+                "RMSE (MW)": st.column_config.NumberColumn(
+                    "RMSE (MW)",
+                    help="Root Mean Square Error. Measures the typical magnitude of error in MW, penalizing larger errors more heavily.",
+                    format="%.2f"
+                )
+            },
+            use_container_width=True
+        )
+
+        st.success("✅ **Key Finding:** Solar generation is highly predictable (R > 0.85) when accounting for single-axis tracking gains.")
+
+
+
+
     st.divider()
     st.subheader("🔍 Project Deep Dive & Benchmarking")
     st.markdown("Select an ERCOT project to retrieve actual SCED generation data and compare it against our high-fidelity synthetic model.")
@@ -2961,103 +3063,3 @@ with tab_validation:
             )
             
             st.success(f"Successfully retrieved **{len(res['df_actual'])}** interval points.")
-
-
-with tab_performance:
-    st.header("🎯 Model Performance & Benchmarking")
-    st.markdown("""
-    This tab showcases the accuracy of our **high-fidelity synthetic generation models**. 
-    We benchmark our profiles against actual **ERCOT SCED (Security Constrained Economic Dispatch)** generation data for 2024.
-    """)
-
-    # Load Results
-    try:
-        with open('benchmark_results_wind.json', 'r') as f:
-            wind_res = pd.DataFrame(json.load(f))
-        with open('benchmark_results_solar.json', 'r') as f:
-            solar_res = pd.DataFrame(json.load(f))
-    except Exception as e:
-        st.error(f"Error loading benchmark results: {e}")
-        st.stop()
-
-    coll1, coll2 = st.tabs(["💨 Wind Performance", "☀️ Solar Performance"])
-
-    with coll1:
-        st.subheader("Wind Model Benchmarking (Q4 2024)")
-        
-        # Metrics Overview
-        # Filter for Advanced model
-        wind_advanced = wind_res[wind_res['Model'].str.contains('Advanced')]
-        avg_r_wind = wind_advanced['R'].mean()
-        max_r_wind = wind_advanced['R'].max()
-        
-        m1, m2 = st.columns(2)
-        m1.metric("Avg Correlation (R)", f"{avg_r_wind:.2f}", help="Correlation between synthetic and actual generation")
-        m2.metric("Top Correlation", f"{max_r_wind:.2f}")
-
-        st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
-        top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
-        st.dataframe(
-            top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
-            column_config={
-                "R": st.column_config.NumberColumn(
-                    "Correlation (R)",
-                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
-                    format="%.2f"
-                ),
-                "MBE (MW)": st.column_config.NumberColumn(
-                    "MBE (MW)",
-                    help="Mean Bias Error. The average difference between Modeled and Actual MW. Positive = Model Overestimates, Negative = Model Underestimates.",
-                    format="%.2f"
-                ),
-                "RMSE (MW)": st.column_config.NumberColumn(
-                    "RMSE (MW)",
-                    help="Root Mean Square Error. Measures the typical magnitude of error in MW, penalizing larger errors more heavily.",
-                    format="%.2f"
-                )
-            },
-            use_container_width=True
-        )
-
-        st.info("💡 **Insight:** Advanced models (using actual hub heights and turbine curves) reduce bias by ~15% on average compared to baseline models.")
-
-    with coll2:
-        st.subheader("Solar Model Benchmarking (Q4 2024)")
-        
-        # Metrics Overview
-        solar_advanced = solar_res[solar_res['Model'].str.contains('Advanced')]
-        avg_r_solar = solar_advanced['R'].mean()
-        max_r_solar = solar_advanced['R'].max()
-        
-        m1, m2 = st.columns(2)
-        m1.metric("Avg Correlation (R)", f"{avg_r_solar:.2f}")
-        m2.metric("Top Correlation", f"{max_r_solar:.2f}")
-
-        st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
-        top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
-        st.dataframe(
-            top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
-            column_config={
-                "R": st.column_config.NumberColumn(
-                    "Correlation (R)",
-                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
-                    format="%.2f"
-                ),
-                "MBE (MW)": st.column_config.NumberColumn(
-                    "MBE (MW)",
-                    help="Mean Bias Error. The average difference between Modeled and Actual MW. Positive = Model Overestimates, Negative = Model Underestimates.",
-                    format="%.2f"
-                ),
-                "RMSE (MW)": st.column_config.NumberColumn(
-                    "RMSE (MW)",
-                    help="Root Mean Square Error. Measures the typical magnitude of error in MW, penalizing larger errors more heavily.",
-                    format="%.2f"
-                )
-            },
-            use_container_width=True
-        )
-
-        st.success("✅ **Key Finding:** Solar generation is highly predictable (R > 0.85) when accounting for single-axis tracking gains.")
-
-
-
