@@ -1735,6 +1735,25 @@ with tab_validation:
         with c7:
             preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
             
+        # Optional Turbine Selector (if Wind)
+        selected_turbine = "GENERIC"
+        if preview_tech == "Wind":
+            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
+            c_turb1, c_turb2, c_turb3 = st.columns(3)
+            with c_turb1:
+                val_turb_ui = st.selectbox("Turbine Model", turbine_opts, key="val_preview_turbine")
+            
+            turbine_override_map = {
+                "Auto-Detect": None,
+                "Generic (IEC Class 2)": "GENERIC",
+                "Vestas V163 (Low Wind)": "VESTAS_V163",
+                "GE 2.x (Workhorse)": "GE_2X",
+                "GE 3.6-154 (Modern Mainstream)": "GE_3X",
+                "Nordex N163 (5.X MW)": "NORDEX_N163"
+            }
+            if turbine_override_map[val_turb_ui]:
+                selected_turbine = turbine_override_map[val_turb_ui]
+
         # Row 3: Actions
         c8, c9 = st.columns([3, 1])
         with c8:
@@ -1765,7 +1784,7 @@ with tab_validation:
                             
                             preview_results = {}
                             for source in weather_opts:
-                                profile = fetch_tmy.get_profile_for_year(year=val_year, tech=preview_tech, lat=lat, lon=lon, capacity_mw=preview_capacity, force_tmy=source["force_tmy"])
+                                profile = fetch_tmy.get_profile_for_year(year=val_year, tech=preview_tech, lat=lat, lon=lon, capacity_mw=preview_capacity, force_tmy=source["force_tmy"], turbine_type=selected_turbine)
                                 if profile is not None:
                                     pc = profile.tz_convert('US/Central')
                                     pdf = pd.DataFrame({'Gen_MW': pc.values, 'Time': pc.index.tz_convert('UTC')})
