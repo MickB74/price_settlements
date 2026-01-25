@@ -4,38 +4,40 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 
 ## 🚀 Key Features
 
-### 🛠️ Scenario Modeling
--   **Multi-Year Analysis:** Simulate settlements for 2020-2026.
--   **Granular Location Data:** Select from all major ERCOT Hubs (North, South, West, Houston, Panhandle) or pick any coordinate on an interactive map.
--   **Weather-Driven Profiles:**
-    -   **2024-2026:** Uses **Actual Weather** (Open-Meteo ERA5) for both Solar & Wind.
-    -   **History (2005-2023):** Uses **Actual Weather** (PVGIS).
-    -   **Sensitivity:** Toggle "Force TMY" to compare actuals against "Typical Meteorological Year" baselines.
--   **Revenue Share Modeling:** Toggle revenue share options (e.g., 50/50 split) for more complex PPA settlement structures where buyer only gets a percentage of the upside when SPP exceeds the strike price.
--   **Custom Profiles:** Upload your own 8760/15-min generation shapes (CSV) for bespoke analysis.
+### 🛠️ Advanced Scenario Modeling
+-   **Multi-Year Analysis:** Simulate settlements for 2020–2026 using actual historical prices.
+-   **Granular Location Data:** Select from major ERCOT Hubs or pick any coordinate on an interactive map.
+-   **Weather-to-Power Profiles:**
+    -   **2024–2026:** Uses **Actual Weather** (Open-Meteo ERA5 Reanalysis) for high-fidelity Solar & Wind profiles.
+    -   **Historical (2005–2023):** Leverages **PVGIS** satellite-based solar and reanalysis wind data.
+    -   **Multi-Weather Sensitivities:** Contrast "Actual Weather" vs. "Typical Meteorological Year" (TMY) profiles side-by-side to understand resource variability.
+-   **Revenue Share Structures:** Model complex "Upside Sharing" PPAs (e.g., 50/50 splits when market price exceeds strike).
+-   **Custom Profiles:** Support for 8760/15-min generation CSV uploads.
 
-### 📊 Financial Analysis
--   **Settlement Engine:** Calculates RTM vs. Strike Price settlements at 15-minute intervals.
--   **Bill Validation:** Compare actual market revenue against synthetic settlements for specific months and locations to validate model accuracy.
--   **Risk Metrics:** 
-    -   Visualize cumulative P&L.
-    -   Analyze basis risk and negative pricing exposure.
-    -   Curtailment modeling (optional economic curtailment at $0/MWh).
--   **Comparison:** Side-by-side comparison of up to 10 distinct scenarios.
+### 🏆 Real Asset Benchmarking
+-   **Curated Registry:** Select from **45+ major ERCOT assets** (Horse Hollow, Capricorn Ridge, Shaffer Wind, etc.) with pre-loaded metadata.
+-   **Interactive Map Picker:** Click anywhere in Texas to auto-find the nearest settlement hub or specify exact coordinates via geocoding (search by town/ZIP).
+-   **SCED Validation:** Retrieve and compare model results against **real-world production data** from ERCOT's 60-day disclosure reports.
+-   **High Correlation:** Model achieves an $R > 0.85$ correlation for top-tier coastal wind assets.
 
-### 📈 Interactive Visualization
--   Net Settlement heatmaps.
--   Monthly financial performance aggregation.
--   Generation vs. Price correlation plots.
+### 📊 Financial & Risk Analytics
+-   **Settlement Engine:** 15-minute interval calculations of RTM vs. Strike Price.
+-   **Financial Metrics:** Tracking of **Total Amount Paid**, **Total Amount Received**, and **Net Settlement**.
+-   **Risk Modeling:** Visualize basis risk, negative pricing exposure, and the impact of economic curtailment ($0/MWh floor).
+-   **Comparison Suite:** Side-by-side benchmarking of up to 10 distinct scenarios.
+
+### 📄 Professional Reporting
+-   **PDF Settlement Bills:** Generate professional, client-ready PDF reports including monthly summaries and detailed daily performance metrics.
+-   **Excel Exports:** Comprehensive data exports for external modeling and auditing.
 
 ## 📡 Data Sources
 
 | Data Type | Source | Details |
 | :--- | :--- | :--- |
-| **Market Prices** | **ERCOT (via GridStatus)** | Real-Time Market (RTM) settlement point prices. |
-| **Solar/Wind (2024-2026)** | **Open-Meteo** | ERA5 Reanalysis data (Global Horizontal Irradiance, 10m Wind Speed). |
-| **Solar/Wind (History)** | **PVGIS** | Satellite-based solar radiation and reanalysis wind data. |
-| **TMY Data** | **PVGIS** | Typical Meteorological Year derived from multi-year averages. |
+| **Market Prices** | **ERCOT (via GridStatus)** | Real-Time Market (RTM) Hub & Load Zone prices (2020–2026). |
+| **Actual Gen Data** | **ERCOT (SCED)** | 60-day delayed unit-level production for benchmarking. |
+| **Solar/Wind (2024+)** | **Open-Meteo** | ERA5 Reanalysis (GHI, 10m Wind Speed) at 15-min resolution. |
+| **Historical Weather**| **PVGIS** | Long-term satellite and reanalysis averages. |
 
 ## 📦 Installation
 
@@ -55,6 +57,10 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
     streamlit run app.py
     ```
 
+## 📈 Validation Results
+The framework's synthetic models have been validated against the actual ERCOT fleet. For a detailed breakdown of performance by region and technology, see the [Renewable Fleet Report](RENEWABLE_FLEET_REPORT.md).
+
 ## 💡 Usage Tips
--   **Caching:** The app locally caches weather and pricing data (`/data_cache`) to speed up subsequent runs.
--   **Custom Uploads:** Prepare a CSV with a `Gen_MW` column (and optional `Time` column) to analyze specific project shapes.
+-   **Map Search:** Use the "Pick Location" expander in the sidebar to search for any Texas town or project site.
+-   **Benchmarking:** Target specific Resource IDs (e.g., `SHAFFER_UNIT1`) in the Bill Validation tab to fetch actual production data.
+-   **Timezones:** All data is automatically synchronized to **Central Prevailing Time (CPT)** for market alignment.

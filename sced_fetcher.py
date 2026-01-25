@@ -7,67 +7,89 @@ CACHE_DIR = "sced_cache"
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
 
-def get_asset_actual_gen(resource_name, date):
+def get_daily_disclosure(date):
     """
-    Fetches actual 15-min generation for a specific resource from ERCOT 60-day disclosure.
+    Fetches and caches the FULL daily SCED disclosure dataframe.
     """
     if isinstance(date, str):
         date = pd.Timestamp(date).date()
     elif isinstance(date, datetime):
         date = date.date()
         
-    cache_file = os.path.join(CACHE_DIR, f"{date}_{resource_name}.parquet")
+    cache_file = os.path.join(CACHE_DIR, f"full_disclosure_{date}.parquet")
     
     if os.path.exists(cache_file):
         try:
             return pd.read_parquet(cache_file)
-        except Exception as e:
-            print(f"Error reading cache: {e}")
-
+        except:
+            pass
+            
     iso = gridstatus.Ercot()
     try:
-        print(f"Fetching SCED disclosure for {date}...")
+        print(f"Fetching full SCED disclosure for {date}...")
         data = iso.get_60_day_sced_disclosure(date=date)
         if 'sced_gen_resource' not in data:
-            print(f"No generation data found in disclosure for {date}")
             return pd.DataFrame()
             
         df_gen = data['sced_gen_resource']
-        # Strip column names
         df_gen.columns = [c.strip() for c in df_gen.columns]
         
-        # Filter for our specific resource
-        df_asset = df_gen[df_gen['Resource Name'] == resource_name].copy()
-        
-        if df_asset.empty:
-            print(f"Resource {resource_name} not found in {date} disclosure.")
-            return pd.DataFrame()
-            
-        # Clean and simplify
-        # We want 'Interval Start' and 'Telemetered Net Output'
-        # SCED data is usually every 5 mins or so, we need to resample to 15-min
-        df_asset['Time'] = pd.to_datetime(df_asset['Interval Start'], utc=True)
-        df_asset = df_asset.sort_values('Time')
-        
-        # Resample to 15-min to match model (averaging generation)
-        # We want both Actual MW and Base Point (Curtailment Limit)
-        cols_to_resample = ['Telemetered Net Output']
-        rename_map = {'Telemetered Net Output': 'Actual_MW'}
-        
-        if 'Base Point' in df_asset.columns:
-            cols_to_resample.append('Base Point')
-            rename_map['Base Point'] = 'Base_Point_MW'
-            
-        df_resampled = df_asset.set_index('Time')[cols_to_resample].resample('15min').mean().reset_index()
-        df_resampled = df_resampled.rename(columns=rename_map)
-        
-        # Save to cache
-        df_resampled.to_parquet(cache_file)
-        return df_resampled
-        
+        # Save full disclosure to cache
+        df_gen.to_parquet(cache_file)
+        return df_gen
     except Exception as e:
-        print(f"Error fetching SCED data: {e}")
+        print(f"Error fetching daily disclosure: {e}")
         return pd.DataFrame()
+
+def get_asset_actual_gen(resource_name, date):
+    """
+    Fetches actual 15-min generation for a specific resource.
+    Uses daily disclosure cache for performance.
+    """
+    if isinstance(date, str):
+        date = pd.Timestamp(date).date()
+    elif isinstance(date, datetime):
+        date = date.date()
+        
+    # Check if we already have the asset-specific cache
+    asset_cache = os.path.join(CACHE_DIR, f"{date}_{resource_name}.parquet")
+    if os.path.exists(asset_cache):
+        try:
+            return pd.read_parquet(asset_cache)
+        except:
+            pass
+        
+    # Otherwise, get the full daily disclosure (potentially from cache)
+    df_full = get_daily_disclosure(date)
+    if df_full.empty:
+        return pd.DataFrame()
+        
+    # Filter for our specific resource
+    df_asset = df_full[df_full['Resource Name'] == resource_name].copy()
+    
+    if df_asset.empty:
+        print(f"Resource {resource_name} not found in {date} disclosure.")
+        # Save empty to avoid re-searching? 
+        # No, might be too many files.
+        return pd.DataFrame()
+        
+    # Clean and simplify
+    df_asset['Time'] = pd.to_datetime(df_asset['Interval Start'], utc=True)
+    df_asset = df_asset.sort_values('Time')
+    
+    cols_to_resample = ['Telemetered Net Output']
+    rename_map = {'Telemetered Net Output': 'Actual_MW'}
+    
+    if 'Base Point' in df_asset.columns:
+        cols_to_resample.append('Base Point')
+        rename_map['Base Point'] = 'Base_Point_MW'
+        
+    df_resampled = df_asset.set_index('Time')[cols_to_resample].resample('15min').mean().reset_index()
+    df_resampled = df_resampled.rename(columns=rename_map)
+    
+    # Save asset-specific cache
+    df_resampled.to_parquet(asset_cache)
+    return df_resampled
 
 def get_asset_period_data(resource_name, start_date, end_date):
     """

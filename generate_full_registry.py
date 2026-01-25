@@ -90,7 +90,74 @@ KNOWN_MAPPINGS = {
     "WHTTAIL": "Whitetail",
     "WH_WIND": "Whitehorse",
     "WILDWIND": "Wildwind",
-    "ZIER_SLR": "Zier Solar"
+    "ZIER_SLR": "Zier Solar",
+    "BCATWIND": "Bobcat Wind",
+    "BRISCOE": "Briscoe Wind",
+    "CABEZON": "Rio Bravo Wind",
+    "CAMWIND": "Cameron Wind",
+    "CAPRIDG": "Capricorn Ridge",
+    "FERMI": "Fermi Wind",
+    "FTWIND": "Flat Top Wind",
+    "GOAT": "Goat Mountain",
+    "GPASTURE": "Green Pastures",
+    "HHOLLOW": "Horse Hollow",
+    "HRFDWIND": "Hereford Wind",
+    "MOZART": "Mozart Wind",
+    "PALMWIND": "Palmas Altas",
+    "SANROMAN": "San Roman",
+    "SPLAIN": "South Plains",
+    "SRWE": "South Ranch",
+    "SSPUR": "Silver Spur",
+    "TYLRWIND": "Tyler Bluff",
+    "VERAWIND": "Vera Wind",
+    "VERTIGO": "Vertigo Wind",
+    "VORTEX": "Vortex Wind",
+    "SSPUR": "Spinning Spur",
+    "ADL_SOLAR": "Adlong Solar",
+    "ASCK_SLR": "Azalea Springs",
+    "AZSP_SLR": "Azalea Springs",
+    "AZURE_SOLAR": "Azure Sky",
+    "BLVN_SLR": "Blevins Solar",
+    "CHAL_SLR": "Chaluane Solar",
+    "CHIL_SLR": "Chillicothe Solar",
+    "CMPD_SLR": "Compound Solar",
+    "CORALSLR": "Coral Solar",
+    "CTW_SOLAR": "CTW Solar",
+    "DMA": "DMA Solar",
+    "ESTONIAN_SOLAR": "Estonian Solar",
+    "EUNICE_PV": "2W Permian",
+    "FENCESLR": "Fence Post",
+    "FILESSLR": "Files Solar",
+    "GALLOWAY": "Galloway Solar",
+    "GRIZZLY": "Grizzly Solar",
+    "MERCURY_PV": "Mercury Solar",
+    "MRKM_SLR": "Markham Solar",
+    "MUSTNGCK": "Mustang Creek",
+    "NOBLESLR": "BT Noble",
+    "PHO": "Phoenix Solar",
+    "STLHS_SL": "Stellhaus Solar",
+    "TI_SOLAR": "TI Solar",
+    "TNG_SOLAR": "TNG Solar",
+    "TRBT_SLR": "Trumbull Solar",
+    "TREB_SLR": "Treeline Solar",
+    "TROJ_SLR": "Trojan Solar"
+}
+
+# Technical Specs for Advanced Modeling (Hub Height, Turbine Type)
+ADVANCED_SPECS = {
+    "Rio Bravo Wind": {"hub_height_m": 105, "turbine_model": "Vestas V136-3.6"},
+    "Route 66 Wind": {"hub_height_m": 80, "turbine_model": "Vestas V110-2.0"},
+    "Capricorn Ridge": {"hub_height_m": 80, "turbine_model": "GE 1.5sle / Siemens SWT"},
+    "Horse Hollow": {"hub_height_m": 82, "turbine_model": "GE 1.5sle / Siemens SWT"},
+    "South Plains": {"hub_height_m": 86, "turbine_model": "Vestas V100/V117"},
+    "Tyler Bluff": {"hub_height_m": 80, "turbine_model": "Siemens SWT-2.3-108"},
+    "Green Pastures": {"hub_height_m": 92, "turbine_model": "Nordex AW-116/3000"},
+    "Hereford Wind": {"hub_height_m": 88, "turbine_model": "GE 1.85 / Vestas V100"},
+    "Briscoe Wind": {"hub_height_m": 80, "turbine_model": "GE 1.85-87"},
+    "Cameron Wind": {"hub_height_m": 87.5, "turbine_model": "Nordex AW-125/3000"},
+    "Palmas Altas": {"hub_height_m": 87.5, "turbine_model": "Nordex AW125/3150"},
+    "San Roman": {"hub_height_m": 87.5, "turbine_model": "Nordex AW125/3000"},
+    "Vortex Wind": {"hub_height_m": 80, "turbine_model": "GENERIC"}
 }
 
 def clean_name(name):
@@ -184,6 +251,13 @@ def generate():
                     "lon": lon,
                     "county": county
                 }
+                
+                # Apply Advanced Specs if available
+                if friendly in ADVANCED_SPECS:
+                    registry[friendly].update(ADVANCED_SPECS[friendly])
+                elif tech == "Wind":
+                    # Add default wind specs if missing
+                    registry[friendly].update({"hub_height_m": 80, "turbine_model": "GENERIC"})
         else:
             # print(f"No match for {r_name} (Search: {search_term})")
             pass

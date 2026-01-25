@@ -9,15 +9,24 @@
     "lon": -98.8630896,
     "county": "Eastland"
   },
-  "Azalea Springs Solar ": {
-    "resource_name": "AZSP_SLR_SOLAR1",
-    "project_name": "Azalea Springs Solar ",
+  "Azalea Springs Solar": {
+    "resource_name": "ASCK_SLR_SOLAR1",
     "tech": "Solar",
     "capacity_mw": 181.0,
     "hub": "Houston",
-    "lat": 31.2544545,
-    "lon": -94.6181177,
+    "lat": 31.3341,
+    "lon": -94.7291,
     "county": "Angelina"
+  },
+  "Blevins Solar": {
+    "resource_name": "BLVN_SLR_SOLAR3",
+    "project_name": "Blevins Solar",
+    "tech": "Solar",
+    "capacity_mw": 271.58,
+    "hub": "North",
+    "lat": 31.2320941,
+    "lon": -96.9262126,
+    "county": "Falls"
   },
   "Bynum Solar Project": {
     "resource_name": "BYNM_SLR_SOLAR1",
@@ -89,15 +98,14 @@
     "lon": -102.5794339,
     "county": "Ector"
   },
-  "Blue Jay Solar ": {
-    "resource_name": "JKLP_SLR_PV2",
-    "project_name": "Blue Jay Solar ",
+  "Blue Jay Solar": {
+    "resource_name": "JKLP_SLR_PV1",
     "tech": "Solar",
     "capacity_mw": 141.05,
-    "hub": "Houston",
-    "lat": 30.5169334,
-    "lon": -95.9943034,
-    "county": "Grimes"
+    "hub": "North",
+    "lat": 30.8252,
+    "lon": -96.5358,
+    "county": "Robertson"
   },
   "Long Point Solar": {
     "resource_name": "LNP_SOLAR1",
@@ -128,13 +136,14 @@
     "lon": -98.216445,
     "county": "Hidalgo"
   },
-  "Maryneal Solar": {
+  "Maryneal Wind": {
     "resource_name": "MROW_SLR_SOLAR1",
-    "tech": "Solar",
+    "project_name": "Maryneal Wind",
+    "tech": "Wind",
     "capacity_mw": 182.4,
-    "hub": "West",
-    "lat": 32.2285,
-    "lon": -100.4346,
+    "hub": "North",
+    "lat": 32.2719306,
+    "lon": -100.3987748,
     "county": "Nolan"
   },
   "Norton Solar": {
@@ -183,6 +192,15 @@
     "lat": 33.1678,
     "lon": -101.4086,
     "county": "Brazoria"
+  },
+  "Maryneal Solar": {
+    "resource_name": "MROW_SLR_SOLAR1",
+    "tech": "Solar",
+    "capacity_mw": 182.4,
+    "hub": "West",
+    "lat": 32.2285,
+    "lon": -100.4346,
+    "county": "Nolan"
   },
   "Frye Solar": {
     "resource_name": "FRYE_SLR_UNIT1",
@@ -242,24 +260,6 @@
     "lon": -102.1005,
     "county": "Castro"
   },
-  "Blue Jay Solar": {
-    "resource_name": "JKLP_SLR_PV1",
-    "tech": "Solar",
-    "capacity_mw": 141.05,
-    "hub": "North",
-    "lat": 30.8252,
-    "lon": -96.5358,
-    "county": "Robertson"
-  },
-  "Azalea Springs Solar": {
-    "resource_name": "ASCK_SLR_SOLAR1",
-    "tech": "Solar",
-    "capacity_mw": 181.0,
-    "hub": "Houston",
-    "lat": 31.3341,
-    "lon": -94.7291,
-    "county": "Angelina"
-  },
   "Castro Solar": {
     "resource_name": "AZSP_SLR_SOLAR2",
     "tech": "Solar",
@@ -277,5 +277,170 @@
     "lat": 30.6724,
     "lon": -93.8837,
     "county": "Newton"
+  },
+  "Rio Bravo Wind": {
+    "resource_name": "CABEZON_WIND1",
+    "tech": "Wind",
+    "capacity_mw": 237.6,
+    "hub": "South",
+    "lat": 26.353,
+    "lon": -98.216,
+    "county": "Starr",
+    "hub_height_m": 105.0,
+    "turbine_model": "Vestas V136-3.6"
+  },
+  "Route 66 Wind": {
+    "resource_name": "ROUTE_66_WIND1",
+    "tech": "Wind",
+    "capacity_mw": 150.0,
+    "hub": "Pan",
+    "lat": 35.222,
+    "lon": -101.831,
+    "county": "Armstrong",
+    "hub_height_m": 80.0,
+    "turbine_model": "Vestas V110-2.0"
+  },
+  "Capricorn Ridge": {
+    "resource_name": "CAPRIDG4_BB_PV",
+    "tech": "Wind",
+    "capacity_mw": 663.0,
+    "hub": "West",
+    "lat": 31.85,
+    "lon": -101.1,
+    "county": "Sterling",
+    "hub_height_m": 80.0,
+    "turbine_model": "GE 1.5sle"
+  },
+  "Horse Hollow": {
+    "resource_name": "HHOLLOW2_WIND1",
+    "tech": "Wind",
+    "capacity_mw": 735.5,
+    "hub": "West",
+    "lat": 32.32,
+    "lon": -100.22,
+    "county": "Taylor",
+    "hub_height_m": 82.0,
+    "turbine_model": "GE 1.5sle"
+  },
+  "South Plains": {
+    "resource_name": "SPLAIN1_WIND1",
+    "tech": "Wind",
+    "capacity_mw": 500.0,
+    "hub": "Pan",
+    "lat": 34.18,
+    "lon": -101.35,
+    "county": "Floyd",
+    "hub_height_m": 86.0,
+    "turbine_model": "Vestas V117"
+  },
+  "Green Pastures": {
+    "resource_name": "GPASTURE_WIND_I",
+    "tech": "Wind",
+    "capacity_mw": 300.0,
+    "hub": "North",
+    "lat": 33.65,
+    "lon": -99.25,
+    "county": "Baylor",
+    "hub_height_m": 92.0,
+    "turbine_model": "Acciona AW-116"
+  },
+  "Hereford Wind": {
+    "resource_name": "HRFDWIND_WIND_G",
+    "tech": "Wind",
+    "capacity_mw": 200.0,
+    "hub": "Pan",
+    "lat": 34.82,
+    "lon": -102.4,
+    "county": "Deaf Smith",
+    "hub_height_m": 88.0,
+    "turbine_model": "Vestas V100"
+  },
+  "Cameron Wind": {
+    "resource_name": "CAMWIND_UNIT1",
+    "tech": "Wind",
+    "capacity_mw": 165.0,
+    "hub": "South",
+    "lat": 26.15,
+    "lon": -97.5,
+    "county": "Cameron",
+    "hub_height_m": 87.5,
+    "turbine_model": "Nordex AW-125"
+  },
+  "San Roman Wind": {
+    "resource_name": "SANROMAN_WIND_1",
+    "tech": "Wind",
+    "capacity_mw": 93.0,
+    "hub": "South",
+    "lat": 26.05,
+    "lon": -97.4,
+    "county": "Cameron",
+    "hub_height_m": 87.5,
+    "turbine_model": "Nordex AW125"
+  },
+  "Tyler Bluff": {
+    "resource_name": "TYLRWIND_UNIT1",
+    "tech": "Wind",
+    "capacity_mw": 120.0,
+    "hub": "North",
+    "lat": 33.65,
+    "lon": -97.2,
+    "county": "Cooke",
+    "hub_height_m": 80.0,
+    "turbine_model": "Siemens SWT-2.3"
+  },
+  "Flat Top Wind": {
+    "resource_name": "FTWIND_UNIT_1",
+    "tech": "Wind",
+    "capacity_mw": 200.0,
+    "hub": "North",
+    "lat": 31.75,
+    "lon": -98.6,
+    "county": "Mills",
+    "hub_height_m": 80.0,
+    "turbine_model": "GE 2.5-116"
+  },
+  "Bobcat Wind": {
+    "resource_name": "BCATWIND_WIND_1",
+    "tech": "Wind",
+    "capacity_mw": 150.0,
+    "hub": "West",
+    "lat": 31.9,
+    "lon": -101.4,
+    "county": "Glasscock",
+    "hub_height_m": 80.0,
+    "turbine_model": "Mitsubishi MWT"
+  },
+  "Goat Mountain": {
+    "resource_name": "GOAT_GOATWIND",
+    "tech": "Wind",
+    "capacity_mw": 150.0,
+    "hub": "West",
+    "lat": 32.0,
+    "lon": -101.7,
+    "county": "Sterling",
+    "hub_height_m": 80.0,
+    "turbine_model": "Mitsubishi 1.0"
+  },
+  "South Ranch Wind": {
+    "resource_name": "SRWE1_SRWE2",
+    "tech": "Wind",
+    "capacity_mw": 100.0,
+    "hub": "South",
+    "lat": 26.5,
+    "lon": -98.5,
+    "county": "Hidalgo",
+    "hub_height_m": 80.0,
+    "turbine_model": "GE 2.x"
+  },
+  "Vera Wind": {
+    "resource_name": "VERAWIND_UNIT1",
+    "tech": "Wind",
+    "capacity_mw": 240.0,
+    "hub": "North",
+    "lat": 33.6,
+    "lon": -99.4,
+    "county": "Knox",
+    "hub_height_m": 80.0,
+    "turbine_model": "GE 1.7"
   }
 }

@@ -1,0 +1,100 @@
+[
+    {
+        "Project":"Azalea Springs Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.089374381,
+        "MBE (MW)":36.0582701909,
+        "RMSE (MW)":62.1154387614
+    },
+    {
+        "Project":"Azalea Springs Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.0940851888,
+        "MBE (MW)":45.8951345865,
+        "RMSE (MW)":78.4122075173
+    },
+    {
+        "Project":"Eliza Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.2781860821,
+        "MBE (MW)":29.5070818441,
+        "RMSE (MW)":51.0476994718
+    },
+    {
+        "Project":"Eliza Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.2885341303,
+        "MBE (MW)":37.8750440573,
+        "RMSE (MW)":65.0388599806
+    },
+    {
+        "Project":"Blue Jay Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.6297139438,
+        "MBE (MW)":21.1537593886,
+        "RMSE (MW)":39.5053567722
+    },
+    {
+        "Project":"Blue Jay Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.6415719017,
+        "MBE (MW)":29.0971697137,
+        "RMSE (MW)":51.9912306377
+    },
+    {
+        "Project":"Roseland Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.8984490214,
+        "MBE (MW)":-6.219254421,
+        "RMSE (MW)":36.5383148154
+    },
+    {
+        "Project":"Roseland Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.9012012397,
+        "MBE (MW)":7.9911895256,
+        "RMSE (MW)":39.8833342116
+    },
+    {
+        "Project":"Maryneal Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.8795472208,
+        "MBE (MW)":-12.815011576,
+        "RMSE (MW)":36.4326753693
+    },
+    {
+        "Project":"Maryneal Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.8834457608,
+        "MBE (MW)":-2.4712730623,
+        "RMSE (MW)":32.9308516865
+    },
+    {
+        "Project":"Frye Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.894946309,
+        "MBE (MW)":-25.249522402,
+        "RMSE (MW)":54.7540707881
+    },
+    {
+        "Project":"Frye Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.8980801841,
+        "MBE (MW)":-14.3826509355,
+        "RMSE (MW)":44.3104138252
+    },
+    {
+        "Project":"Pine Forest Solar",
+        "Model":"Baseline (Fixed)",
+        "R":0.8925864594,
+        "MBE (MW)":20.5196525649,
+        "RMSE (MW)":47.3032908312
+    },
+    {
+        "Project":"Pine Forest Solar",
+        "Model":"Advanced (Tracking)",
+        "R":0.8961754609,
+        "MBE (MW)":36.9103370928,
+        "RMSE (MW)":71.3480976818
+    }
+]

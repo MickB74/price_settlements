@@ -89,5 +89,5 @@ if __name__ == "__main__":
     if asset:
         t_model = asset.get('turbine_model', asset.get('turbine_type', 'GENERIC'))
         p_name = asset.get('project_name', 'Monte Cristo Wind')
-        print(f"\nAnalyzing {p_name} with discovered turbine: {t_model}")
-        quick_analyze(asset['resource_name'], 2024, "Wind", asset['capacity_mw'], asset['lat'], asset['lon'], turbine_type=t_model)
+        print(f"\nAnalyzing {p_name} with discovered turbine: {t_model} (Targeting 2025)")
+        quick_analyze(asset['resource_name'], 2025, "Wind", asset['capacity_mw'], asset['lat'], asset['lon'], turbine_type=t_model)

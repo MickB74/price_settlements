@@ -119,10 +119,24 @@ def get_actual_data(year, lat=32.4487, lon=-99.7331, force_refresh=False):
 
 from utils import power_curves
 
-def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85):
-    """Estimates solar generation from GHI."""
-    gen_mw = capacity_mw * (ghi_series / 1000.0) * efficiency
-    return gen_mw.clip(lower=0.0, upper=capacity_mw)
+def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85, tracking=True, dc_ac_ratio=1.3):
+    """
+    Estimates solar generation from GHI.
+    tracking: If True, applies a tracking gain factor (heuristic).
+    dc_ac_ratio: Ratio of DC panel capacity to AC inverter capacity.
+    """
+    # Tracking increases yield by ~20-35% and squares off the shoulder of the curve
+    if tracking:
+        # Heuristic: apply a morning/evening boost by flattening the GHI curve
+        effective_irradiance = ghi_series * 1.3
+    else:
+        effective_irradiance = ghi_series
+
+    dc_capacity = capacity_mw * dc_ac_ratio
+    dc_gen = dc_capacity * (effective_irradiance / 1000.0) * efficiency
+    
+    # Clip to AC Capacity (Inverter Limit)
+    return dc_gen.clip(lower=0.0, upper=capacity_mw)
 
 def wind_from_speed(speed_series, capacity_mw, turbine_type="GENERIC"):
     """Estimates wind generation from wind speed using specific power curve."""
@@ -192,7 +206,7 @@ def get_openmeteo_2024_data(lat, lon):
     """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
     return get_openmeteo_data(2024, lat, lon)
 
-def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False, turbine_type="GENERIC"):
+def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False, turbine_type="GENERIC", hub_height=80, tracking=True):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
@@ -264,7 +278,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         else:
             return pd.Series()
             
-        mw_hourly = solar_from_ghi(irradiance, capacity_mw)
+        mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking)
         
     elif tech == "Wind":
         if source_type in ["Actual", "TMY", "OpenMeteo_Actual"]:
@@ -275,13 +289,14 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                 else:
                     ws_10m = df_data['Wind_Speed_10m_mps']
                 
-                # Dynamic Scaling based on Longitude to correct PVGIS/OpenMeteo biases
+                # Dynamic Scaling based on Longitude and Hub Height using power law
+                # v_h = v_10 * (h/10)^alpha
                 if lon > -96.0:
-                    shear_factor = 1.6  # Coastal/East (Houston)
+                    alpha = 0.22  # Coastal/East (Houston) - matches previous ~1.6 factor at 80m
                 else:
-                    shear_factor = 1.95  # Inland/West, South, Panhandle
+                    alpha = 0.32  # Inland/West, South, Panhandle - matches previous ~1.95 factor at 80m
                 
-                wind_speed_hub = ws_10m * shear_factor
+                wind_speed_hub = ws_10m * ((hub_height / 10.0) ** alpha)
                 mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type)
             else:
                 return pd.Series()
