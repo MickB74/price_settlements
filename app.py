@@ -2852,14 +2852,16 @@ with tab_performance:
             model_bias = c_p2.number_input("Linear Bias Correction (Multiplier)", 0.5, 1.5, 1.0, step=0.01, help="Scalar to linearly tune model up/down.")
             
             # Turbine Type
-            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)"]
+            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
             selected_turb = c_p3.selectbox("Turbine Type Override", turbine_opts)
             
             turbine_override_map = {
                 "Auto-Detect": None,
                 "Generic (IEC Class 2)": "GENERIC",
                 "Vestas V163 (Low Wind)": "VESTAS_V163",
-                "GE 2.x (Workhorse)": "GE_2X"
+                "GE 2.x (Workhorse)": "GE_2X",
+                "GE 3.6-154 (Modern Mainstream)": "GE_3X",
+                "Nordex N163 (5.X MW)": "NORDEX_N163"
             }
             final_turbine_req = turbine_override_map[selected_turb]
 
