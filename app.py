@@ -1867,6 +1867,7 @@ with tab_validation:
     if val_use_custom_location and not st.session_state.get('prev_use_custom', False):
         st.session_state.val_custom_lat = 31.55907
         st.session_state.val_custom_lon = -96.88108
+        st.session_state.prev_use_custom = True
         st.rerun()
 
     st.session_state.prev_use_custom = val_use_custom_location
