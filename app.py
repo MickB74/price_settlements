@@ -2711,7 +2711,7 @@ with tab_performance:
         st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
         top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
         st.dataframe(
-            top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']].style.format({'R': '{:.2f}', 'MBE (MW)': '{:.2f}', 'RMSE (MW)': '{:.2f}'}),
+            top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
             column_config={
                 "R": st.column_config.NumberColumn(
                     "Correlation (R)",
@@ -2749,7 +2749,7 @@ with tab_performance:
         st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
         top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
         st.dataframe(
-            top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']].style.format({'R': '{:.2f}', 'MBE (MW)': '{:.2f}', 'RMSE (MW)': '{:.2f}'}),
+            top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
             column_config={
                 "R": st.column_config.NumberColumn(
                     "Correlation (R)",
