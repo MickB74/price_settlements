@@ -329,6 +329,11 @@ def get_ercot_data(year, _mtime=None):
         st.error(f"Error fetching data for {year}: {e}")
         return pd.DataFrame()
 
+@st.cache_data(show_spinner=False)
+def get_cached_asset_data(resource_id, start_date, end_date):
+    """Cached wrapper for SCED fetching to prevent re-loading on every interaction."""
+    return sced_fetcher.get_asset_period_data(resource_id, start_date, end_date)
+
 # --- Helper Functions ---
 def calculate_scenario(scenario, df_rtm):
     """Calculates settlement for a single scenario."""
@@ -2280,7 +2285,10 @@ with tab_validation:
                 m4.metric("County", asset_meta.get('county', 'Unknown'))
                 
                 # Coordinates with small map link conceptual
-                st.caption(f"**Coordinates:** {asset_meta['lat']:.4f}, {asset_meta['lon']:.4f}  (Mapped from Interconnection Queue)")
+                st.caption(f"**Coordinates:** {asset_meta['lat']:.4f}, {asset_meta['lon']:.4f}")
+                if 'turbine_model' in asset_meta:
+                     st.caption(f"**Turbine:** {asset_meta.get('turbine_manuf', '')} {asset_meta['turbine_model']} (found via USWTDB)")
+                     
         else:
             st.warning("⚠️ Manual Override: Metadata (lat/lon) missing for this ID. Modeling comparison will use current scenario settings.")
 
@@ -2290,7 +2298,7 @@ with tab_validation:
             else:
                 with st.spinner(f"Retrieving actual production for {final_resource_id}..."):
                     # 1. Fetch Actual Data
-                    df_actual = sced_fetcher.get_asset_period_data(final_resource_id, start_bench, end_bench)
+                    df_actual = get_cached_asset_data(final_resource_id, start_bench, end_bench)
                     
                     if not df_actual.empty:
                         # 2. Run Model for comparison
@@ -2300,16 +2308,28 @@ with tab_validation:
                         compare_tech = asset_meta['tech'] if asset_meta else st.session_state.get('preview_tech', 'Solar')
                         compare_cap = asset_meta['capacity_mw'] if asset_meta else st.session_state.get('preview_capacity', 100.0)
                         
+                        # Use enriched model first, then manual type, then generic
+                        compare_turbine = asset_meta.get('turbine_model', asset_meta.get('turbine_type', 'GENERIC')) if asset_meta else 'GENERIC'
+                        
                         # Run model for all years in range
                         target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
                         model_dfs = []
                         for yr in target_years:
-                            m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon)
+                            m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon, turbine_type=compare_turbine)
                             model_dfs.append(m_df)
                         df_modeled_full = pd.concat(model_dfs)
                         
                         # Slice to match
                         actual_times = df_actual['Time']
+                        # Ensure timezone alignment before slicing/merging
+                        if df_modeled_full.index.tz is None:
+                            df_modeled_full.index = df_modeled_full.index.tz_localize('UTC')
+                        if actual_times.dt.tz is None:
+                            actual_times = actual_times.dt.tz_localize('UTC')
+                            
+                        # Normalize to same TZ (UTC) just in case
+                        df_modeled_full.index = df_modeled_full.index.tz_convert('UTC')
+                        
                         df_modeled_slice = df_modeled_full[df_modeled_full.index.isin(actual_times)].copy()
                         
                         # 3. Merge and Compare
@@ -2332,7 +2352,10 @@ with tab_validation:
                         # Visual Overlay
                         fig_bench = go.Figure()
                         fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Actual_MW'], name='Real Production (ERCOT)', line=dict(color='orange', width=2)))
-                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Modeled_MW'], name='Our Model (ERA5)', line=dict(color='blue', dash='dash', width=1.5)))
+                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Modeled_MW'], name=f'Our Model (ERA5 - {compare_turbine})', line=dict(color='blue', dash='dash', width=1.5)))
+                        
+                        if 'Base_Point_MW' in df_comp.columns:
+                             fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Base_Point_MW'], name='Grid Limit (Base Point)', line=dict(color='red', width=1, dash='dot')))
                         
                         fig_bench.update_layout(
                             title=f"Benchmarking: {final_resource_id} ({start_bench} to {end_bench})",

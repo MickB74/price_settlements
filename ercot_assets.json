@@ -200,16 +200,25 @@
     "hub": "West",
     "lat": 33.8525,
     "lon": -99.0651,
-    "county": "Wilbarger"
+    "county": "Wilbarger",
+    "turbine_manuf": "GE Wind",
+    "turbine_model": "GE2.82-127",
+    "hub_height_m": 89.0,
+    "rotor_diameter_m": 127.0
   },
   "Monte Cristo Wind": {
     "resource_name": "MONTECR1_WIND1",
     "tech": "Wind",
+    "turbine_type": "VESTAS_V163",
     "capacity_mw": 234.5,
     "hub": "South",
     "lat": 26.4175,
     "lon": -98.3231,
-    "county": "Hidalgo"
+    "county": "Hidalgo",
+    "turbine_manuf": "Vestas",
+    "turbine_model": "V110-2.0",
+    "hub_height_m": 80.0,
+    "rotor_diameter_m": 110.0
   },
   "Shaffer Wind": {
     "resource_name": "SHAFFER_UNIT1",
@@ -218,7 +227,11 @@
     "hub": "South",
     "lat": 27.6021,
     "lon": -97.6471,
-    "county": "Nueces"
+    "county": "Nueces",
+    "turbine_manuf": "Vestas",
+    "turbine_model": "V136-3.6",
+    "hub_height_m": 84.11578947368422,
+    "rotor_diameter_m": 131.76842105263157
   },
   "Nazareth Solar": {
     "resource_name": "AZSP_SLR_SOLAR1",

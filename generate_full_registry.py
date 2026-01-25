@@ -36,6 +36,7 @@ KNOWN_MAPPINGS = {
     "FENCESLR": "Fence Post Solar",
     "FERMI": "Fermi Wind",
     "FILESSLR": "Files Solar",
+    "FRYE_SLR": "Frye Solar",
     "FTWIND": "Flat Top Wind",
     "GAIA_SLR": "Gaia Solar",
     "GALLOWAY": "Galloway Solar",

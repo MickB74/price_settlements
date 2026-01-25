@@ -117,21 +117,19 @@ def get_actual_data(year, lat=32.4487, lon=-99.7331, force_refresh=False):
         print(f"Error fetching PVGIS Actual data: {e}")
         return pd.DataFrame()
 
+from utils import power_curves
+
 def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85):
     """Estimates solar generation from GHI."""
     gen_mw = capacity_mw * (ghi_series / 1000.0) * efficiency
     return gen_mw.clip(lower=0.0, upper=capacity_mw)
 
-def wind_from_speed(speed_series, capacity_mw):
-    """Estimates wind generation from wind speed."""
-    def power_curve(v):
-        if v < 3.0: return 0.0
-        elif v < 12.0: return ((v - 3.0) / 9.0) ** 3
-        elif v < 25.0: return 1.0
-        else: return 0.0
-    
-    normalized_power = speed_series.apply(power_curve)
-    return normalized_power * capacity_mw
+def wind_from_speed(speed_series, capacity_mw, turbine_type="GENERIC"):
+    """Estimates wind generation from wind speed using specific power curve."""
+    # Ensure numpy array for vectorization
+    v = speed_series.values
+    normalized_power = power_curves.get_normalized_power(v, turbine_type)
+    return pd.Series(normalized_power, index=speed_series.index) * capacity_mw
 
 
 def get_openmeteo_data(year, lat, lon):
@@ -194,7 +192,7 @@ def get_openmeteo_2024_data(lat, lon):
     """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
     return get_openmeteo_data(2024, lat, lon)
 
-def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False):
+def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False, turbine_type="GENERIC"):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
@@ -284,7 +282,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                     shear_factor = 1.95  # Inland/West, South, Panhandle
                 
                 wind_speed_hub = ws_10m * shear_factor
-                mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw)
+                mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type)
             else:
                 return pd.Series()
         else:

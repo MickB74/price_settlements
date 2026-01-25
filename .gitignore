@@ -7,3 +7,8 @@ venv/
 ercot_rtm_*.parquet
 miso_rtm_*.parquet
 user_uploads/
+data_cache/
+sced_cache/
+data_static/uswtdb.csv
+ercot_assets_expanded.json
+
