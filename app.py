@@ -1860,7 +1860,16 @@ with tab_validation:
     
     # Custom Location Toggle and Manual Input
     # Custom Location Toggle and Manual Input
+    # Custom Location Toggle and Manual Input
     val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
+
+    # Auto-populate defaults when switching to Custom mode
+    if val_use_custom_location and not st.session_state.get('prev_use_custom', False):
+        st.session_state.val_custom_lat = 31.55907
+        st.session_state.val_custom_lon = -96.88108
+        st.rerun()
+
+    st.session_state.prev_use_custom = val_use_custom_location
     
     st.caption("💡 Enter your project's exact coordinates or use the map below")
     col_lat, col_lon = st.columns(2)
@@ -1976,11 +1985,19 @@ with tab_validation:
             clicked_lon = max(-106.5, min(-93.5, clicked_lon))
             st.session_state.val_map_lat = clicked_lat
             st.session_state.val_map_lon = clicked_lon
-            # Also sync to form input keys so they update
-            st.session_state.val_custom_lat = clicked_lat
-            st.session_state.val_custom_lon = clicked_lon
-            # Auto-check the "Use Custom Location" checkbox
-            st.session_state.val_use_custom_location = True
+            
+            # Check if we need to update the inputs (avoid setting key after instantiation error)
+            # Only update if different to avoid infinite reruns
+            current_lat = st.session_state.get('val_custom_lat', 0.0)
+            current_lon = st.session_state.get('val_custom_lon', 0.0)
+            
+            if abs(current_lat - clicked_lat) > 0.0001 or abs(current_lon - clicked_lon) > 0.0001:
+                # Also sync to form input keys so they update
+                st.session_state.val_custom_lat = clicked_lat
+                st.session_state.val_custom_lon = clicked_lon
+                # Auto-check the "Use Custom Location" checkbox
+                st.session_state.val_use_custom_location = True
+                st.rerun()
             
             # Calculate nearest hub on click
             def calc_dist(lat1, lon1, lat2, lon2):
