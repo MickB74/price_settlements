@@ -3018,8 +3018,7 @@ with tab_performance:
             )
             
             st.success(f"Successfully retrieved **{len(res['df_actual'])}** interval points.")
-                    else:
-                        st.error(f"No generation data found for `{final_resource_id}` in this period. Note: Data stops ~60 days before today.")
     else:
         st.warning("Please select a project or enter a Resource ID to begin deep dive benchmarking.")
+
 
