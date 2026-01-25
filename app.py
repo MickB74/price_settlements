@@ -2888,47 +2888,103 @@ with tab_performance:
                         # Drop any potential NaNs from resampling gaps to avoid Metric errors
                         df_comp = df_comp.dropna(subset=['Actual_MW', 'Modeled_MW'])
                         
-                        # Calculate Metrics
-                        # Total Energy (MWh) = Sum(MW) / 4 (for 15-min intervals)
-                        actual_mwh = df_comp['Actual_MW'].sum() / 4.0
-                        modeled_mwh = df_comp['Modeled_MW'].sum() / 4.0
+                        # Time Granularity Selector
+                        st.markdown("#### ⏱️ Time Resolution")
+                        granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly"], horizontal=True, index=0)
                         
-                        mae = (df_comp['Actual_MW'] - df_comp['Modeled_MW']).abs().mean()
-                        r2 = np.corrcoef(df_comp['Actual_MW'], df_comp['Modeled_MW'])[0, 1]**2 if len(df_comp) > 1 else 0
+                        # Prepare data for aggregation
+                        df_comp['Actual_MWh'] = df_comp['Actual_MW'] / 4.0
+                        df_comp['Modeled_MWh'] = df_comp['Modeled_MW'] / 4.0
                         
-                        # Bias / % Diff
-                        mwh_diff_pct = ((modeled_mwh - actual_mwh) / actual_mwh) if actual_mwh > 0 else 0
+                        # Resampling Logic
+                        if granularity == "15-Minute":
+                            df_agg = df_comp.copy()
+                            y_col_act = 'Actual_MW'
+                            y_col_mod = 'Modeled_MW'
+                            unit = "MW"
+                            time_col = 'Time'
                         
-                        # Display Metrics row 1: Energy Totals
-                        st.markdown("#### 📊 Numerical Summary")
-                        mc1, mc2, mc3 = st.columns(3)
-                        mc1.metric("Actual Production", f"{actual_mwh:,.1f} MWh")
-                        mc2.metric("Model Estimate", f"{modeled_mwh:,.1f} MWh", delta=f"{mwh_diff_pct:+.1%}", delta_color="inverse")
-                        mc3.metric("Bias (Error)", f"{modeled_mwh - actual_mwh:+.1f} MWh")
+                        elif granularity == "Hourly":
+                            df_agg = df_comp.resample('h', on='Time').mean().reset_index()
+                            y_col_act = 'Actual_MW'
+                            y_col_mod = 'Modeled_MW'
+                            unit = "MW (Avg)"
+                            time_col = 'Time'
+                            
+                        elif granularity == "Daily":
+                            df_agg = df_comp.resample('D', on='Time')[['Actual_MWh', 'Modeled_MWh']].sum().reset_index()
+                            y_col_act = 'Actual_MWh'
+                            y_col_mod = 'Modeled_MWh'
+                            unit = "MWh (Total)"
+                            time_col = 'Time'
+                            
+                        elif granularity == "Monthly":
+                            df_agg = df_comp.resample('ME', on='Time')[['Actual_MWh', 'Modeled_MWh']].sum().reset_index()
+                            y_col_act = 'Actual_MWh'
+                            y_col_mod = 'Modeled_MWh'
+                            unit = "MWh (Total)"
+                            time_col = 'Time'
                         
-                        # Display Metrics row 2: Statistical Fit
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("Mean Abs Error (MAE)", f"{mae:.1f} MW")
-                        m2.metric("Correlation (R²)", f"{r2:.2%}")
-                        m3.metric("Data Points", f"{len(df_comp):,}")
-                        
-                        # Visual Overlay
-                        fig_bench = go.Figure()
-                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Actual_MW'], name='Real Production (ERCOT)', line=dict(color='orange', width=2)))
-                        fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Modeled_MW'], name=f'Our Model (ERA5 - {compare_turbine})', line=dict(color='blue', dash='dash', width=1.5)))
-                        
-                        if 'Base_Point_MW' in df_comp.columns:
-                             fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Base_Point_MW'], name='Grid Limit (Base Point)', line=dict(color='red', width=1, dash='dot')))
-                        
-                        fig_bench.update_layout(
-                            title=f"Benchmarking: {final_resource_id} ({start_bench} to {end_bench})",
-                            xaxis_title="Time (UTC)",
-                            yaxis_title="Generation (MW)",
-                            hovermode="x unified",
-                            height=500,
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                        )
-                        st.plotly_chart(fig_bench, use_container_width=True)
+                        # Calculate Metrics on Aggregated Data
+                        if not df_agg.empty:
+                            agg_actual_sum = df_agg[y_col_act].sum()
+                            agg_modeled_sum = df_agg[y_col_mod].sum()
+                            
+                            mae = (df_agg[y_col_act] - df_agg[y_col_mod]).abs().mean()
+                            r2 = np.corrcoef(df_agg[y_col_act], df_agg[y_col_mod])[0, 1]**2 if len(df_agg) > 1 else 0
+                            
+                            # Bias / % Diff
+                            diff_pct = ((agg_modeled_sum - agg_actual_sum) / agg_actual_sum) if agg_actual_sum > 0 else 0
+                            
+                            # Display Metrics row 1: Totals (Scale Independent essentially, apart from small resampling diffs)
+                            st.markdown("#### 📊 Numerical Summary")
+                            mc1, mc2, mc3 = st.columns(3)
+                            
+                            # Display Totals in MWh (always useful) or Avg MW depending on view? 
+                            # Let's keep totals as MWh for clarity on volume
+                            total_actual_mwh = df_comp['Actual_MWh'].sum()
+                            total_modeled_mwh = df_comp['Modeled_MWh'].sum()
+                            
+                            mc1.metric("Total Actual Gen", f"{total_actual_mwh:,.1f} MWh")
+                            mc2.metric("Total Model Est", f"{total_modeled_mwh:,.1f} MWh", delta=f"{diff_pct:+.1%}", delta_color="inverse")
+                            mc3.metric("Total Bias", f"{total_modeled_mwh - total_actual_mwh:+.1f} MWh")
+                            
+                            # Display Metrics row 2: Statistical Fit (Context Dependent)
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric(f"Mean Abs Error ({unit})", f"{mae:.1f}")
+                            m2.metric("Correlation (R²)", f"{r2:.2%}")
+                            m3.metric("Data Points", f"{len(df_agg):,}")
+                            
+                            # Visual Overlay
+                            fig_bench = go.Figure()
+                            
+                            # Determine graph type based on granularity
+                            if granularity in ["Daily", "Monthly"]:
+                                fig_bench.add_trace(go.Bar(x=df_agg[time_col], y=df_agg[y_col_act], name=f'Actual ({unit})', marker_color='orange', opacity=0.7))
+                                # For model comparison in bars, maybe line or separate bars? Let's use Line for model to overlay neatly
+                                fig_bench.add_trace(go.Scatter(x=df_agg[time_col], y=df_agg[y_col_mod], name=f'Model ({unit})', line=dict(color='blue', width=3)))
+                            else:
+                                fig_bench.add_trace(go.Scatter(x=df_agg[time_col], y=df_agg[y_col_act], name=f'Actual ({unit})', line=dict(color='orange', width=2)))
+                                fig_bench.add_trace(go.Scatter(x=df_agg[time_col], y=df_agg[y_col_mod], name=f'Model ({unit})', line=dict(color='blue', dash='dash', width=1.5)))
+                            
+                            # Grid Limit only relevant for 15-min or Hourly MW
+                            if 'Base_Point_MW' in df_comp.columns and granularity in ["15-Minute", "Hourly"]:
+                                 # We need to resample base point too if Hourly
+                                 if granularity == "Hourly":
+                                     bp_agg = df_comp.resample('h', on='Time')['Base_Point_MW'].mean()
+                                     fig_bench.add_trace(go.Scatter(x=bp_agg.index, y=bp_agg, name='Grid Limit (MW)', line=dict(color='red', width=1, dash='dot')))
+                                 else:
+                                     fig_bench.add_trace(go.Scatter(x=df_comp['Time'], y=df_comp['Base_Point_MW'], name='Grid Limit (MW)', line=dict(color='red', width=1, dash='dot')))
+                            
+                            fig_bench.update_layout(
+                                title=f"Benchmarking: {final_resource_id} ({granularity})",
+                                xaxis_title="Time",
+                                yaxis_title=f"Generation ({unit})",
+                                hovermode="x unified",
+                                height=500,
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            )
+                            st.plotly_chart(fig_bench, use_container_width=True)
                         
                         # Export Section
                         st.markdown("#### 📥 Export Data")
