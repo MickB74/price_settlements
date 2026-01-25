@@ -2888,9 +2888,30 @@ with tab_performance:
                         # Drop any potential NaNs from resampling gaps to avoid Metric errors
                         df_comp = df_comp.dropna(subset=['Actual_MW', 'Modeled_MW'])
                         
-                        # Time Granularity Selector
-                        st.markdown("#### ⏱️ Time Resolution")
-                        granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly"], horizontal=True, index=0)
+                        # Save to Session State
+                        st.session_state['bench_results'] = {
+                            'df_comp': df_comp,
+                            'df_actual': df_actual,
+                            'resource_id': final_resource_id,
+                            'start': start_bench,
+                            'end': end_bench,
+                            'turbine': compare_turbine
+                        }
+                    else:
+                        st.error(f"No generation data found for `{final_resource_id}` in this period. Note: Data stops ~60 days before today.")
+        
+        # --- Visualization Section (Outside Button Logic) ---
+        if 'bench_results' in st.session_state:
+            res = st.session_state['bench_results']
+            
+            st.divider()
+            st.markdown(f"### 📊 Results for `{res['resource_id']}`")
+            
+            df_comp = res['df_comp']
+            
+            # Time Granularity Selector
+            st.markdown("#### ⏱️ Time Resolution")
+            granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly"], horizontal=True, index=0)
                         
                         # Prepare data for aggregation
                         df_comp['Actual_MWh'] = df_comp['Actual_MW'] / 4.0
