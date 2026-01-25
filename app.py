@@ -2710,7 +2710,27 @@ with tab_performance:
 
         st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
         top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
-        st.dataframe(top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']].style.format({'R': '{:.2f}', 'MBE (MW)': '{:.2f}', 'RMSE (MW)': '{:.2f}'}), use_container_width=True)
+        st.dataframe(
+            top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']].style.format({'R': '{:.2f}', 'MBE (MW)': '{:.2f}', 'RMSE (MW)': '{:.2f}'}),
+            column_config={
+                "R": st.column_config.NumberColumn(
+                    "Correlation (R)",
+                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
+                    format="%.2f"
+                ),
+                "MBE (MW)": st.column_config.NumberColumn(
+                    "MBE (MW)",
+                    help="Mean Bias Error. The average difference between Modeled and Actual MW. Positive = Model Overestimates, Negative = Model Underestimates.",
+                    format="%.2f"
+                ),
+                "RMSE (MW)": st.column_config.NumberColumn(
+                    "RMSE (MW)",
+                    help="Root Mean Square Error. Measures the typical magnitude of error in MW, penalizing larger errors more heavily.",
+                    format="%.2f"
+                )
+            },
+            use_container_width=True
+        )
 
         st.info("💡 **Insight:** Advanced models (using actual hub heights and turbine curves) reduce bias by ~15% on average compared to baseline models.")
 
@@ -2728,7 +2748,27 @@ with tab_performance:
 
         st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
         top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
-        st.dataframe(top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']].style.format({'R': '{:.2f}', 'MBE (MW)': '{:.2f}', 'RMSE (MW)': '{:.2f}'}), use_container_width=True)
+        st.dataframe(
+            top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']].style.format({'R': '{:.2f}', 'MBE (MW)': '{:.2f}', 'RMSE (MW)': '{:.2f}'}),
+            column_config={
+                "R": st.column_config.NumberColumn(
+                    "Correlation (R)",
+                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
+                    format="%.2f"
+                ),
+                "MBE (MW)": st.column_config.NumberColumn(
+                    "MBE (MW)",
+                    help="Mean Bias Error. The average difference between Modeled and Actual MW. Positive = Model Overestimates, Negative = Model Underestimates.",
+                    format="%.2f"
+                ),
+                "RMSE (MW)": st.column_config.NumberColumn(
+                    "RMSE (MW)",
+                    help="Root Mean Square Error. Measures the typical magnitude of error in MW, penalizing larger errors more heavily.",
+                    format="%.2f"
+                )
+            },
+            use_container_width=True
+        )
 
         st.success("✅ **Key Finding:** Solar generation is highly predictable (R > 0.85) when accounting for single-axis tracking gains.")
 
