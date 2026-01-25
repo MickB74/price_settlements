@@ -2841,6 +2841,28 @@ with tab_performance:
         else:
             st.warning("⚠️ Manual Override: Metadata (lat/lon) missing for this ID. Modeling comparison will use current scenario settings.")
 
+        
+        # --- Advanced Model Parameters ---
+        with st.expander("🛠️ Advanced Model Parameters"):
+            c_p1, c_p2, c_p3 = st.columns(3)
+            # Losses
+            model_losses = c_p1.slider("System Losses (%)", 0, 50, 14, help="Reduces gross modeled output (Wake, Electrical, Availability). Default ~14%.")
+            
+            # Bias Correction
+            model_bias = c_p2.number_input("Linear Bias Correction (Multiplier)", 0.5, 1.5, 1.0, step=0.01, help="Scalar to linearly tune model up/down.")
+            
+            # Turbine Type
+            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)"]
+            selected_turb = c_p3.selectbox("Turbine Type Override", turbine_opts)
+            
+            turbine_override_map = {
+                "Auto-Detect": None,
+                "Generic (IEC Class 2)": "GENERIC",
+                "Vestas V163 (Low Wind)": "VESTAS_V163",
+                "GE 2.x (Workhorse)": "GE_2X"
+            }
+            final_turbine_req = turbine_override_map[selected_turb]
+
         if st.button(f"🚀 Fetch & Benchmark {final_resource_id}"):
             if start_bench > end_bench:
                 st.error("Start date must be before end date.")
@@ -2858,7 +2880,11 @@ with tab_performance:
                         compare_cap = asset_meta['capacity_mw'] if asset_meta else 100.0
                         
                         # Use enriched model first, then manual type, then generic
-                        compare_turbine = asset_meta.get('turbine_model', asset_meta.get('turbine_type', 'GENERIC')) if asset_meta else 'GENERIC'
+                        # If override is set, use it.
+                        if final_turbine_req:
+                            compare_turbine = final_turbine_req
+                        else:
+                            compare_turbine = asset_meta.get('turbine_model', asset_meta.get('turbine_type', 'GENERIC')) if asset_meta else 'GENERIC'
                         
                         # Run model for all years in range
                         target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
@@ -2878,6 +2904,11 @@ with tab_performance:
                             
                         # Normalize to same TZ (UTC) just in case
                         df_modeled_full.index = df_modeled_full.index.tz_convert('UTC')
+                        
+                        # Apply Custom Scalars (Losses & Bias)
+                        # Gen_MW is gross, apply losses: Gen_Net = Gen_Gross * (1 - losses) * bias
+                        efficiency_factor = (1 - model_losses / 100.0)
+                        df_modeled_full['Gen_MW'] = df_modeled_full['Gen_MW'] * efficiency_factor * model_bias
                         
                         df_modeled_slice = df_modeled_full[df_modeled_full.index.isin(actual_times)].copy()
                         
@@ -2911,7 +2942,7 @@ with tab_performance:
             
             # Time Granularity Selector
             st.markdown("#### ⏱️ Time Resolution")
-            granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly"], horizontal=True, index=0)
+            granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly", "Annual"], horizontal=True, index=0)
                         
             # Prepare data for aggregation
             df_comp['Actual_MWh'] = df_comp['Actual_MW'] / 4.0
@@ -2941,6 +2972,13 @@ with tab_performance:
                 
             elif granularity == "Monthly":
                 df_agg = df_comp.resample('ME', on='Time')[['Actual_MWh', 'Modeled_MWh']].sum().reset_index()
+                y_col_act = 'Actual_MWh'
+                y_col_mod = 'Modeled_MWh'
+                unit = "MWh (Total)"
+                time_col = 'Time'
+                
+            elif granularity == "Annual":
+                df_agg = df_comp.resample('YE', on='Time')[['Actual_MWh', 'Modeled_MWh']].sum().reset_index()
                 y_col_act = 'Actual_MWh'
                 y_col_mod = 'Modeled_MWh'
                 unit = "MWh (Total)"
@@ -2980,7 +3018,7 @@ with tab_performance:
                 fig_bench = go.Figure()
                 
                 # Determine graph type based on granularity
-                if granularity in ["Daily", "Monthly"]:
+                if granularity in ["Daily", "Monthly", "Annual"]:
                     fig_bench.add_trace(go.Bar(x=df_agg[time_col], y=df_agg[y_col_act], name=f'Actual ({unit})', marker_color='orange', opacity=0.7))
                     # For model comparison in bars, maybe line or separate bars? Let's use Line for model to overlay neatly
                     fig_bench.add_trace(go.Scatter(x=df_agg[time_col], y=df_agg[y_col_mod], name=f'Model ({unit})', line=dict(color='blue', width=3)))
