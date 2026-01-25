@@ -128,9 +128,9 @@
     "lon": -98.216445,
     "county": "Hidalgo"
   },
-  "Maryneal Wind": {
+  "Maryneal Solar": {
     "resource_name": "MROW_SLR_SOLAR1",
-    "tech": "Wind",
+    "tech": "Solar",
     "capacity_mw": 182.4,
     "hub": "West",
     "lat": 32.2285,

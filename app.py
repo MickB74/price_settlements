@@ -2316,6 +2316,9 @@ with tab_validation:
                         df_comp = pd.merge(df_actual, df_modeled_slice.reset_index().rename(columns={'index': 'Time'}), on='Time')
                         df_comp = df_comp.rename(columns={'Gen_MW': 'Modeled_MW'})
                         
+                        # Drop any potential NaNs from resampling gaps to avoid Metric errors
+                        df_comp = df_comp.dropna(subset=['Actual_MW', 'Modeled_MW'])
+                        
                         # Calculate Metrics
                         mae = (df_comp['Actual_MW'] - df_comp['Modeled_MW']).abs().mean()
                         r2 = np.corrcoef(df_comp['Actual_MW'], df_comp['Modeled_MW'])[0, 1]**2 if len(df_comp) > 1 else 0
