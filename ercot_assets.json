@@ -300,6 +300,30 @@
     "hub_height_m": 80.0,
     "turbine_model": "Vestas V110-2.0"
   },
+  "Los Mirasoles Wind": {
+    "resource_name": "LOSMIR_WIND1",
+    "project_name": "Los Mirasoles Wind Farm",
+    "tech": "Wind",
+    "capacity_mw": 300.0,
+    "hub": "South",
+    "lat": 26.5,
+    "lon": -98.6,
+    "county": "Hidalgo",
+    "hub_height_m": 80.0,
+    "turbine_model": "Vestas V110-2.0"
+  },
+  "Hidalgo Wind": {
+    "resource_name": "HIDALGO_WIND1",
+    "project_name": "Hidalgo Wind Farm",
+    "tech": "Wind",
+    "capacity_mw": 100.0,
+    "hub": "South",
+    "lat": 26.35,
+    "lon": -98.2,
+    "county": "Hidalgo",
+    "hub_height_m": 80.0,
+    "turbine_model": "Vestas V100-2.0"
+  },
   "Capricorn Ridge": {
     "resource_name": "CAPRIDG4_BB_PV",
     "tech": "Wind",
