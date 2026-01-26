@@ -7,7 +7,8 @@ import gridstatus
 import patch_gridstatus # Apply monkey patch
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import power_curves, variability_analysis, timedelta
+from utils import power_curves, variability_analysis
+from datetime import datetime, timedelta
 import zipfile
 import io
 import fetch_tmy # New module for TMY data
