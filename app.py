@@ -1813,7 +1813,9 @@ with tab_validation:
                             
                             preview_results = {}
                             for source in weather_opts:
-                                target_year = source.get("year_override", val_year)
+                                target_year = source.get("year_override")
+                                if target_year is None:
+                                    target_year = val_year
                                 
                                 profile = fetch_tmy.get_profile_for_year(
                                     year=target_year, 
