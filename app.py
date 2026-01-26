@@ -1734,7 +1734,9 @@ with tab_validation:
         with c6:
             preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
         with c7:
-            preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
+            # Historical Weather Logic
+            weather_options = ["Actual Weather", "Typical Year (TMY)", "Compare Both", "Calculated P50 (Historical)"] + [f"Historical {y}" for y in range(2024, 2004, -1)]
+            preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
             
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
@@ -1778,16 +1780,64 @@ with tab_validation:
                             lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
                             
                             weather_opts = []
-                            if preview_weather == "Actual Weather": weather_opts = [{"name": "Actual", "force_tmy": False}]
-                            elif preview_weather == "Typical Year (TMY)": weather_opts = [{"name": "TMY", "force_tmy": True}]
-                            else: weather_opts = [{"name": "Actual", "force_tmy": False}, {"name": "TMY", "force_tmy": True}]
+                            if preview_weather == "Actual Weather": 
+                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
+                            elif preview_weather == "Typical Year (TMY)": 
+                                weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
+                            elif preview_weather == "Compare Both": 
+                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}, {"name": "TMY", "force_tmy": True, "year_override": None}]
+                            elif preview_weather.startswith("Historical"):
+                                hist_year = int(preview_weather.split(" ")[1])
+                                weather_opts = [{"name": f"Hist_{hist_year}", "force_tmy": False, "year_override": hist_year}]
+                            elif preview_weather == "Calculated P50 (Historical)":
+                                st.toast("Simulating 20 years to find P50...")
+                                # Call variability analysis
+                                df_res, stats = variability_analysis.run_historical_analysis(
+                                    lat=lat, lon=lon, tech=preview_tech, 
+                                    capacity_mw=preview_capacity, losses_pct=0, 
+                                    turbine_type=selected_turbine, progress_bar=None
+                                )
+                                # Find median year
+                                p50_val = stats['P50']
+                                # Find row with Annual_MWh closest to P50
+                                df_res['diff'] = (df_res['Annual_MWh'] - p50_val).abs()
+                                median_year = int(df_res.loc[df_res['diff'].idxmin(), 'Year'])
+                                
+                                st.success(f"Calculated P50 Year: {median_year} ({stats['P50']:,.0f} MWh)")
+                                weather_opts = [{"name": f"P50_Hist_{median_year}", "force_tmy": False, "year_override": median_year}]
                             
                             preview_results = {}
                             for source in weather_opts:
-                                profile = fetch_tmy.get_profile_for_year(year=val_year, tech=preview_tech, lat=lat, lon=lon, capacity_mw=preview_capacity, force_tmy=source["force_tmy"], turbine_type=selected_turbine)
+                                target_year = source.get("year_override", val_year)
+                                
+                                profile = fetch_tmy.get_profile_for_year(
+                                    year=target_year, 
+                                    tech=preview_tech, 
+                                    lat=lat, 
+                                    lon=lon, 
+                                    capacity_mw=preview_capacity, 
+                                    force_tmy=source["force_tmy"], 
+                                    turbine_type=selected_turbine
+                                )
+                                
                                 if profile is not None:
                                     pc = profile.tz_convert('US/Central')
+                                    
+                                    # RE-ALIGNMENT LOGIC
+                                    # We need to overwrite 'Time' in pdf to match df_market_hub's Time (val_year timestamps)
                                     pdf = pd.DataFrame({'Gen_MW': pc.values, 'Time': pc.index.tz_convert('UTC')})
+                                    
+                                    if target_year is not None and target_year != val_year:
+                                        # Force alignment to market data
+                                        market_len = len(df_market_hub)
+                                        profile_len = len(pdf)
+                                        v_gen = pdf['Gen_MW'].values
+                                        if profile_len < market_len:
+                                            v_gen = np.pad(v_gen, (0, market_len - profile_len), mode='wrap')
+                                        elif profile_len > market_len:
+                                            v_gen = v_gen[:market_len]
+                                        pdf = pd.DataFrame({'Gen_MW': v_gen, 'Time': df_market_hub['Time'].values})
+                                    
                                     pdf['Gen_Energy_MWh'] = pdf['Gen_MW'] * 0.25
                                     merged = pd.merge(pdf, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
                                     
