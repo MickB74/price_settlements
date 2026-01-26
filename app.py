@@ -1778,7 +1778,12 @@ with tab_validation:
                             # Location handling
                             # Location handling - Always use custom/synced lat/lon
                             lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
-                            
+                            # Ensure Market Time is strictly UTC for merging to avoid "datetime64[ns] vs datetime64[ns, US/Central]" errors
+                            if df_market_hub['Time'].dt.tz is not None:
+                                df_market_hub['Time'] = df_market_hub['Time'].dt.tz_convert('UTC')
+                            else:
+                                df_market_hub['Time'] = df_market_hub['Time'].dt.tz_localize('UTC')
+
                             weather_opts = []
                             if preview_weather == "Actual Weather": 
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
@@ -1836,10 +1841,18 @@ with tab_validation:
                                             v_gen = np.pad(v_gen, (0, market_len - profile_len), mode='wrap')
                                         elif profile_len > market_len:
                                             v_gen = v_gen[:market_len]
-                                        pdf = pd.DataFrame({'Gen_MW': v_gen, 'Time': df_market_hub['Time'].values})
+                                        
+                                        # Reconstruct DataFrame with CORRECT Time column from market data
+                                        # This preserves the dtype (datetime64[ns, UTC]) exactly
+                                        pdf = pd.DataFrame({'Gen_MW': v_gen})
+                                        pdf['Time'] = df_market_hub['Time'].values # Using .values can strip TZ? 
+                                        # Safer:
+                                        pdf['Time'] = df_market_hub['Time'].reset_index(drop=True)
                                     
                                     pdf['Gen_Energy_MWh'] = pdf['Gen_MW'] * 0.25
                                     merged = pd.merge(pdf, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
+                                    
+                        
                                     
                                     # Filter by selected months
                                     m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
