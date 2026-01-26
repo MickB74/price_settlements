@@ -301,7 +301,7 @@
     "turbine_model": "Vestas V110-2.0"
   },
   "Los Mirasoles Wind": {
-    "resource_name": "LOSMIR_WIND1",
+    "resource_name": "MIRASOLE_MIR11",
     "project_name": "Los Mirasoles Wind Farm",
     "tech": "Wind",
     "capacity_mw": 300.0,
