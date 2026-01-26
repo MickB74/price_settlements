@@ -298,7 +298,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                     alpha = 0.32  # Inland/West, South, Panhandle - matches previous ~1.95 factor at 80m
                 
                 wind_speed_hub = ws_10m * ((hub_height / 10.0) ** alpha)
-                mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type)
+                mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type) * efficiency
             else:
                 return pd.Series()
         else:
