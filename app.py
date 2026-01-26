@@ -1799,7 +1799,7 @@ with tab_validation:
                                 # Call variability analysis
                                 df_res, stats = variability_analysis.run_historical_analysis(
                                     lat=lat, lon=lon, tech=preview_tech, 
-                                    capacity_mw=preview_capacity, losses_pct=0, 
+                                    capacity_mw=preview_capacity, losses_pct=14, 
                                     turbine_type=selected_turbine, progress_bar=None
                                 )
                                 # Find median year
