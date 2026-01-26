@@ -1734,8 +1734,7 @@ with tab_validation:
         with c6:
             preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
         with c7:
-            weather_options = ["Actual Weather", "Typical Year (TMY)", "Compare Both"] + [f"Historical {y}" for y in range(2024, 2004, -1)]
-            preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
+            preview_weather = st.selectbox("Weather Source", ["Actual Weather", "Typical Year (TMY)", "Compare Both"], key="preview_weather")
             
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
@@ -1779,75 +1778,16 @@ with tab_validation:
                             lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
                             
                             weather_opts = []
-                            if preview_weather == "Actual Weather": 
-                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
-                            elif preview_weather == "Typical Year (TMY)": 
-                                weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
-                            elif preview_weather == "Compare Both": 
-                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}, {"name": "TMY", "force_tmy": True, "year_override": None}]
-                            elif preview_weather.startswith("Historical"):
-                                hist_year = int(preview_weather.split(" ")[1])
-                                weather_opts = [{"name": f"Hist_{hist_year}", "force_tmy": False, "year_override": hist_year}]
+                            if preview_weather == "Actual Weather": weather_opts = [{"name": "Actual", "force_tmy": False}]
+                            elif preview_weather == "Typical Year (TMY)": weather_opts = [{"name": "TMY", "force_tmy": True}]
+                            else: weather_opts = [{"name": "Actual", "force_tmy": False}, {"name": "TMY", "force_tmy": True}]
                             
                             preview_results = {}
                             for source in weather_opts:
-                                target_year = source.get("year_override", val_year)
-                                # If override is set, we model for that year, but MUST align to current year's timestamps
-                                # fetch_tmy naturally returns data aligned to the requested year.
-                                # IF specific historical year, we run fetch_tmy(target_year)
-                                
-                                # However, our market data is for `val_year`. We need to "maser" the profile onto `val_year`.
-                                # The cleanest way is to fetch the profile for `target_year`, ignore its index year, and reindex to `val_year`.
-                                
-                                profile = fetch_tmy.get_profile_for_year(
-                                    year=target_year, 
-                                    tech=preview_tech, 
-                                    lat=lat, 
-                                    lon=lon, 
-                                    capacity_mw=preview_capacity, 
-                                    force_tmy=source["force_tmy"], 
-                                    turbine_type=selected_turbine
-                                )
-                                
+                                profile = fetch_tmy.get_profile_for_year(year=val_year, tech=preview_tech, lat=lat, lon=lon, capacity_mw=preview_capacity, force_tmy=source["force_tmy"], turbine_type=selected_turbine)
                                 if profile is not None:
                                     pc = profile.tz_convert('US/Central')
-                                    
-                                    # If using historical override, we must reset the year to match the market data (val_year)
-                                    # This allows "What if 2011 weather happened in 2024?"
-                                    if source.get("year_override"):
-                                        # Create dummy index for val_year matching shape
-                                        # This is tricky due to leap years.
-                                        # Simple approach: Extract values, pad/truncate to match df_market_hub length
-                                        
-                                        # Get intended target index from market data (filtered to common timestamps if needed, 
-                                        # but here we generate full year usually)
-                                        # Let's assume profile generation returns full year.
-                                        pass 
-                                        
                                     pdf = pd.DataFrame({'Gen_MW': pc.values, 'Time': pc.index.tz_convert('UTC')})
-                                    
-                                    # RE-ALIGNMENT LOGIC
-                                    # If dates don't align with market data (e.g. 2011 vs 2024), alignment merge will fail.
-                                    # We need to overwrite 'Time' in pdf to match df_market_hub's Time.
-                                    if target_year != val_year:
-                                        # We need to align the profile vector to the market data vector.
-                                        # Market: df_market_hub['Time']
-                                        # Profile: pdf['Gen_MW']
-                                        
-                                        market_len = len(df_market_hub)
-                                        profile_len = len(pdf)
-                                        
-                                        v_gen = pdf['Gen_MW'].values
-                                        
-                                        if profile_len < market_len:
-                                            # Pad
-                                            v_gen = np.pad(v_gen, (0, market_len - profile_len), mode='wrap')
-                                        elif profile_len > market_len:
-                                            v_gen = v_gen[:market_len]
-                                            
-                                        # Overwrite
-                                        pdf = pd.DataFrame({'Gen_MW': v_gen, 'Time': df_market_hub['Time'].values})
-                                    
                                     pdf['Gen_Energy_MWh'] = pdf['Gen_MW'] * 0.25
                                     merged = pd.merge(pdf, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
                                     
