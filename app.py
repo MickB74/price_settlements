@@ -1798,7 +1798,7 @@ with tab_validation:
                                 p50_val = stats['P50']
                                 df_res['diff'] = (df_res['Annual_MWh'] - p50_val).abs()
                                 median_year = int(df_res.loc[df_res['diff'].idxmin(), 'Year'])
-                                st.success(f"Calculated P50 Year: {median_year} ({stats['P50']:,.0f} MWh)")
+                                st.success(f"Calculated P50 Year: {median_year}")
 
                             if preview_weather == "Actual Weather": 
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
