@@ -1826,7 +1826,8 @@ with tab_validation:
                                     lon=lon, 
                                     capacity_mw=preview_capacity, 
                                     force_tmy=source["force_tmy"], 
-                                    turbine_type=selected_turbine
+                                    turbine_type=selected_turbine,
+                                    efficiency=0.86 # Standardize to 14% losses to match P50 calc
                                 )
                                 
                                 if profile is not None:
