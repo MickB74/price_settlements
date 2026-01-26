@@ -1735,7 +1735,7 @@ with tab_validation:
             preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
         with c7:
             # Historical Weather Logic
-            weather_options = ["Actual Weather", "Typical Year (TMY)", "Compare Both", "Calculated P50 (Historical)"] + [f"Historical {y}" for y in range(2024, 2004, -1)]
+            weather_options = ["Actual Weather", "Typical Year (TMY)", "Compare All (Act/TMY/P50)", "Calculated P50 (Historical)"]
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
             
         # Optional Turbine Selector (if Wind)
@@ -1785,30 +1785,32 @@ with tab_validation:
                                 df_market_hub['Time'] = df_market_hub['Time'].dt.tz_localize('UTC')
 
                             weather_opts = []
-                            if preview_weather == "Actual Weather": 
-                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
-                            elif preview_weather == "Typical Year (TMY)": 
-                                weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
-                            elif preview_weather == "Compare Both": 
-                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}, {"name": "TMY", "force_tmy": True, "year_override": None}]
-                            elif preview_weather.startswith("Historical"):
-                                hist_year = int(preview_weather.split(" ")[1])
-                                weather_opts = [{"name": f"Hist_{hist_year}", "force_tmy": False, "year_override": hist_year}]
-                            elif preview_weather == "Calculated P50 (Historical)":
+                            median_year = None
+                            
+                            # Pre-calculate P50 if needed
+                            if preview_weather in ["Compare All (Act/TMY/P50)", "Calculated P50 (Historical)"]:
                                 st.toast("Simulating 20 years to find P50...")
-                                # Call variability analysis
                                 df_res, stats = variability_analysis.run_historical_analysis(
                                     lat=lat, lon=lon, tech=preview_tech, 
                                     capacity_mw=preview_capacity, losses_pct=14, 
                                     turbine_type=selected_turbine, progress_bar=None
                                 )
-                                # Find median year
                                 p50_val = stats['P50']
-                                # Find row with Annual_MWh closest to P50
                                 df_res['diff'] = (df_res['Annual_MWh'] - p50_val).abs()
                                 median_year = int(df_res.loc[df_res['diff'].idxmin(), 'Year'])
-                                
                                 st.success(f"Calculated P50 Year: {median_year} ({stats['P50']:,.0f} MWh)")
+
+                            if preview_weather == "Actual Weather": 
+                                weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
+                            elif preview_weather == "Typical Year (TMY)": 
+                                weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
+                            elif preview_weather == "Compare All (Act/TMY/P50)":
+                                weather_opts = [
+                                    {"name": "Actual", "force_tmy": False, "year_override": None}, 
+                                    {"name": "TMY", "force_tmy": True, "year_override": None},
+                                    {"name": f"P50 ({median_year})", "force_tmy": False, "year_override": median_year}
+                                ]
+                            elif preview_weather == "Calculated P50 (Historical)":
                                 weather_opts = [{"name": f"P50_Hist_{median_year}", "force_tmy": False, "year_override": median_year}]
                             
                             preview_results = {}
