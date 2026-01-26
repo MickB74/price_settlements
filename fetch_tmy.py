@@ -206,12 +206,13 @@ def get_openmeteo_2024_data(lat, lon):
     """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
     return get_openmeteo_data(2024, lat, lon)
 
-def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False, turbine_type="GENERIC", hub_height=80, tracking=True):
+def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False, turbine_type="GENERIC", hub_height=80, tracking=True, efficiency=0.85):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
     Uses Open-Meteo for 2024+ (Solar + Wind) - real weather data.
     Uses TMY data only when force_tmy=True.
+    efficiency: System efficiency (default 0.85 for 15% losses). Pass 0.86 for 14% losses.
     """
     # Determine Data Source
     # If forced TMY, disable all actuals
@@ -278,7 +279,7 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         else:
             return pd.Series()
             
-        mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking)
+        mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking, efficiency=efficiency)
         
     elif tech == "Wind":
         if source_type in ["Actual", "TMY", "OpenMeteo_Actual"]:

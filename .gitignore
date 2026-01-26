@@ -12,3 +12,9 @@ sced_cache/
 data_static/uswtdb.csv
 ercot_assets_expanded.json
 
+
+# Data Files
+*.csv
+*.xlsx
+test data/
+~$*

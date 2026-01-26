@@ -7,7 +7,7 @@ import gridstatus
 import patch_gridstatus # Apply monkey patch
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from utils import power_curves, variability_analysis, timedelta
 import zipfile
 import io
 import fetch_tmy # New module for TMY data
@@ -74,7 +74,7 @@ components.html(
             let hideSidebar = false;
             
             tabs.forEach(tab => {
-                if ((tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance")) && tab.getAttribute("aria-selected") === "true") {
+                if ((tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
@@ -2933,7 +2933,7 @@ with tab_performance:
                         target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
                         model_dfs = []
                         for yr in target_years:
-                            m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon, turbine_type=compare_turbine)
+                            m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon, turbine_type=compare_turbine, efficiency=1.0)
                             model_dfs.append(m_df)
                         df_modeled_full = pd.concat(model_dfs)
                         
