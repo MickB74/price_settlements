@@ -2,6 +2,10 @@ import os
 import requests
 import pandas as pd
 import numpy as np
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if present
+load_dotenv()
 
 def get_eia_api_key():
     return os.getenv('EIA_API_KEY')

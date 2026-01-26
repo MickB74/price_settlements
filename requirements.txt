@@ -12,3 +12,4 @@ pdfplumber
 folium
 streamlit-folium
 geopy
+python-dotenv
