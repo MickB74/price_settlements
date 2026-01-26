@@ -3004,7 +3004,7 @@ with tab_performance:
                         for yr in target_years:
                             m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon, turbine_type=compare_turbine, efficiency=1.0)
                             model_dfs.append(m_df)
-                        df_modeled_full = pd.concat(model_dfs)
+                        df_modeled_full = pd.concat(model_dfs).to_frame(name='Gen_MW')
                         
                         # Slice to match
                         actual_times = df_actual['Time']
