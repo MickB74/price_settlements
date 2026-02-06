@@ -77,7 +77,7 @@ components.html(
             let hideSidebar = false;
             
             tabs.forEach(tab => {
-                if ((tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability")) && tab.getAttribute("aria-selected") === "true") {
+                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
@@ -3276,6 +3276,15 @@ with tab_performance:
         asset_meta = asset_registry[benchmark_asset_name]
         final_resource_id = asset_meta['resource_name']
 
+    # Data Source Selection
+    val_source = st.radio("Validation Data Source", ["ERCOT Public SCED (60-day delay)", "Upload Private Data (CSV/Excel)"], horizontal=True, index=0)
+    
+    uploaded_val_file = None
+    if val_source == "Upload Private Data (CSV/Excel)":
+        uploaded_val_file = st.file_uploader("Upload Generation Data", type=["csv", "xlsx"], help="Columns required: 'Time' (datetime) and 'Actual_MW' (or 'Gen_MW').")
+        if uploaded_val_file:
+             st.info("File uploaded. Click 'Fetch & Benchmark' to process.")
+
     if final_resource_id:
         # Date Range Picker
         max_date = (datetime.now() - timedelta(days=65)).date()
@@ -3336,22 +3345,54 @@ with tab_performance:
             else:
                 with st.spinner(f"Retrieving actual production and running model for {final_resource_id}..."):
                     # 1. Fetch Actual Data
-                    df_actual = get_cached_asset_data(final_resource_id, start_bench, end_bench)
+                    if val_source == "Upload Private Data (CSV/Excel)" and uploaded_val_file:
+                        try:
+                            if uploaded_val_file.name.endswith('.csv'):
+                                df_actual = pd.read_csv(uploaded_val_file)
+                            else:
+                                df_actual = pd.read_excel(uploaded_val_file)
+                            
+                            # Standardize Columns
+                            # Look for time col
+                            time_col = next((c for c in df_actual.columns if 'time' in c.lower() or 'date' in c.lower()), None)
+                            gen_col = next((c for c in df_actual.columns if 'mw' in c.lower() or 'gen' in c.lower() or 'actual' in c.lower()), None)
+                            
+                            if not time_col or not gen_col:
+                                st.error(f"Could not identify Time/Gen columns. Found: {df_actual.columns.tolist()}")
+                                df_actual = pd.DataFrame()
+                            else:
+                                df_actual = df_actual.rename(columns={time_col: 'Time', gen_col: 'Actual_MW'})
+                                df_actual['Time'] = pd.to_datetime(df_actual['Time'])
+                                # Assume local if naive, or convert to UTC? SCED is UTC? No, SCED is usually Central? 
+                                # Current app uses Central for display.
+                                # Let's assume input is Central for now or naive-local.
+                                
+                        except Exception as e:
+                            st.error(f"Error parsing file: {e}")
+                            df_actual = pd.DataFrame()
+                    else:
+                        # Public SCED
+                        df_actual = get_cached_asset_data(final_resource_id, start_bench, end_bench)
                     
                     if not df_actual.empty:
                         # 2. Run Model for comparison
-                        # Use metadata if available, otherwise use page settings
-                        compare_lat = asset_meta['lat'] if asset_meta else 32.4487
-                        compare_lon = asset_meta['lon'] if asset_meta else -99.7331
-                        compare_tech = asset_meta['tech'] if asset_meta else "Solar"
-                        compare_cap = asset_meta['capacity_mw'] if asset_meta else 100.0
+                        # Use metadata if available, otherwise use page settings (Analysis Configuration)
+                        compare_lat = asset_meta['lat'] if asset_meta else st.session_state.get('val_custom_lat', 32.0)
+                        compare_lon = asset_meta['lon'] if asset_meta else st.session_state.get('val_custom_lon', -100.0)
+                        
+                        # Use Preview settings if meta missing
+                        compare_tech = asset_meta['tech'] if asset_meta else st.session_state.get('preview_tech', 'Solar')
+                        compare_cap = asset_meta['capacity_mw'] if asset_meta else st.session_state.get('preview_capacity', 100.0)
                         
                         # Use enriched model first, then manual type, then generic
                         # If override is set, use it.
                         if final_turbine_req:
                             compare_turbine = final_turbine_req
+                        elif asset_meta:
+                            compare_turbine = asset_meta.get('turbine_model', asset_meta.get('turbine_type', 'GENERIC'))
                         else:
-                            compare_turbine = asset_meta.get('turbine_model', asset_meta.get('turbine_type', 'GENERIC')) if asset_meta else 'GENERIC'
+                            # Use the preview selector if no asset meta
+                            compare_turbine = selected_turbine if selected_turbine != "GENERIC" else "GENERIC"
                         
                         # Run model for all years in range
                         target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
