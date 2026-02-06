@@ -1090,7 +1090,9 @@ with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
     st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
 
 # --- Solar/Wind Batch Form ---
-with st.sidebar.form("add_scenario_form"):
+# --- Solar/Wind Batch Form ---
+# Form Removed to allow dynamic updates (monthly filter)
+with st.sidebar:
     st.subheader("Add Scenarios")
     
     available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
@@ -1176,14 +1178,16 @@ with st.sidebar.form("add_scenario_form"):
     # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
     # Button Layout: 
     # Row 1: Add (Primary Action)
-    add_button = st.form_submit_button("➕ Add Scenarios", type="primary", use_container_width=True)
+    # Row 1: Add (Primary Action)
+    add_button = st.button("➕ Add Scenarios", type="primary", use_container_width=True)
     
     # Row 2: Secondary Actions
     col_clear, col_reset = st.columns(2)
     with col_clear:
-        clear_run_button = st.form_submit_button("🏃 Run", type="secondary", use_container_width=True)
+        # Run button triggers calculation
+        clear_run_button = st.button("🏃 Run", type="secondary", use_container_width=True)
     with col_reset:
-        reset_all_button = st.form_submit_button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
+        reset_all_button = st.button("🗑️ Reset", type="secondary", use_container_width=True, on_click=reset_defaults)
     
     # Handle Add Scenarios (append mode)
     if add_button:
@@ -2235,16 +2239,14 @@ with tab_validation:
     st.session_state.prev_use_custom = val_use_custom_location
     
     st.caption("💡 Enter your project's exact coordinates or use the map below")
-    col_lat, col_lon = st.columns(2)
-    with col_lat:
-        val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, step=0.01, format="%.4f", key="val_custom_lat")
-    with col_lon:
-        val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, step=0.01, format="%.4f", key="val_custom_lon")
     
-    st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
-
-    # --- Location Picker Section ---
-    with st.expander("🗺️ Pick Project Location", expanded=False):
+    # --- Layout Containers (Visual Order) ---
+    input_container = st.container()
+    map_container = st.expander("🗺️ Pick Project Location", expanded=False)
+    
+    # --- Map Logic (Execution Order: Run First) ---
+    # We run this BEFORE inputs so that click updates (session_state) are ready for the input widgets
+    with map_container:
         st.caption("Search by name or click on the map to select your project location")
         
         # Location search box
@@ -2349,29 +2351,29 @@ with tab_validation:
             st.session_state.val_map_lat = clicked_lat
             st.session_state.val_map_lon = clicked_lon
             
-            # Check if we need to update the inputs (avoid setting key after instantiation error)
-            # Only update if different to avoid infinite reruns
+            # Check if we need to update the inputs
             current_lat = st.session_state.get('val_custom_lat', 0.0)
             current_lon = st.session_state.get('val_custom_lon', 0.0)
             
             if abs(current_lat - clicked_lat) > 0.0001 or abs(current_lon - clicked_lon) > 0.0001:
-                # Also sync to form input keys so they update
+                # Sync inputs - THIS WORKS safely because inputs are rendered AFTER this block
                 st.session_state.val_custom_lat = clicked_lat
                 st.session_state.val_custom_lon = clicked_lon
-                # Auto-check the "Use Custom Location" checkbox
                 st.session_state.val_use_custom_location = True
-                st.rerun()
-            
-            # Calculate nearest hub on click
-            def calc_dist(lat1, lon1, lat2, lon2):
-                return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
-            click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
-            nearest_hub = min(click_distances, key=click_distances.get)
-            st.info(f"📍 Location set to: {clicked_lat:.4f}, {clicked_lon:.4f} | Nearest hub: **{nearest_hub}** (select from dropdown above)")
-        
-        # Show current selected coordinates
-        if st.session_state.get('val_use_custom_location', False):
-            st.success(f"✅ Using custom location: {st.session_state.val_map_lat:.4f}, {st.session_state.val_map_lon:.4f}")
+                # st.rerun() # Not needed if inputs are rendered after!
+    
+    # --- Input Widgets (Visual Order: Top, Execution Order: Second) ---
+    with input_container:
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, step=0.01, format="%.4f", key="val_custom_lat")
+        with col_lon:
+            val_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, step=0.01, format="%.4f", key="val_custom_lon")
+    
+    st.info(f"📍 Selected location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
+    
+    if st.session_state.get('val_use_custom_location', False):
+         st.success(f"✅ Using custom location: {val_custom_lat:.4f}, {val_custom_lon:.4f}")
     
 
 
