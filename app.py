@@ -3130,9 +3130,9 @@ with tab_performance:
         - **Range:** -1.0 to 1.0. (1.0 is a perfect match).
         - **Good Score:** > 0.90 is excellent.
         
-        **2. Coefficient of Determination (R²)**
+        **2. Coefficient of Determination (R^2)**
         - **What it means:** The percentage of the variability in actual generation that our model explains.
-        - **Analogy:** If R² = 0.95, our model captures 95% of the ups and downs correctly.
+        - **Analogy:** If R^2 = 0.95, our model captures 95% of the ups and downs correctly.
         
         **3. Mean Bias Error (MBE)**
         - **What it means:** The average difference between Model and Actual.
