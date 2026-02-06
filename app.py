@@ -1942,9 +1942,8 @@ with tab_validation:
             try:
                 fpath = "ercot_rtm_2026.parquet"
                 if os.path.exists(fpath):
-                    import datetime
                     mtime = os.path.getmtime(fpath)
-                    dt = datetime.datetime.fromtimestamp(mtime)
+                    dt = datetime.fromtimestamp(mtime)
                     st.write(f"**File:** `{fpath}` | **Modified:** {dt.strftime('%H:%M:%S')}")
                     # Peek at file
                     meta_df = pd.read_parquet(fpath, columns=['Time_Central'])
