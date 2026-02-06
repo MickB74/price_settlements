@@ -95,13 +95,13 @@ def run_benchmark():
         
         # A. Fetch Actual Gen
         print(f"  Fetching actual generation for {r_id}...")
-        df_actual = sced_fetcher.get_asset_period_data(r_id, start_date, end_date)
-        if df_actual.empty:
+        df_actual_full = sced_fetcher.get_asset_period_data(r_id, start_date, end_date)
+        if df_actual_full.empty:
             print(f"  ! No actual data found for {r_id} in period.")
             continue
             
         # Ensure UTC and aligned. sced_fetcher returns UTC.
-        df_actual = df_actual.set_index('Time')['Actual_MW']
+        df_actual_full = df_actual_full.set_index('Time')
         
         # B. Model 1: Baseline (80m, Generic Curve)
         print(f"  Running Baseline Model (80m, Generic)...")
@@ -120,23 +120,35 @@ def run_benchmark():
         # D. Align index for comparison
         # Model profiles have a specific year index, actual might start at a specific day.
         # Ensure both are aligned to UTC.
-        baseline_aligned = prof_baseline.reindex(df_actual.index).fillna(0)
-        advanced_aligned = prof_advanced.reindex(df_actual.index).fillna(0)
+        baseline_aligned = prof_baseline.reindex(df_actual_full.index).fillna(0)
+        advanced_aligned = prof_advanced.reindex(df_actual_full.index).fillna(0)
         
+        # --- APPLY ECONOMIC DISPATCH (CURTAILMENT) ---
+        # Cap modeled generation at Base Point if available
+        if 'Base_Point_MW' in df_actual_full.columns:
+            # Fill NaN Base Points with infinity (unconstrained) to be safe
+            base_point = df_actual_full['Base_Point_MW'].fillna(np.inf)
+            base_point = base_point.clip(lower=0) # ensure no negatives
+            
+            baseline_aligned = np.minimum(baseline_aligned, base_point)
+            advanced_aligned = np.minimum(advanced_aligned, base_point)
+        else:
+            print("  ! Warning: No Base Point data found. Using unconstrained physics model.")
+
         # E. Calculate Metrics
-        metrics_baseline = calculate_metrics(df_actual, baseline_aligned)
-        metrics_advanced = calculate_metrics(df_actual, advanced_aligned)
+        metrics_baseline = calculate_metrics(df_actual_full['Actual_MW'], baseline_aligned)
+        metrics_advanced = calculate_metrics(df_actual_full['Actual_MW'], advanced_aligned)
         
         results.append({
             'Project': p_name,
-            'Model': 'Baseline (80m, Generic)',
+            'Model': 'Baseline (Curtailed)',
             'R': metrics_baseline['R'],
             'MBE (MW)': metrics_baseline['MBE'],
             'RMSE (MW)': metrics_baseline['RMSE']
         })
         results.append({
             'Project': p_name,
-            'Model': f"Advanced ({actual_hub_h}m, {actual_tech_type})",
+            'Model': f"Advanced (Curtailed)",
             'R': metrics_advanced['R'],
             'MBE (MW)': metrics_advanced['MBE'],
             'RMSE (MW)': metrics_advanced['RMSE']

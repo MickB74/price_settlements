@@ -3504,7 +3504,25 @@ with tab_performance:
             
             # Time Granularity Selector
             st.markdown("#### ⏱️ Time Resolution")
+            
+            # Economic Dispatch Toggle
+            # col_t1, col_t2 = st.columns([2, 1])
+            # with col_t1:
             granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly", "Annual"], horizontal=True, index=0)
+            # with col_t2:
+            apply_dispatch = st.checkbox("📉 Apply Economic Dispatch", value=False, help="Limit Modeled Generation to Base Point (Grid Limit) to simulate curtailment.", key=f"chk_disp_{res['resource_id']}")
+            
+            # Apply Dispatch Logic (Curtail Model)
+            if apply_dispatch and 'Base_Point_MW' in df_comp.columns:
+                # If Base Point is NaN (rare), assume unconstrained (infinity), effectively keeping Modeled_MW
+                # Or fill with Capacity? Let's keep it safe.
+                # Actually, SCED usually has values. If NaN, it might mean data missing.
+                # Logic: Modeled_Curtailed = min(Modeled, Base_Point)
+                df_comp['Modeled_MW_Raw'] = df_comp['Modeled_MW'] # Keep raw for reference
+                df_comp['Modeled_MW'] = df_comp[['Modeled_MW', 'Base_Point_MW']].min(axis=1)
+                st.caption("⚠️ **Economic Dispatch Applied:** Modeled generation is capped at the Grid Limit (Base Point).")
+            elif apply_dispatch:
+                st.warning("⚠️ Base Point data missing for this period. Cannot apply economic dispatch.")
                         
             # Prepare data for aggregation
             df_comp['Actual_MWh'] = df_comp['Actual_MW'] / 4.0

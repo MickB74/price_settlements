@@ -74,12 +74,13 @@ def run_benchmark():
         
         # A. Fetch Actual Gen
         print(f"  Fetching actual generation for {r_id}...")
-        df_actual = sced_fetcher.get_asset_period_data(r_id, start_date, end_date)
-        if df_actual.empty:
+        df_actual_full = sced_fetcher.get_asset_period_data(r_id, start_date, end_date)
+        if df_actual_full.empty:
             print(f"  ! No actual data found for {r_id}.")
             continue
             
-        df_actual = df_actual.set_index('Time')['Actual_MW']
+        # Ensure UTC and aligned. sced_fetcher returns UTC.
+        df_actual_full = df_actual_full.set_index('Time')
         
         # B. Model 1: Baseline (Fixed Tilt, No Tracking)
         print(f"  Running Baseline Model (Fixed)...")
@@ -98,23 +99,32 @@ def run_benchmark():
         prof_tracking = prof_tracking[~prof_tracking.index.duplicated(keep='first')]
         
         # D. Align index
-        fixed_aligned = prof_fixed.reindex(df_actual.index).fillna(0)
-        tracking_aligned = prof_tracking.reindex(df_actual.index).fillna(0)
+        fixed_aligned = prof_fixed.reindex(df_actual_full.index).fillna(0)
+        tracking_aligned = prof_tracking.reindex(df_actual_full.index).fillna(0)
+        
+        # --- APPLY ECONOMIC DISPATCH (CURTAILMENT) ---
+        # Cap modeled generation at Base Point to reflect grid limits
+        if 'Base_Point_MW' in df_actual_full.columns:
+            base_point = df_actual_full['Base_Point_MW'].fillna(np.inf).clip(lower=0)
+            fixed_aligned = np.minimum(fixed_aligned, base_point)
+            tracking_aligned = np.minimum(tracking_aligned, base_point)
+        else:
+            print("  ! Warning: No Base Point data found. Using unconstrained physics model.")
         
         # E. Calculate Metrics
-        metrics_fixed = calculate_metrics(df_actual, fixed_aligned)
-        metrics_tracking = calculate_metrics(df_actual, tracking_aligned)
+        metrics_fixed = calculate_metrics(df_actual_full['Actual_MW'], fixed_aligned)
+        metrics_tracking = calculate_metrics(df_actual_full['Actual_MW'], tracking_aligned)
         
         results.append({
             'Project': p_name,
-            'Model': 'Baseline (Fixed)',
+            'Model': 'Baseline (Fixed+Curtailed)',
             'R': metrics_fixed['R'],
             'MBE (MW)': metrics_fixed['MBE'],
             'RMSE (MW)': metrics_fixed['RMSE']
         })
         results.append({
             'Project': p_name,
-            'Model': 'Advanced (Tracking)',
+            'Model': 'Advanced (Tracking+Curtailed)',
             'R': metrics_tracking['R'],
             'MBE (MW)': metrics_tracking['MBE'],
             'RMSE (MW)': metrics_tracking['RMSE']
