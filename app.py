@@ -3275,6 +3275,37 @@ with tab_performance:
     elif benchmark_asset_name != "None (Use Custom ID)":
         asset_meta = asset_registry[benchmark_asset_name]
         final_resource_id = asset_meta['resource_name']
+        
+        # --- BENCHMARK DATA INTEGRATION ---
+        # "Load project data from model performance"
+        # We try to find this project in our benchmark results JSONs
+        found_bench = []
+        try:
+            with open('benchmark_results_wind.json', 'r') as f:
+                wand = json.load(f)
+                found_bench.extend([r for r in wand if r.get('Project') == benchmark_asset_name])
+            with open('benchmark_results_solar.json', 'r') as f:
+                sand = json.load(f)
+                found_bench.extend([r for r in sand if r.get('Project') == benchmark_asset_name])
+        except Exception:
+            pass
+            
+        if found_bench:
+            # Sort by R descending to find "Best"
+            best_run = sorted(found_bench, key=lambda x: x.get('R') or -1, reverse=True)[0]
+            
+            with st.expander(f"🏆 Benchmark Performance ({best_run.get('Model')})", expanded=True):
+                c_b1, c_b2, c_b3 = st.columns(3)
+                r_val = best_run.get('R')
+                mbe_val = best_run.get('MBE (MW)')
+                rmse_val = best_run.get('RMSE (MW)')
+                
+                c_b1.metric("Correlation (R)", f"{r_val:.2f}" if r_val else "N/A", help="Dec '24 - Nov '25 Benchmark")
+                c_b2.metric("Mean Bias (MBE)", f"{mbe_val:.1f} MW" if mbe_val else "N/A", help="Positive = Model Overpredicts")
+                c_b3.metric("RMSE", f"{rmse_val:.1f} MW" if rmse_val else "N/A", help="Typical Error Magnitude")
+                
+                st.caption(f"**Best Configuration:** {best_run.get('Model')}")
+        # ----------------------------------
 
     # Data Source Selection
     val_source = st.radio("Validation Data Source", ["ERCOT Public SCED (60-day delay)", "Upload Private Data (CSV/Excel)"], horizontal=True, index=0)
