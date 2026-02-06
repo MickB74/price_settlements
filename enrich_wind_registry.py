@@ -1,192 +1,125 @@
+import pandas as pd
 import json
-import os
+import numpy as np
+from math import radians, cos, sin, asin, sqrt
 
-def enrich_wind_registry():
-    path = 'ercot_assets.json'
-    if not os.path.exists(path):
-        assets = {}
-    else:
-        with open(path, 'r') as f:
-            assets = json.load(f)
-            
-    # New Wind Data (15+ Assets)
-    new_data = {
-        "Rio Bravo Wind": {
-            "resource_name": "CABEZON_WIND1",
-            "tech": "Wind",
-            "capacity_mw": 237.6,
-            "hub": "South",
-            "lat": 26.353,
-            "lon": -98.216,
-            "county": "Starr",
-            "hub_height_m": 105.0,
-            "turbine_model": "Vestas V136-3.6"
-        },
-        "Route 66 Wind": {
-            "resource_name": "ROUTE_66_WIND1",
-            "tech": "Wind",
-            "capacity_mw": 150.0,
-            "hub": "Pan",
-            "lat": 35.222,
-            "lon": -101.831,
-            "county": "Armstrong",
-            "hub_height_m": 80.0,
-            "turbine_model": "Vestas V110-2.0"
-        },
-        "Capricorn Ridge": {
-            "resource_name": "CAPRIDG4_BB_PV", # SCED name for Capricorn Ph 4 usually
-            "tech": "Wind",
-            "capacity_mw": 663.0,
-            "hub": "West",
-            "lat": 31.85,
-            "lon": -101.10,
-            "county": "Sterling",
-            "hub_height_m": 80.0,
-            "turbine_model": "GE 1.5sle"
-        },
-        "Horse Hollow": {
-            "resource_name": "HHOLLOW2_WIND1",
-            "tech": "Wind",
-            "capacity_mw": 735.5,
-            "hub": "West",
-            "lat": 32.32,
-            "lon": -100.22,
-            "county": "Taylor",
-            "hub_height_m": 82.0,
-            "turbine_model": "GE 1.5sle"
-        },
-        "South Plains": {
-            "resource_name": "SPLAIN1_WIND1",
-            "tech": "Wind",
-            "capacity_mw": 500.0,
-            "hub": "Pan",
-            "lat": 34.18,
-            "lon": -101.35,
-            "county": "Floyd",
-            "hub_height_m": 86.0,
-            "turbine_model": "Vestas V117"
-        },
-        "Green Pastures": {
-            "resource_name": "GPASTURE_WIND_I",
-            "tech": "Wind",
-            "capacity_mw": 300.0,
-            "hub": "North",
-            "lat": 33.65,
-            "lon": -99.25,
-            "county": "Baylor",
-            "hub_height_m": 92.0,
-            "turbine_model": "Acciona AW-116"
-        },
-        "Hereford Wind": {
-            "resource_name": "HRFDWIND_WIND_G",
-            "tech": "Wind",
-            "capacity_mw": 200.0,
-            "hub": "Pan",
-            "lat": 34.82,
-            "lon": -102.40,
-            "county": "Deaf Smith",
-            "hub_height_m": 88.0,
-            "turbine_model": "Vestas V100"
-        },
-        "Cameron Wind": {
-            "resource_name": "CAMWIND_UNIT1",
-            "tech": "Wind",
-            "capacity_mw": 165.0,
-            "hub": "South",
-            "lat": 26.15,
-            "lon": -97.50,
-            "county": "Cameron",
-            "hub_height_m": 87.5,
-            "turbine_model": "Nordex AW-125"
-        },
-        "San Roman Wind": {
-            "resource_name": "SANROMAN_WIND_1",
-            "tech": "Wind",
-            "capacity_mw": 93.0,
-            "hub": "South",
-            "lat": 26.05,
-            "lon": -97.40,
-            "county": "Cameron",
-            "hub_height_m": 87.5,
-            "turbine_model": "Nordex AW125"
-        },
-        "Tyler Bluff": {
-            "resource_name": "TYLRWIND_UNIT1",
-            "tech": "Wind",
-            "capacity_mw": 120.0,
-            "hub": "North",
-            "lat": 33.65,
-            "lon": -97.20,
-            "county": "Cooke",
-            "hub_height_m": 80.0,
-            "turbine_model": "Siemens SWT-2.3"
-        },
-        "Flat Top Wind": {
-            "resource_name": "FTWIND_UNIT_1",
-            "tech": "Wind",
-            "capacity_mw": 200.0,
-            "hub": "North",
-            "lat": 31.75,
-            "lon": -98.60,
-            "county": "Mills",
-            "hub_height_m": 80.0,
-            "turbine_model": "GE 2.5-116"
-        },
-         "Bobcat Wind": {
-            "resource_name": "BCATWIND_WIND_1",
-            "tech": "Wind",
-            "capacity_mw": 150.0,
-            "hub": "West",
-            "lat": 31.90,
-            "lon": -101.40,
-            "county": "Glasscock",
-            "hub_height_m": 80.0,
-            "turbine_model": "Mitsubishi MWT"
-        },
-        "Goat Mountain": {
-            "resource_name": "GOAT_GOATWIND",
-            "tech": "Wind",
-            "capacity_mw": 150.0,
-            "hub": "West",
-            "lat": 32.00,
-            "lon": -101.70,
-            "county": "Sterling",
-            "hub_height_m": 80.0,
-            "turbine_model": "Mitsubishi 1.0"
-        },
-        "South Ranch Wind": {
-            "resource_name": "SRWE1_SRWE2",
-            "tech": "Wind",
-            "capacity_mw": 100.0,
-            "hub": "South",
-            "lat": 26.50,
-            "lon": -98.50,
-            "county": "Hidalgo",
-            "hub_height_m": 80.0,
-            "turbine_model": "GE 2.x"
-        },
-        "Vera Wind": {
-            "resource_name": "VERAWIND_UNIT1",
-            "tech": "Wind",
-            "capacity_mw": 240.0,
-            "hub": "North",
-            "lat": 33.60,
-            "lon": -99.40,
-            "county": "Knox",
-            "hub_height_m": 80.0,
-            "turbine_model": "GE 1.7"
-        }
-    }
+# Haversine formula for distance
+def haversine(lon1, lat1, lon2, lat2):
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers
+    return c * r
+
+def enrich_assets():
+    # 1. Load Assets
+    print("Loading ercot_assets.json...")
+    with open('ercot_assets.json', 'r') as f:
+        assets = json.load(f)
+        
+    # 2. Load USWTDB (JSON)
+    print("Loading USWTDB JSON...")
+    try:
+        with open('uswtdb_tx.json', 'r') as f:
+            data = json.load(f)
+            df_turbines = pd.DataFrame(data)
+    except Exception as e:
+        print(f"Error loading JSON: {e}")
+        return
+
+    print(f"Loaded {len(df_turbines)} turbines.")
     
-    # Overwrite/Update
-    for name, data in new_data.items():
-        assets[name] = data
+    # Filter for Texas (API already did this, but safe to keep)
+    # API keys might differ slightly from CSV, typically they match
+    # keys: t_state, xlong, ylat, t_hh, t_rd, t_manu, t_model
+    if 't_state' in df_turbines.columns:
+        df_tx = df_turbines[df_turbines['t_state'] == 'TX'].copy()
+    else:
+        df_tx = df_turbines.copy() # Assume it's already filtered
         
-    with open(path, 'w') as f:
-        json.dump(assets, f, indent=2)
+    print(f"Working with {len(df_tx)} turbines.")
+
+    updated_count = 0
+    
+    # 3. Iterate Wind Projects
+    for name, meta in assets.items():
+        if meta.get('tech') != 'Wind':
+            continue
+            
+        lat = meta.get('lat')
+        lon = meta.get('lon')
         
-    print(f"Successfully enriched registry with {len(new_data)} high-quality wind assets.")
-    print(f"Total assets in registry: {len(assets)}")
+        if not lat or not lon:
+            print(f"Skipping {name} (No coords)")
+            continue
+            
+        # 4. Find matches within 5km radius (projects are large)
+        # Vectorized distance calc is faster but loop is fine for <50 projects
+        # Let's do a quick box filter first
+        lat_window = 0.1 # approx 10km
+        lon_window = 0.1
+        
+        candidates = df_tx[
+            (df_tx['ylat'] > lat - lat_window) & 
+            (df_tx['ylat'] < lat + lat_window) &
+            (df_tx['xlong'] > lon - lon_window) &
+            (df_tx['xlong'] < lon + lon_window)
+        ].copy()
+        
+        if candidates.empty:
+            print(f"  No USWTDB match for {name}")
+            continue
+            
+        # Precise distance
+        candidates['dist_km'] = candidates.apply(
+            lambda row: haversine(lon, lat, row['xlong'], row['ylat']), axis=1
+        )
+        
+        # Keep closest cluster (e.g. within 3km)
+        matches = candidates[candidates['dist_km'] < 3.0]
+        
+        if matches.empty:
+            # Fallback: maybe the asset lat/lon is off-center. Try 10km.
+            matches = candidates[candidates['dist_km'] < 8.0]
+            
+        if matches.empty:
+             print(f"  No nearby turbines for {name}")
+             continue
+             
+        # 5. Aggregate Specs
+        # Hub height
+        avg_hub = matches['t_hh'].mean()
+        # Rotor Diameter
+        avg_rotor = matches['t_rd'].mean()
+        # Manufacturer (Mode)
+        try:
+            mode_manuf = matches['t_manu'].mode().iloc[0]
+        except:
+            mode_manuf = "GENERIC"
+            
+        # Model (Mode)
+        try:
+            mode_model = matches['t_model'].mode().iloc[0]
+        except:
+            mode_model = "GENERIC"
+            
+        print(f"  Matched {name}: {len(matches)} turbines. "
+              f"Hub: {avg_hub:.1f}m, Rotor: {avg_rotor:.1f}m, Type: {mode_manuf} {mode_model}")
+              
+        # 6. Update Asset
+        assets[name]['hub_height_m'] = float(avg_hub)
+        assets[name]['rotor_diameter_m'] = float(avg_rotor)
+        assets[name]['turbine_manuf'] = str(mode_manuf)
+        assets[name]['turbine_model'] = str(mode_model)
+        updated_count += 1
+
+    # 7. Save
+    print(f"\nUpdated {updated_count} wind projects.")
+    with open('ercot_assets.json', 'w') as f:
+        json.dump(assets, f, indent=4)
+    print("Saved to ercot_assets.json")
 
 if __name__ == "__main__":
-    enrich_wind_registry()
+    enrich_assets()

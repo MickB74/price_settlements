@@ -62,7 +62,7 @@ if 'scenarios' not in st.session_state:
 
 
 # Create Tabs
-tab_guide, tab_scenarios, tab_validation, tab_performance = st.tabs(["📖 Guide", "Scenario Analysis", "Bill Validation", "Model Performance"])
+tab_guide, tab_validation, tab_scenarios, tab_performance = st.tabs(["📖 Guide", "Bill Validation", "Scenario Analysis", "Model Performance"])
 
 # --- Dynamic Sidebar Visibility ---
 # Hide sidebar on Bill Validation, show on Scenario Analysis
@@ -112,7 +112,7 @@ with tab_guide:
     st.markdown("""
     **New to the app? Start here:**
     
-    1. **Go to the Scenario Analysis tab** (next tab →)
+    1. **Go to the Scenario Analysis tab**
     2. **Use the sidebar** on the left to configure your first VPPA scenario:
        - Select technology (Solar/Wind)
        - Choose market year (2020-2026)
@@ -150,35 +150,8 @@ with tab_guide:
     # --- Tab Descriptions ---
     st.subheader("📑 Tab Guide: What Each Tab Does")
     
-    # Tab 1: Scenario Analysis
-    with st.expander("**⚡ Scenario Analysis** — Create and Compare VPPA Scenarios", expanded=True):
-        st.markdown("""
-        **Purpose:** This is the main analysis workspace where you create and compare VPPA scenarios.
-        
-        **Use Cases:**
-        - **Compare strike prices**: How does a \\$50/MWh VPPA compare to \\$55/MWh?
-        - **Evaluate locations**: Is HB_WEST better than HB_SOUTH for wind?
-        - **Analyze vintage years**: How did 2024 perform vs 2025?
-        - **Solar vs Wind**: Which technology has better economics at a specific hub?
-        - **Revenue sharing structures**: Model "upside sharing" PPAs (e.g., 50/50 split above strike)
-        - **Weather sensitivity**: Compare "Actual Weather" vs "Typical Meteorological Year (TMY)"
-        
-        **Key Features:**
-        - 📊 **Batch scenario creation**: Build up to 10+ scenarios at once
-        - 🗺️ **Custom locations**: Use the map picker to analyze any Texas coordinate
-        - 📈 **Interactive charts**: Cumulative settlement, monthly performance, price duration curves
-        - 💰 **Financial metrics**: Net settlement, capture price, curtailment impacts
-        - 📄 **Export**: Download PDF reports or Excel workbooks
-        
-        **How to Use:**
-        1. Configure scenarios in the sidebar (left)
-        2. Click "Run Scenarios" to calculate
-        3. Review comparison table and charts
-        4. Export results for presentations
-        """)
-    
-    # Tab 2: Bill Validation
-    with st.expander("**✅ Bill Validation** — Validate Against Actual Generation Data"):
+    # Tab 1: Bill Validation
+    with st.expander("**✅ Bill Validation** — Validate Against Actual Generation Data", expanded=True):
         st.markdown("""
         **Purpose:** Compare your synthetic model to **actual ERCOT production data** from real wind/solar plants.
         
@@ -204,6 +177,33 @@ with tab_guide:
         - **High-quality wind sites**: R > 0.85 correlation
         - **Solar**: R > 0.90 correlation (more predictable)
         - **Coastal wind** (Houston Hub): Best performance due to steady sea breeze
+        """)
+    
+    # Tab 2: Scenario Analysis
+    with st.expander("**⚡ Scenario Analysis** — Create and Compare VPPA Scenarios"):
+        st.markdown("""
+        **Purpose:** This is the main analysis workspace where you create and compare VPPA scenarios.
+        
+        **Use Cases:**
+        - **Compare strike prices**: How does a \$50/MWh VPPA compare to \$55/MWh?
+        - **Evaluate locations**: Is HB_WEST better than HB_SOUTH for wind?
+        - **Analyze vintage years**: How did 2024 perform vs 2025?
+        - **Solar vs Wind**: Which technology has better economics at a specific hub?
+        - **Revenue sharing structures**: Model "upside sharing" PPAs (e.g., 50/50 split above strike)
+        - **Weather sensitivity**: Compare "Actual Weather" vs "Typical Meteorological Year (TMY)"
+        
+        **Key Features:**
+        - 📊 **Batch scenario creation**: Build up to 10+ scenarios at once
+        - 🗺️ **Custom locations**: Use the map picker to analyze any Texas coordinate
+        - 📈 **Interactive charts**: Cumulative settlement, monthly performance, price duration curves
+        - 💰 **Financial metrics**: Net settlement, capture price, curtailment impacts
+        - 📄 **Export**: Download PDF reports or Excel workbooks
+        
+        **How to Use:**
+        1. Configure scenarios in the sidebar (left)
+        2. Click "Run Scenarios" to calculate
+        3. Review comparison table and charts
+        4. Export results for presentations
         """)
     
     # Tab 3: Model Performance
@@ -3158,7 +3158,7 @@ with tab_performance:
     coll1, coll2 = st.tabs(["💨 Wind Performance", "☀️ Solar Performance"])
 
     with coll1:
-        st.subheader("Wind Model Benchmarking (Q3 2025)")
+        st.subheader("Wind Model Benchmarking (Dec '24 - Nov '25)")
         
         # Metrics Overview
         # Filter for Advanced model
@@ -3197,7 +3197,7 @@ with tab_performance:
         st.info("💡 **Insight:** Advanced models (using actual hub heights and turbine curves) reduce bias by ~15% on average compared to baseline models.")
 
     with coll2:
-        st.subheader("Solar Model Benchmarking (Q3 2025)")
+        st.subheader("Solar Model Benchmarking (Dec '24 - Nov '25)")
         
         # Metrics Overview
         solar_advanced = solar_res[solar_res['Model'].str.contains('Advanced')]

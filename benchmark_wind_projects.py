@@ -65,9 +65,9 @@ def run_benchmark():
     projects = [p for p in projects if p not in ["Monte Cristo 1 Wind", "Monte Cristo Wind"]]
     print(f"Benchmarking confirmed wind projects: {projects}")
     
-    # Range for benchmark (Q3 2025 - Summer Peak)
-    start_date = "2025-07-01"
-    end_date = "2025-09-30"
+    # Range for benchmark (12 Months: Dec 2024 - Nov 2025)
+    start_date = "2024-12-01"
+    end_date = "2025-11-30"
     # Actually Jan 2026 - 60 days = Nov 2025. So 2024 is fully available.
     
     results = []
@@ -105,25 +105,17 @@ def run_benchmark():
         
         # B. Model 1: Baseline (80m, Generic Curve)
         print(f"  Running Baseline Model (80m, Generic)...")
-        prof_baseline = fetch_tmy.get_profile_for_year(
-            year=2025, 
-            tech="Wind", 
-            capacity_mw=capacity, 
-            lat=lat, lon=lon, 
-            hub_height=80, 
-            turbine_type="GENERIC"
-        )
-        
+        p24_base = fetch_tmy.get_profile_for_year(2024, "Wind", capacity, lat=lat, lon=lon, hub_height=80, turbine_type="GENERIC")
+        p25_base = fetch_tmy.get_profile_for_year(2025, "Wind", capacity, lat=lat, lon=lon, hub_height=80, turbine_type="GENERIC")
+        prof_baseline = pd.concat([p24_base, p25_base])
+        prof_baseline = prof_baseline[~prof_baseline.index.duplicated(keep='first')]
+
         # C. Model 2: Advanced (Actual Hub, Actual Curve)
         print(f"  Running Advanced Model ({actual_hub_h}m, {actual_tech_type})...")
-        prof_advanced = fetch_tmy.get_profile_for_year(
-            year=2025, 
-            tech="Wind", 
-            capacity_mw=capacity, 
-            lat=lat, lon=lon, 
-            hub_height=actual_hub_h, 
-            turbine_type=actual_tech_type
-        )
+        p24_adv = fetch_tmy.get_profile_for_year(2024, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h, turbine_type=actual_tech_type)
+        p25_adv = fetch_tmy.get_profile_for_year(2025, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h, turbine_type=actual_tech_type)
+        prof_advanced = pd.concat([p24_adv, p25_adv])
+        prof_advanced = prof_advanced[~prof_advanced.index.duplicated(keep='first')]
         
         # D. Align index for comparison
         # Model profiles have a specific year index, actual might start at a specific day.

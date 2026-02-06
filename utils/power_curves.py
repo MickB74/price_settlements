@@ -48,6 +48,13 @@ def get_curve_for_specs(manuf, model, rotor_m=None):
         if "163" in model or "5." in model:
             return "NORDEX_N163"
             
+    # New Mappings from Enrichment
+    if "ACCIONA" in manuf or "AW125" in model or "AW116" in model:
+        return "GE_2X" # Proxy for 3MW class / 125m rotor
+        
+    if "V117" in model or "V126" in model:
+        return "GE_2X" # Proxy for 3.3MW class
+            
     # Heuristic based on Rotor Diameter
     # >130m usually means Low Wind / High Efficiency curve
     if rotor_m and rotor_m > 130:
