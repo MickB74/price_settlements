@@ -3119,6 +3119,7 @@ with tab_validation:
 
 with tab_performance:
     st.header("🎯 Model Performance & Benchmarking")
+    st.markdown("""
     This tab showcases the accuracy of our **high-fidelity synthetic generation models**. 
     We benchmark our profiles against actual **ERCOT SCED (Security Constrained Economic Dispatch)** generation data for 2024.
     """)
