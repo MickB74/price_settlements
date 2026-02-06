@@ -17,6 +17,26 @@ def calculate_metrics(actual, modeled):
     actual = combined['actual']
     modeled = combined['modeled']
     
+    # --- FILTER: Exclude "Offline" periods ---
+    # User concern: "Offline actual project skewing numbers"
+    # If Actual is ~0 but Model predicts significant generation (>5 MW), assume outage/maintenance.
+    # Exclude these from R/Bias calc as they reflect operational status, not model accuracy.
+    
+    threshold_mw = 5.0 
+    # Mask: Keep only points where (Actual > 0) OR (Model is also low)
+    # i.e. Throw away points where (Actual == 0 AND Model > 5)
+    
+    valid_mask = ~((actual < 0.5) & (modeled > threshold_mw))
+    
+    actual_filtered = actual[valid_mask]
+    modeled_filtered = modeled[valid_mask]
+    
+    if len(actual_filtered) < 10:
+        return {'R': 0, 'MBE': 0, 'RMSE': 0} 
+    
+    actual = actual_filtered
+    modeled = modeled_filtered
+    
     # Correlation
     correlation = actual.corr(modeled)
     
