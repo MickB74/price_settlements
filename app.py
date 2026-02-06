@@ -3307,7 +3307,28 @@ with tab_performance:
                 c_b3.metric("RMSE", f"{rmse_val:.1f} MW" if rmse_val else "N/A", help="Typical Error Magnitude")
                 
                 st.caption(f"**Best Configuration:** {best_run.get('Model')}")
-        # ----------------------------------
+                
+                # Download Options
+                # Combine Wind and Solar loaded data for full download
+                all_bench_data = []
+                try:
+                    with open('benchmark_results_wind.json', 'r') as f:
+                        all_bench_data.extend(json.load(f))
+                    with open('benchmark_results_solar.json', 'r') as f:
+                        all_bench_data.extend(json.load(f))
+                except:
+                    pass
+                
+                if all_bench_data:
+                    df_bench_all = pd.DataFrame(all_bench_data)
+                    csv_bench = df_bench_all.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Full Benchmark Study (All Assets)",
+                        data=csv_bench,
+                        file_name="ercot_renewable_benchmark_results.csv",
+                        mime="text/csv",
+                        help="Download the complete performance dataset for all Wind and Solar assets."
+                    )
 
     # Data Source Selection
     val_source = st.radio("Validation Data Source", ["ERCOT Public SCED (60-day delay)", "Upload Private Data (CSV/Excel)"], horizontal=True, index=0)
@@ -3588,12 +3609,24 @@ with tab_performance:
             
             # Export Section
             st.markdown("#### 📥 Export Data")
-            csv_actual = res['df_actual'][['Time', 'Actual_MW']].to_csv(index=False).encode('utf-8')
+            
+            # Preview Table
+            with st.expander("📋 View Data Table", expanded=False):
+                st.dataframe(df_comp[['Time', 'Actual_MW', 'Modeled_MW']].head(1000), use_container_width=True)
+            
+            # Download Logic (Actual vs Modeled)
+            export_cols = ['Time', 'Actual_MW', 'Modeled_MW']
+            if 'Base_Point_MW' in df_comp.columns:
+                export_cols.append('Base_Point_MW')
+                
+            csv_comp = df_comp[export_cols].to_csv(index=False).encode('utf-8')
+            
             st.download_button(
-                label=f"📥 Download Actual Generation CSV ({res['resource_id']})",
-                data=csv_actual,
-                file_name=f"actual_gen_{res['resource_id']}_{res['start']}_{res['end']}.csv",
-                mime="text/csv"
+                label=f"📥 Download Comparison CSV (Actual vs Modeled)",
+                data=csv_comp,
+                file_name=f"benchmark_comp_{res['resource_id']}_{res['start']}_{res['end']}.csv",
+                mime="text/csv",
+                help="Includes Time, Actual MW, and Modeled MW for every 15-minute interval."
             )
             
             st.success(f"Successfully retrieved **{len(res['df_actual'])}** interval points.")
