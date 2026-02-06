@@ -2597,6 +2597,47 @@ with tab_validation:
             key="download_preview_csv"
         )
 
+        # Download Combined Scenarios (if multiple)
+        if len(preview_results) > 1:
+            st.divider()
+            st.markdown("### 📥 Download Comparison Data")
+            st.caption(f"Includes columns for: {', '.join(preview_results.keys())}")
+
+            combined_df = None
+            base_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$', 'Settlement_$/MWh']
+            
+            for name, df_scen in preview_results.items():
+                # Ensure Implied REC Cost is calculated
+                if 'Implied_REC_Cost_$/MWh' not in df_scen.columns:
+                     df_scen['Implied_REC_Cost_$/MWh'] = -(df_scen['Settlement_$'] / df_scen['Gen_Energy_MWh']).fillna(0)
+                
+                # Select columns
+                # SPP is common, but might vary if we had different price years (unlikely here)
+                # We'll include SPP for each just in case, or skipping it if redundant? 
+                # Better to include it to be safe.
+                cols_to_use = base_cols + ['Implied_REC_Cost_$/MWh']
+                
+                temp_df = df_scen[cols_to_use].copy()
+                
+                # Rename columns (except Time)
+                temp_df.columns = ['Time_Central'] + [f"{c}_{name}" for c in cols_to_use[1:]]
+                
+                if combined_df is None:
+                    combined_df = temp_df
+                else:
+                    combined_df = pd.merge(combined_df, temp_df, on='Time_Central', how='outer')
+            
+            if combined_df is not None:
+                combined_df = combined_df.sort_values('Time_Central')
+                combined_csv = combined_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label=f"📥 Download All Scenarios (Merged CSV)",
+                    data=combined_csv,
+                    file_name=f"comparison_all_{val_hub}_{val_year}_intervals.csv",
+                    mime="text/csv",
+                    key="download_all_scenarios_csv"
+                )
+
         # Download PDF Bill
         pdf_config = {
             'hub': st.session_state.get('val_hub', val_hub),
