@@ -3158,7 +3158,7 @@ with tab_performance:
     coll1, coll2 = st.tabs(["💨 Wind Performance", "☀️ Solar Performance"])
 
     with coll1:
-        st.subheader("Wind Model Benchmarking (Q4 2024)")
+        st.subheader("Wind Model Benchmarking (Q3 2025)")
         
         # Metrics Overview
         # Filter for Advanced model
@@ -3197,7 +3197,7 @@ with tab_performance:
         st.info("💡 **Insight:** Advanced models (using actual hub heights and turbine curves) reduce bias by ~15% on average compared to baseline models.")
 
     with coll2:
-        st.subheader("Solar Model Benchmarking (Q4 2024)")
+        st.subheader("Solar Model Benchmarking (Q3 2025)")
         
         # Metrics Overview
         solar_advanced = solar_res[solar_res['Model'].str.contains('Advanced')]

@@ -65,9 +65,9 @@ def run_benchmark():
     projects = [p for p in projects if p not in ["Monte Cristo 1 Wind", "Monte Cristo Wind"]]
     print(f"Benchmarking confirmed wind projects: {projects}")
     
-    # Range for benchmark (Q4 2024)
-    start_date = "2024-10-01"
-    end_date = "2024-11-20" # 50 days is enough for a strong benchmark
+    # Range for benchmark (Q3 2025 - Summer Peak)
+    start_date = "2025-07-01"
+    end_date = "2025-09-30"
     # Actually Jan 2026 - 60 days = Nov 2025. So 2024 is fully available.
     
     results = []
@@ -106,7 +106,7 @@ def run_benchmark():
         # B. Model 1: Baseline (80m, Generic Curve)
         print(f"  Running Baseline Model (80m, Generic)...")
         prof_baseline = fetch_tmy.get_profile_for_year(
-            year=2024, 
+            year=2025, 
             tech="Wind", 
             capacity_mw=capacity, 
             lat=lat, lon=lon, 
@@ -117,7 +117,7 @@ def run_benchmark():
         # C. Model 2: Advanced (Actual Hub, Actual Curve)
         print(f"  Running Advanced Model ({actual_hub_h}m, {actual_tech_type})...")
         prof_advanced = fetch_tmy.get_profile_for_year(
-            year=2024, 
+            year=2025, 
             tech="Wind", 
             capacity_mw=capacity, 
             lat=lat, lon=lon, 

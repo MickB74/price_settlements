@@ -58,9 +58,9 @@ def run_benchmark():
     projects = [name for name, meta in assets.items() if meta.get('tech') == 'Solar']
     print(f"Benchmarking solar projects: {projects}")
     
-    # Range for benchmark (Q4 2024)
-    start_date = "2024-10-01"
-    end_date = "2024-11-20"
+    # Range for benchmark (Q3 2025 - Summer Peak)
+    start_date = "2025-07-01"
+    end_date = "2025-09-30"
     
     results = []
     
@@ -84,7 +84,7 @@ def run_benchmark():
         # B. Model 1: Baseline (Fixed Tilt, No Tracking)
         print(f"  Running Baseline Model (Fixed)...")
         prof_fixed = fetch_tmy.get_profile_for_year(
-            year=2024, 
+            year=2025, 
             tech="Solar", 
             capacity_mw=capacity, 
             lat=lat, lon=lon,
@@ -94,7 +94,7 @@ def run_benchmark():
         # C. Model 2: Advanced (Single-Axis Tracking, DC/AC clipping)
         print(f"  Running Advanced Model (Tracking)...")
         prof_tracking = fetch_tmy.get_profile_for_year(
-            year=2024, 
+            year=2025, 
             tech="Solar", 
             capacity_mw=capacity, 
             lat=lat, lon=lon,
