@@ -321,6 +321,13 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
             elif 'time(UTC)' in df_data.columns: time_col = 'time(UTC)'
             else: return pd.Series()
             timestamps = pd.to_datetime(df_data[time_col], format='%Y%m%d:%H%M', utc=True)
+            
+            # --- FIX: handle 30 minute delay for PVGIS ---
+            # PVGIS hourly data is often "time ending" or integrated.
+            # User reported 30-min lag. Shift back by 30 mins to align center of mass?
+            # Or if it's hour-ending (10:00 is 9-10), center is 9:30.
+            # Shifting -30 mins aligns it better with instantaneous expectations.
+            timestamps = timestamps - pd.Timedelta(minutes=30)
         
         # Create Series
         s_hourly = pd.Series(mw_hourly.values, index=timestamps)
@@ -344,33 +351,94 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
 
         
     else:
-        # TMY Logic (Linear Interpolation of typical year to target year)
-        # TMY Logic (Same as before)
-        # Interpolate to 15-min
-        dummy_index_hourly = pd.date_range(start="2000-01-01", periods=len(mw_hourly), freq='h')
-        s_hourly = pd.Series(mw_hourly.values, index=dummy_index_hourly)
-        s_15min = s_hourly.resample('15min').interpolate(method='linear')
+        # TMY Logic (TMY from PVGIS has UTC timestamps)
+        # --- FIX: Fix 6-hour Timezone Shift ---
+        # Instead of dummy index, we keep the UTC time info but swap the year to target year.
         
-        # Reindex to full year (aligned to US/Central)
+        # timestamps are usually in year matches source (e.g. 2005-2020 mix)
+        # PVGIS TMY returns a JSON with 'time(UTC)' that includes a year.
+        # We parse it above in get_tmy_data line 46: df['Time']
+        
+        # We need to map `MM-DD HH:MM` from TMY source to Target Year.
+        # But efficiently.
+        
+        tmy_times = pd.to_datetime(df_data['time(UTC)'], format='%Y%m%d:%H%M', utc=True) 
+        
+        # Create a mapping dataframe
+        df_temp = pd.DataFrame({'denormalized_mw': mw_hourly.values}, index=tmy_times)
+        
+        # Add pseudo-index for matching: Month, Day, Hour, Minute
+        # Handle leap years: TMY is typically 8760. 
+        # If Target is Leap: Fill Feb 29.
+        # If Source is Leap: Drop Feb 29 (unlikely for standard TMY).
+        
+        # 1. Create Target Index (UTC)
         target_index_cst = pd.date_range(
             start=f"{year}-01-01 00:00", 
             end=f"{year}-12-31 23:45", 
             freq='15min', 
             tz='US/Central'
         )
-        target_index = target_index_cst.tz_convert('UTC')
+        target_index_utc = target_index_cst.tz_convert('UTC')
         
-        values = s_15min.values
-        target_len = len(target_index)
+        # 2. Resample TMY to 15-min FIRST (preserving original UTC stamps)
+        # We need to ensure we have a full "year" to interpolate.
+        # PVGIS TMY usually starts 0101:0000.
         
-        # Handle Leap Year length diffs (TMY is 8760, target might be 8784)
-        if len(values) < target_len:
-            diff = target_len - len(values)
-            values = np.pad(values, (0, diff), mode='edge')
-        elif len(values) > target_len:
-            values = values[:target_len]
-            
-        return pd.Series(values, index=target_index, name="Gen_MW")
+        s_hourly = pd.Series(mw_hourly.values, index=tmy_times)
+        s_15min_source = s_hourly.resample('15min').interpolate(method='linear')
+        
+        # 3. "Project" the TMY onto the Target Year
+        # Strategy: Shift the TMY data to the target year.
+        # Just replace the year of the index?
+        # Careful with TMY constructed from different years.
+        # Robust method: Match by hour of year (0 to 8760).
+        # But we need to align matching Local Time or matching UTC time?
+        # Matching UTC time is safer for sun position.
+        
+        # Since TMY is 8760 hours.
+        # We just need to ensure 12:00 UTC TMY maps to 12:00 UTC Target.
+        # The previous bug was assigning 00:00 index to 00:00 index of array logic.
+        
+        # Let's map by Day/Hour match.
+        # Construct a standardized index for both (e.g. Year 2000).
+        
+        # Source (TMY) standardized to 2000
+        source_idx_2000 = s_15min_source.index.map(lambda t: t.replace(year=2000))
+        s_15min_source.index = source_idx_2000
+        
+        # Target standardized to 2000
+        # Wait, if target is leap year (2020), 2000 is leap year. Good.
+        # If target is 2026 (non-leap), 2000 has extra day.
+        # safer to just Map by integer offset?
+        # No, integer offset caused the 6 hr shift because start variance.
+        
+        # Correct approach:
+        # 1. Create target index (UTC).
+        # 2. For each point in target index, find value match in TMY based on Month-Day-Hour-Min.
+        
+        # Optimization:
+        # Create a Look-Up Table (HM -> MW) from TMY.
+        # But TMY is full year. (MDHM -> MW).
+        
+        # Create 'key' column
+        df_source = pd.DataFrame({'mw': s_15min_source.values, 'time': s_15min_source.index})
+        # Extract M-D-H-M from Source
+        df_source['key'] = df_source['time'].dt.strftime('%m-%d-%H-%M')
+        # Drop duplicates in key (resolves overlapping years in TMY composition)
+        df_source = df_source.drop_duplicates(subset=['key'])
+        
+        # Create Target Frame
+        df_target = pd.DataFrame(index=target_index_utc)
+        df_target['key'] = df_target.index.strftime('%m-%d-%H-%M')
+        
+        # Join
+        df_merged = df_target.merge(df_source[['key', 'mw']], on='key', how='left')
+        
+        # Fill missing (e.g. Leap day diffs, or Feb 29 handling)
+        df_merged['mw'] = df_merged['mw'].interpolate(method='linear').ffill().bfill()
+        
+        return pd.Series(df_merged['mw'].values, index=target_index_utc, name="Gen_MW")
 
 
 if __name__ == "__main__":
