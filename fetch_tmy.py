@@ -359,20 +359,35 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         # PVGIS TMY returns a JSON with 'time(UTC)' that includes a year.
         # We parse it above in get_tmy_data line 46: df['Time']
         
-        # We need to map `MM-DD HH:MM` from TMY source to Target Year.
-        # But efficiently.
+        # --- FIX: Normalize to single dummy year (2000) BEFORE resampling ---
+        # TMY data pulls Jan from e.g. 2009, Feb from 2014.
+        # If we rely on original timestamps, resample() will creating massive gaps 
+        # (years of NaNs) and interpolate across them. 
+        # Normalizing to 2000 forces them to be contiguous Jan->Dec.
         
-        tmy_times = pd.to_datetime(df_data['time(UTC)'], format='%Y%m%d:%H%M', utc=True) 
+        tmy_times_raw = pd.to_datetime(df_data['time(UTC)'], format='%Y%m%d:%H%M', utc=True) 
         
-        # Create a mapping dataframe
-        df_temp = pd.DataFrame({'denormalized_mw': mw_hourly.values}, index=tmy_times)
+        # Use year 2000 (Leap Year) to safely handle any Feb 29s if present, 
+        # and allow interpolation for Feb 29 if missing.
+        tmy_times_norm = tmy_times_raw.map(lambda t: t.replace(year=2000))
         
-        # Add pseudo-index for matching: Month, Day, Hour, Minute
-        # Handle leap years: TMY is typically 8760. 
-        # If Target is Leap: Fill Feb 29.
-        # If Source is Leap: Drop Feb 29 (unlikely for standard TMY).
+        # Create Series with Normalized Index
+        s_hourly = pd.Series(mw_hourly.values, index=tmy_times_norm)
         
-        # 1. Create Target Index (UTC)
+        # Sort (should be already sorted, but safe)
+        s_hourly = s_hourly.sort_index()
+        
+        # Resample to 15-min (interpolates strictly between contiguous hours)
+        s_15min_source = s_hourly.resample('15min').interpolate(method='linear')
+        
+        # Create 'key' column
+        df_source = pd.DataFrame({'mw': s_15min_source.values, 'time': s_15min_source.index})
+        # Extract M-D-H-M from Source
+        df_source['key'] = df_source['time'].dt.strftime('%m-%d-%H-%M')
+        # Drop duplicates in key 
+        df_source = df_source.drop_duplicates(subset=['key'])
+        
+        # Create Target Index (UTC)
         target_index_cst = pd.date_range(
             start=f"{year}-01-01 00:00", 
             end=f"{year}-12-31 23:45", 
@@ -380,53 +395,6 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
             tz='US/Central'
         )
         target_index_utc = target_index_cst.tz_convert('UTC')
-        
-        # 2. Resample TMY to 15-min FIRST (preserving original UTC stamps)
-        # We need to ensure we have a full "year" to interpolate.
-        # PVGIS TMY usually starts 0101:0000.
-        
-        s_hourly = pd.Series(mw_hourly.values, index=tmy_times)
-        s_15min_source = s_hourly.resample('15min').interpolate(method='linear')
-        
-        # 3. "Project" the TMY onto the Target Year
-        # Strategy: Shift the TMY data to the target year.
-        # Just replace the year of the index?
-        # Careful with TMY constructed from different years.
-        # Robust method: Match by hour of year (0 to 8760).
-        # But we need to align matching Local Time or matching UTC time?
-        # Matching UTC time is safer for sun position.
-        
-        # Since TMY is 8760 hours.
-        # We just need to ensure 12:00 UTC TMY maps to 12:00 UTC Target.
-        # The previous bug was assigning 00:00 index to 00:00 index of array logic.
-        
-        # Let's map by Day/Hour match.
-        # Construct a standardized index for both (e.g. Year 2000).
-        
-        # Source (TMY) standardized to 2000
-        source_idx_2000 = s_15min_source.index.map(lambda t: t.replace(year=2000))
-        s_15min_source.index = source_idx_2000
-        
-        # Target standardized to 2000
-        # Wait, if target is leap year (2020), 2000 is leap year. Good.
-        # If target is 2026 (non-leap), 2000 has extra day.
-        # safer to just Map by integer offset?
-        # No, integer offset caused the 6 hr shift because start variance.
-        
-        # Correct approach:
-        # 1. Create target index (UTC).
-        # 2. For each point in target index, find value match in TMY based on Month-Day-Hour-Min.
-        
-        # Optimization:
-        # Create a Look-Up Table (HM -> MW) from TMY.
-        # But TMY is full year. (MDHM -> MW).
-        
-        # Create 'key' column
-        df_source = pd.DataFrame({'mw': s_15min_source.values, 'time': s_15min_source.index})
-        # Extract M-D-H-M from Source
-        df_source['key'] = df_source['time'].dt.strftime('%m-%d-%H-%M')
-        # Drop duplicates in key (resolves overlapping years in TMY composition)
-        df_source = df_source.drop_duplicates(subset=['key'])
         
         # Create Target Frame
         df_target = pd.DataFrame(index=target_index_utc)
@@ -444,32 +412,13 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
 if __name__ == "__main__":
     print("Testing fetch_tmy (Hybrid + Open-Meteo + Forced TMY)...")
     
-    # Test Actual (2020)
-    print("\n--- Test 2020 Solar (PVGIS Actual) ---")
-    s_2020 = get_profile_for_year(2020, "Solar", 100)
-    print(f"Solar 2020: {len(s_2020)} points, Max: {s_2020.max():.2f} MW")
-    
-    # Test Open-Meteo 2024 (Wind)
-    print("\n--- Test 2024 Wind (Open-Meteo 100m) ---")
-    s_2024_wind = get_profile_for_year(2024, "Wind", 100)
-    print(f"Wind 2024: {len(s_2024_wind)} points, Max: {s_2024_wind.max():.2f} MW")
-    if not s_2024_wind.empty:
-        print(f"Sample head:\n{s_2024_wind.head()}")
-
-    # Test Open-Meteo 2024 (Solar)
-    print("\n--- Test 2024 Solar (Open-Meteo GHI) ---")
-    s_2024_solar = get_profile_for_year(2024, "Solar", 100)
-    print(f"Solar 2024: {len(s_2024_solar)} points, Max: {s_2024_solar.max():.2f} MW")
-    if not s_2024_solar.empty:
-        print(f"Sample head:\n{s_2024_solar.head()}")
-
     # Test Forced TMY 2024
     print("\n--- Test 2024 Solar (Forced TMY) ---")
     s_2024_tmy = get_profile_for_year(2024, "Solar", 100, force_tmy=True)
     print(f"Solar 2024 (TMY): {len(s_2024_tmy)} points, Max: {s_2024_tmy.max():.2f} MW")
     
-    # Check if they are different
-    if not s_2024_solar.equals(s_2024_tmy):
-        print("✅ Success: Forced TMY produced different profile than Actuals.")
-    else:
-        print("⚠️ Warning: Profiles are identical (Check implementation).")
+    # Check for flatline
+    head_vals = s_2024_tmy.head(20).tolist()
+    print(f"Head values: {head_vals}")
+    if len(set(head_vals)) == 1:
+        print("⚠️ WARNING: Flatline detected at start of year!")
