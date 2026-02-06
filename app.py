@@ -3119,10 +3119,30 @@ with tab_validation:
 
 with tab_performance:
     st.header("🎯 Model Performance & Benchmarking")
-    st.markdown("""
     This tab showcases the accuracy of our **high-fidelity synthetic generation models**. 
     We benchmark our profiles against actual **ERCOT SCED (Security Constrained Economic Dispatch)** generation data for 2024.
     """)
+
+    with st.expander("📖 Understanding the Metrics", expanded=False):
+        st.markdown("""
+        **1. Correlation Coefficient (R)**
+        - **What it means:** Measures how well the *shape* of our model matches reality.
+        - **Range:** -1.0 to 1.0. (1.0 is a perfect match).
+        - **Good Score:** > 0.90 is excellent.
+        
+        **2. Coefficient of Determination (R²)**
+        - **What it means:** The percentage of the variability in actual generation that our model explains.
+        - **Analogy:** If R² = 0.95, our model captures 95% of the ups and downs correctly.
+        
+        **3. Mean Bias Error (MBE)**
+        - **What it means:** The average difference between Model and Actual.
+        - **Positive:** Model thinks it's sunnier/windier than it is (Over-prediction).
+        - **Negative:** Model is too conservative (Under-prediction).
+        
+        **4. Root Mean Square Error (RMSE)**
+        - **What it means:** The "standard deviation" of the error. Penalizes big misses more than small ones.
+        - **Use:** Lower is better. Tells you the typical error margin in MW.
+        """)
 
     # Load Results
     try:
