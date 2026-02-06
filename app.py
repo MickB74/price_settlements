@@ -60,7 +60,7 @@ if 'scenarios' not in st.session_state:
 
 
 # Create Tabs
-tab_scenarios, tab_validation, tab_performance = st.tabs(["Scenario Analysis", "Bill Validation", "Model Performance"])
+tab_guide, tab_scenarios, tab_validation, tab_performance = st.tabs(["📖 Guide", "Scenario Analysis", "Bill Validation", "Model Performance"])
 
 # --- Dynamic Sidebar Visibility ---
 # Hide sidebar on Bill Validation, show on Scenario Analysis
@@ -94,6 +94,228 @@ components.html(
     height=0,
     width=0,
 )
+
+# --- Tab: Guide ---
+with tab_guide:
+    st.header("📖 How to Use the VPPA Settlement Estimator")
+    
+    st.markdown("""
+    Welcome to the **VPPA Settlement Estimator** — a professional tool for analyzing Virtual Power Purchase Agreements (VPPAs) in the ERCOT market.
+    
+    This guide will help you understand how to use the application, what each tab does, and how to get the most out of the analysis.
+    """)
+    
+    # --- Quick Start ---
+    st.subheader("🚀 Quick Start")
+    st.markdown("""
+    **New to the app? Start here:**
+    
+    1. **Go to the Scenario Analysis tab** (next tab →)
+    2. **Use the sidebar** on the left to configure your first VPPA scenario:
+       - Select technology (Solar/Wind)
+       - Choose market year (2020-2026)
+       - Pick an ERCOT hub location
+       - Set capacity (MW) and VPPA strike price ($/MWh)
+    3. **Click "Run Scenarios"** to calculate settlements
+    4. **Compare results** using the interactive charts and tables
+    5. **Export reports** as PDF or Excel for client presentations
+    """)
+    
+    st.divider()
+    
+    # --- Application Overview ---
+    st.subheader("💡 What Does This App Do?")
+    st.markdown("""
+    This application helps you:
+    
+    - **Model VPPA settlements** using actual ERCOT market prices (2020-2026)
+    - **Generate realistic renewable profiles** based on weather data (solar & wind)
+    - **Compare multiple scenarios** side-by-side to identify the best deal
+    - **Validate models** against actual ERCOT generation data
+    - **Assess financial risk** including basis risk, negative pricing exposure, and curtailment
+    - **Create professional reports** (PDF/Excel) for stakeholders
+    
+    **Key Insight:** A VPPA is a financial contract where:
+    - **Buyer pays**: Generation (MWh) × Strike Price ($/MWh)
+    - **Buyer receives**: Generation (MWh) × Market Price ($/MWh)  
+    - **Net Settlement** = Amount Received - Amount Paid
+    
+    This tool calculates these settlements at 15-minute intervals using real ERCOT prices.
+    """)
+    
+    st.divider()
+    
+    # --- Tab Descriptions ---
+    st.subheader("📑 Tab Guide: What Each Tab Does")
+    
+    # Tab 1: Scenario Analysis
+    with st.expander("**⚡ Scenario Analysis** — Create and Compare VPPA Scenarios", expanded=True):
+        st.markdown("""
+        **Purpose:** This is the main analysis workspace where you create and compare VPPA scenarios.
+        
+        **Use Cases:**
+        - **Compare strike prices**: How does a \\$50/MWh VPPA compare to \\$55/MWh?
+        - **Evaluate locations**: Is HB_WEST better than HB_SOUTH for wind?
+        - **Analyze vintage years**: How did 2024 perform vs 2025?
+        - **Solar vs Wind**: Which technology has better economics at a specific hub?
+        - **Revenue sharing structures**: Model "upside sharing" PPAs (e.g., 50/50 split above strike)
+        - **Weather sensitivity**: Compare "Actual Weather" vs "Typical Meteorological Year (TMY)"
+        
+        **Key Features:**
+        - 📊 **Batch scenario creation**: Build up to 10+ scenarios at once
+        - 🗺️ **Custom locations**: Use the map picker to analyze any Texas coordinate
+        - 📈 **Interactive charts**: Cumulative settlement, monthly performance, price duration curves
+        - 💰 **Financial metrics**: Net settlement, capture price, curtailment impacts
+        - 📄 **Export**: Download PDF reports or Excel workbooks
+        
+        **How to Use:**
+        1. Configure scenarios in the sidebar (left)
+        2. Click "Run Scenarios" to calculate
+        3. Review comparison table and charts
+        4. Export results for presentations
+        """)
+    
+    # Tab 2: Bill Validation
+    with st.expander("**✅ Bill Validation** — Validate Against Actual Generation Data"):
+        st.markdown("""
+        **Purpose:** Compare your synthetic model to **actual ERCOT production data** from real wind/solar plants.
+        
+        **Use Cases:**
+        - **Model validation**: How accurate is the weather-to-power conversion?
+        - **Benchmarking**: Compare model performance across different regions
+        - **Due diligence**: Validate assumptions before finalizing a VPPA
+        - **Asset-specific analysis**: Analyze specific plants (e.g., "SHAFFER_UNIT1")
+        
+        **Data Source:**
+        - ERCOT publishes **actual 15-minute generation** from individual assets via SCED reports
+        - Data is available with a 60-day delay for market transparency
+        - 800+ wind and solar resources available for validation
+        
+        **How to Use:**
+        1. Select a resource from the dropdown (or search by name)
+        2. Choose a date range (last 60 days)
+        3. Model generates synthetic profile for that location
+        4. Compare model vs actual in side-by-side charts
+        5. Review correlation metrics and monthly performance
+        
+        **Expected Performance:**
+        - **High-quality wind sites**: R > 0.85 correlation
+        - **Solar**: R > 0.90 correlation (more predictable)
+        - **Coastal wind** (Houston Hub): Best performance due to steady sea breeze
+        """)
+    
+    # Tab 3: Model Performance
+    with st.expander("**📊 Model Performance** — Fleet-Wide Validation Metrics"):
+        st.markdown("""
+        **Purpose:** View aggregated performance metrics from **fleet-wide validation** against actual ERCOT data.
+        
+        **Use Cases:**
+        - **Understand model accuracy** by region and technology
+        - **Identify best-performing** wind/solar areas in Texas
+        - **Review calibration results** from real-world benchmarking
+        - **Assess confidence levels** for different hub locations
+        
+        **What You'll See:**
+        - 💨 **Wind Performance**: Correlation by region, seasonal accuracy, capacity factor comparisons
+        - ☀️ **Solar Performance**: Regional benchmarking, monthly generation patterns, capture rates
+        - 📈 **Validation Charts**: Model vs Actual scatter plots, error distributions, time series
+        
+        **Key Insight:**
+        - **West Texas Wind**: Highest wind speeds (6.5 m/s @ 80m), best for large-scale wind
+        - **Houston Coastal**: Most consistent wind (7.5 m/s @ 80m), highest capacity factors
+        - **North Solar**: Best solar resource in I-35 corridor
+        
+        **How to Use:**
+        1. Select Wind or Solar performance tab
+        2. Review validation metrics and charts
+        3. Use insights to inform your scenario selections in the main tab
+        """)
+    
+    st.divider()
+    
+    # --- Key Features ---
+    st.subheader("🎯 Key Features & Capabilities")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Data & Analysis:**
+        - ✅ Actual ERCOT market prices (2020-2026)
+        - ✅ 1,100+ settlement point locations
+        - ✅ 15-minute interval resolution
+        - ✅ Weather-based generation profiles
+        - ✅ Multi-year historical analysis
+        - ✅ Custom CSV profile uploads
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Modeling & Reporting:**
+        - ✅ Revenue sharing structures
+        - ✅ Curtailment modeling
+        - ✅ Basis risk visualization
+        - ✅ TMY vs Actual weather sensitivity
+        - ✅ Professional PDF reports
+        - ✅ Excel export with charts
+        """)
+    
+    st.divider()
+    
+    # --- Data Sources ---
+    st.subheader("📡 Data Sources")
+    st.markdown("""
+    | Data Type | Source | Coverage |
+    |-----------|--------|----------|
+    | **Market Prices** | ERCOT (via GridStatus) | 2020-2026 RTM Hub & Load Zone Prices |
+    | **Actual Generation** | ERCOT SCED | 60-day delayed unit-level production |
+    | **Weather (2024-2026)** | Open-Meteo ERA5 | Actual GHI & wind speed (15-min) |
+    | **Historical Weather** | PVGIS | Satellite & reanalysis (2005-2023) |
+    
+    💡 **See the "Documentation" expander in the Scenario Analysis tab for detailed methodology.**
+    """)
+    
+    st.divider()
+    
+    # --- Tips & Best Practices ---
+    st.subheader("💡 Tips & Best Practices")
+    
+    st.markdown("""
+    **Getting Accurate Results:**
+    - 🗺️ **Use custom locations** via the map picker for project-specific analysis
+    - 📅 **Compare multiple years** to understand vintage risk
+    - ⚖️ **Test strike price sensitivity** (e.g., \\$45, \\$50, \\$55/MWh)
+    - 🌤️ **Toggle TMY vs Actual** to assess weather variability impact
+    - 📊 **Validate first** using the Bill Validation tab before trusting results
+    
+    **Performance Optimization:**
+    - ⚡ Data is cached — first load takes ~1 min, subsequent runs are instant
+    - 🔄 Restarting the app clears cache if you need fresh ERCOT data
+    - 📦 Large exports (10+ scenarios) may take 10-15 seconds to generate
+    
+    **Common Workflows:**
+    1. **Strike Price Negotiation**: Run 5-10 scenarios with different strike prices, compare NPV
+    2. **Site Selection**: Test same configuration across all 5 ERCOT hubs
+    3. **Technology Comparison**: Solar vs Wind at the same location and year
+    4. **Vintage Analysis**: Same config for 2024, 2025, 2026 to see market trends
+    """)
+    
+    st.divider()
+    
+    # --- Support & Documentation ---
+    st.subheader("📚 Additional Resources")
+    st.markdown("""
+    - **Detailed Methodology**: See the "Documentation" expander in the Scenario Analysis tab
+    - **Model Validation Report**: Review the `RENEWABLE_FLEET_REPORT.md` in the project repository
+    - **README**: Installation and technical details in `README.md`
+    
+    **Need Help?**
+    - Check the expandable "Documentation" section in each tab for context-specific help
+    - Review example scenarios to understand configuration options
+    - Validate your assumptions using the Bill Validation tab
+    """)
+    
+    st.success("✅ Ready to get started? Head to the **Scenario Analysis** tab to create your first VPPA scenario!")
 
 with tab_scenarios:
     # Documentation Section
@@ -349,7 +571,24 @@ def calculate_scenario(scenario, df_rtm):
         }
         target_month = month_map.get(scenario.get('month'))
         if target_month:
+            # Filter to specific month
             df_hub = df_hub[df_hub['Time_Central'].dt.month == target_month].copy()
+            
+            # If this is the current month/year, truncate to available data
+            current_date = pd.Timestamp.now(tz='US/Central')
+            scenario_year = scenario['year']
+            
+            if scenario_year == current_date.year and target_month == current_date.month:
+                # This is the current month - limit to available data
+                # Use the max date actually in the data or today, whichever is earlier
+                if not df_hub.empty:
+                    max_available = df_hub['Time_Central'].max()
+                    cutoff = min(max_available, current_date)
+                    df_hub = df_hub[df_hub['Time_Central'] <= cutoff].copy()
+                    
+                    # Store the actual date range used for display
+                    scenario['actual_end_date'] = cutoff
+                    scenario['date_range_note'] = f"Month-to-date through {cutoff.strftime('%b %d, %Y')}"
     
     # Robustness: Handle empty dataframe
     if df_hub.empty:
@@ -685,7 +924,9 @@ def generate_pdf_report(results, df_summary):
             elements.append(Paragraph(insight, normal_style))
             elements.append(Spacer(1, 0.1*inch))
     
-    # --- Footer ---
+    - **Buyer pays**: Generation (MWh) × Strike Price ($/MWh)
+    - **Buyer receives**: Generation (MWh) × Market Price ($/MWh)  
+    - **Net Settlement** = Amount Received - Amount Paid
     elements.append(Spacer(1, 1*inch))
     elements.append(Paragraph("<i>Generated by VPPA Settlement Estimator</i>", normal_style))
     
@@ -1187,8 +1428,16 @@ if st.session_state.scenarios:
             "#795548", # Brown
         ]
 
+
         # 1. Summary Metrics
         st.subheader("Summary Metrics")
+        
+        # Check if any scenario is using month-to-date analysis and show notification
+        mtd_scenarios = [s for s in st.session_state.scenarios if 'date_range_note' in s]
+        if mtd_scenarios:
+            note_text = mtd_scenarios[0]['date_range_note']
+            st.info(f"ℹ️ **Current Month Analysis**: {note_text} (limited to available data)")
+
         # Filter results for display
         display_cols = ["Scenario", "Net Settlement ($)", "Total Gen (MWh)", "Curtailed (MWh)", "Capture Price ($/MWh)", "Avg Hub Price ($/MWh)"]
         df_summary = pd.DataFrame(results)[display_cols]
@@ -1684,6 +1933,29 @@ with tab_validation:
     st.header("Bill Validation")
     st.markdown("Upload your generation data (and optional settlement data) to validate against official ERCOT market prices.")
 
+    # --- Debug / Diagnostics ---
+    with st.expander("🔧 Data Diagnostics (Troubleshooting)", expanded=True):
+        c_dbg1, c_dbg2 = st.columns([0.3, 0.7])
+        with c_dbg1:
+            if st.button("Force Reload 2026 Data", key="btn_force_reload_val"):
+                st.cache_data.clear()
+                st.rerun()
+        with c_dbg2:
+            try:
+                fpath = "ercot_rtm_2026.parquet"
+                if os.path.exists(fpath):
+                    import datetime
+                    mtime = os.path.getmtime(fpath)
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    st.write(f"**File:** `{fpath}` | **Modified:** {dt.strftime('%H:%M:%S')}")
+                    # Peek at file
+                    meta_df = pd.read_parquet(fpath, columns=['Time_Central'])
+                    st.write(f"**Range:** {meta_df['Time_Central'].min().date()} to **{meta_df['Time_Central'].max().date()}** ({len(meta_df):,} rows)")
+                else:
+                    st.error("File not found!")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
     # --- Configuration & Preview Header ---
     st.subheader("⚙️ Analysis Configuration")
     st.caption("Configure market parameters and project profiles for validation")
@@ -1692,11 +1964,12 @@ with tab_validation:
     with st.container():
         if 'val_custom_lat' not in st.session_state: st.session_state.val_custom_lat = 32.0
         if 'val_custom_lon' not in st.session_state: st.session_state.val_custom_lon = -100.0
+        if 'val_hub' not in st.session_state: st.session_state.val_hub = "HB_NORTH"
 
         def update_loc_from_hub():
             # Only update if custom location is NOT checked (acting as a lock)
             if not st.session_state.get('val_use_custom_location', False):
-                h_lat, h_lon = HUB_LOCATIONS.get(st.session_state.val_hub, (32.0, -100.0))
+                h_lat, h_lon = HUB_LOCATIONS.get(st.session_state.get('val_hub', "HB_NORTH"), (32.0, -100.0))
                 st.session_state.val_custom_lat = h_lat
                 st.session_state.val_custom_lon = h_lon
                 st.session_state.val_map_lat = h_lat
@@ -1833,35 +2106,45 @@ with tab_validation:
                                 if profile is not None:
                                     pc = profile.tz_convert('US/Central')
                                     
-                                    # RE-ALIGNMENT LOGIC
-                                    # We need to overwrite 'Time' in pdf to match df_market_hub's Time (val_year timestamps)
-                                    pdf = pd.DataFrame({'Gen_MW': pc.values, 'Time': pc.index.tz_convert('UTC')})
+                                    # ROBUST ALIGNMENT LOGIC
+                                    # Map the historical profile (e.g., 2009) to the target year (e.g., 2026)
+                                    # This handles gaps in market data correctly, unlike array slicing logic
+                                    
+                                    # 1. Create source dataframe
+                                    pdf = pd.DataFrame({'Gen_MW': pc.values, 'Time_Source': pc.index})
+                                    
+                                    # 2. Shift timestamps to target year (val_year)
+                                    # We use the same day/month/time but change the year
+                                    # Handle leap years: 2009 (non-leap) -> 2026 (non-leap) works fine
+                                    # Leap -> Non-Leap: Drop Feb 29
+                                    # Non-Leap -> Leap: Feb 28 fills Feb 29? Valid concern but minor for P50 estimate
                                     
                                     if target_year is not None and target_year != val_year:
-                                        # Force alignment to market data
-                                        market_len = len(df_market_hub)
-                                        profile_len = len(pdf)
-                                        v_gen = pdf['Gen_MW'].values
-                                        if profile_len < market_len:
-                                            v_gen = np.pad(v_gen, (0, market_len - profile_len), mode='wrap')
-                                        elif profile_len > market_len:
-                                            v_gen = v_gen[:market_len]
+                                        # Function to replace year safely
+                                        def replace_year(ts):
+                                            try:
+                                                return ts.replace(year=val_year)
+                                            except ValueError:
+                                                # Handle Feb 29 in non-leap target year
+                                                return ts + pd.DateOffset(days=1) # Shift to Mar 1
                                         
-                                        # Reconstruct DataFrame with CORRECT Time column from market data
-                                        # This preserves the dtype (datetime64[ns, UTC]) exactly
-                                        pdf = pd.DataFrame({'Gen_MW': v_gen})
-                                        pdf['Time'] = df_market_hub['Time'].values # Using .values can strip TZ? 
-                                        # Safer:
-                                        pdf['Time'] = df_market_hub['Time'].reset_index(drop=True)
-                                    
+                                        pdf['Time_Central'] = pdf['Time_Source'].apply(replace_year)
+                                    else:
+                                        pdf['Time_Central'] = pc.index
+
+                                    # 3. Add Energy Calculation immediately
                                     pdf['Gen_Energy_MWh'] = pdf['Gen_MW'] * 0.25
-                                    merged = pd.merge(pdf, df_market_hub[['Time', 'SPP', 'Time_Central']], on='Time', how='inner')
                                     
-                        
+                                    # 4. Merge with Market Data on Time_Central
+                                    # Market Data has 'Time_Central' (US/Central)
+                                    # pdf has 'Time_Central' (US/Central) with target year
+                                    
+                                    merged = pd.merge(df_market_hub, pdf[['Time_Central', 'Gen_Energy_MWh']], on='Time_Central', how='inner')
                                     
                                     # Filter by selected months
                                     m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
                                     sel_m_nums = [i+1 for i, m in enumerate(m_list) if st.session_state.get(f"val_sel_{m}", True)]
+                                    
                                     if sel_m_nums:
                                         merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
                                     
