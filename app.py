@@ -2136,7 +2136,7 @@ with tab_validation:
                                     # Market Data has 'Time_Central' (US/Central)
                                     # pdf has 'Time_Central' (US/Central) with target year
                                     
-                                    merged = pd.merge(df_market_hub, pdf[['Time_Central', 'Gen_Energy_MWh']], on='Time_Central', how='inner')
+                                    merged = pd.merge(df_market_hub, pdf[['Time_Central', 'Gen_Energy_MWh', 'Gen_MW']], on='Time_Central', how='inner')
                                     
                                     # Filter by selected months
                                     m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
