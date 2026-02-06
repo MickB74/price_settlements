@@ -1,5 +1,7 @@
 import streamlit as st
 import os
+import sys
+import subprocess
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
@@ -1933,11 +1935,22 @@ with tab_validation:
 
     # --- Debug / Diagnostics ---
     with st.expander("🔧 Data Diagnostics (Troubleshooting)", expanded=True):
-        c_dbg1, c_dbg2 = st.columns([0.3, 0.7])
+        c_dbg1, c_dbg2 = st.columns([0.5, 0.5])
         with c_dbg1:
-            if st.button("Force Reload 2026 Data", key="btn_force_reload_val"):
-                st.cache_data.clear()
-                st.rerun()
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("Reload Cache", key="btn_force_reload_val", help="Clear cache and reload file from disk"):
+                    st.cache_data.clear()
+                    st.rerun()
+            with col_btn2:
+                if st.button("Fetch Updates", key="btn_fetch_ercot", help="Download latest data from ERCOT"):
+                    with st.spinner("Updating..."):
+                        try:
+                            subprocess.run([sys.executable, "update_ercot_2026.py"], check=True)
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed: {e}")
         with c_dbg2:
             try:
                 fpath = "ercot_rtm_2026.parquet"
