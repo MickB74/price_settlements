@@ -1328,16 +1328,26 @@ if st.session_state.scenarios:
                             'year': scenario['year']  # For reference
                         }
                         
+                        # PRE-LOAD all price data to avoid repeated disk reads (MAJOR SPEEDUP)
+                        status_text.text(f"Pre-loading price data for {scenario['name']}...")
+                        price_cache = {}
+                        price_years = list(range(2020, 2027))  # 2020-2026
+                        for price_year in price_years:
+                            try:
+                                price_cache[price_year] = load_market_data(price_year)
+                            except Exception as e:
+                                st.warning(f"Could not load price data for {price_year}: {e}")
+                        
                         # Define progress callback
                         def update_progress(current, total):
                             progress_mc.progress((scenario_idx + current/total) / len(st.session_state.scenarios))
                         
-                        # Run Monte Carlo simulation
+                        # Run Monte Carlo simulation with cached price data
                         try:
                             results_df, stats = monte_carlo.run_bootstrap_simulation(
                                 scenario_config=mc_config,
                                 n_iterations=n_iterations,
-                                price_data_loader=load_market_data,
+                                price_data_cache=price_cache,
                                 progress_callback=update_progress
                             )
                             

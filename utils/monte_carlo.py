@@ -23,8 +23,7 @@ def run_bootstrap_simulation(
     n_iterations: int = 1000,
     weather_years: List[int] = None,
     price_years: List[int] = None,
-    df_market_hub: pd.DataFrame = None,
-    price_data_loader = None,
+    price_data_cache: Dict[int, pd.DataFrame] = None,
     progress_callback=None
 ) -> Tuple[pd.DataFrame, Dict]:
     """
@@ -118,19 +117,11 @@ def run_bootstrap_simulation(
             gen_df['Time_Central'] = gen_df['Time_Source'].apply(replace_year)
             gen_df['Gen_Energy_MWh'] = gen_df['Gen_MW'] * 0.25  # 15-min intervals
             
-            # 6. Load price data for sampled price year
-            # Use provided loader function to get price data
-            if price_data_loader:
-                try:
-                    price_df = price_data_loader(price_year)
-                except Exception as e:
-                    print(f"Warning: Failed to load price data for year {price_year}: {e}")
-                    continue
-            elif df_market_hub is not None:
-                # Fallback: use provided df_market_hub if available
-                price_df = df_market_hub[df_market_hub['Time_Central'].dt.year == price_year].copy()
+            # 6. Load price data for sampled price year from cache
+            if price_data_cache and price_year in price_data_cache:
+                price_df = price_data_cache[price_year]
             else:
-                print(f"Warning: No price data available for year {price_year}")
+                print(f"Warning: No cached price data for year {price_year}")
                 continue
             
             if price_df.empty:
