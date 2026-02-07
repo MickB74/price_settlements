@@ -9,34 +9,36 @@ This guide is for analysts, commercial teams, and project developers using the E
 2. Start the app:
    `streamlit run app.py`
 3. Open the app in your browser.
-4. Go to `Scenario Analysis`.
-5. In the sidebar, set:
+4. Review tabs in app order (left to right):
+   - `Guide`
+   - `Bill Validation`
+   - `Scenario Analysis`
+   - `Model Performance`
+5. Go to `Scenario Analysis`.
+6. In the sidebar, set:
    - Technology (`Solar` or `Wind`)
    - Year (2020-2026)
    - Location (Hub or custom map point)
    - Capacity (MW)
    - Strike Price ($/MWh)
-6. Click `Run Scenarios`.
-7. Review net settlement, monthly outcomes, and exports (PDF/Excel).
+7. Click `Run Scenarios`.
+8. Review net settlement, monthly outcomes, and exports (PDF/Excel).
 
 ## 2. Which Tab Should I Use?
 
-| If you need to... | Use this tab | Main output |
+App tab order is:
+`Guide` → `Bill Validation` → `Scenario Analysis` → `Model Performance`
+
+| Tab (in app order) | Use it for | Main output |
 |---|---|---|
-| Build and compare deal cases | `Scenario Analysis` | Financial comparison across scenarios |
-| Check model estimates against actual asset generation | `Bill Validation` | Model-vs-actual validation metrics |
-| Understand fleet-wide model quality | `Model Performance` | Regional and technology benchmark views |
+| `Guide` | Onboarding and workflow reference | Setup instructions and process map |
+| `Bill Validation` | Check model estimates against actual asset generation | Model-vs-actual validation metrics |
+| `Scenario Analysis` | Build and compare deal cases | Financial comparison across scenarios |
+| `Model Performance` | Understand fleet-wide model quality | Regional and technology benchmark views |
 
 ## 3. Standard User Workflows
 
-### Workflow A: New VPPA Screening
-
-1. Create 3-5 scenarios in `Scenario Analysis`.
-2. Vary strike price, hub, and technology.
-3. Review net settlement and downside months.
-4. Export to PDF for stakeholder review.
-
-### Workflow B: Bill Validation / QA
+### Workflow A: Bill Validation / QA (Tab 2)
 
 1. Open `Bill Validation`.
 2. Select a resource ID.
@@ -44,7 +46,14 @@ This guide is for analysts, commercial teams, and project developers using the E
 4. Compare modeled profile vs ERCOT actual output.
 5. Check correlation and bias before approving assumptions.
 
-### Workflow C: Location and Resource Confidence Check
+### Workflow B: New VPPA Screening (Tab 3)
+
+1. Create 3-5 scenarios in `Scenario Analysis`.
+2. Vary strike price, hub, and technology.
+3. Review net settlement and downside months.
+4. Export to PDF for stakeholder review.
+
+### Workflow C: Location and Resource Confidence Check (Tab 4)
 
 1. Open `Model Performance`.
 2. Compare wind/solar performance by region.
@@ -97,4 +106,3 @@ flowchart TD
   - Confirm date range and scenario settings are valid.
 - Slow first run:
   - Initial weather/data fetch and cache build can take longer than later runs.
-
