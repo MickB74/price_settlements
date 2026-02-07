@@ -71,6 +71,7 @@ def run_bootstrap_simulation(
     revenue_share = revenue_share_pct / 100.0
     
     results = []
+    errors = []
     
     for i in range(n_iterations):
         if progress_callback and i % 50 == 0:
