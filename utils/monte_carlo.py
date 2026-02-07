@@ -84,10 +84,17 @@ def run_bootstrap_simulation(
             # 2. Random sample: price year
             price_year = random.choice(price_years)
             
+            if i < 3:  # Debug first 3 iterations
+                print(f"DEBUG: Iteration {i}: weather_year={weather_year}, price_year={price_year}")
+            
             # 3. Get generation profile for sampled weather year (from cache if available)
             if generation_profile_cache and weather_year in generation_profile_cache:
                 generation_profile = generation_profile_cache[weather_year]
+                if i < 3:
+                    print(f"DEBUG: Loaded gen profile from cache, shape: {generation_profile.shape if generation_profile is not None else 'None'}")
             else:
+                if i < 3:
+                    print(f"DEBUG: Fetching gen profile (not in cache)")
                 # Fallback: fetch if not cached (slower)
                 generation_profile = fetch_tmy.get_profile_for_year(
                     year=weather_year,
@@ -101,6 +108,8 @@ def run_bootstrap_simulation(
                 )
             
             if generation_profile is None or generation_profile.empty:
+                if i < 3:
+                    print(f"DEBUG: Gen profile is None or empty, skipping")
                 continue
             
             # Convert to Central Time
