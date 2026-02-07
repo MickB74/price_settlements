@@ -3307,7 +3307,7 @@ with tab_performance:
                 mbe_val = best_run.get('MBE (MW)')
                 rmse_val = best_run.get('RMSE (MW)')
                 
-                c_b1.metric("Correlation (R)", f"{r_val:.2f}" if r_val else "N/A", help="Dec '24 - Nov '25 Benchmark")
+                c_b1.metric("Correlation (R, 15-min)", f"{r_val:.2f}" if r_val else "N/A", help="Dec '24 - Nov '25 Benchmark")
                 c_b2.metric("Mean Bias (MBE)", f"{mbe_val:.1f} MW" if mbe_val else "N/A", help="Positive = Model Overpredicts")
                 c_b3.metric("RMSE", f"{rmse_val:.1f} MW" if rmse_val else "N/A", help="Typical Error Magnitude")
                 
@@ -3575,7 +3575,12 @@ with tab_performance:
                 agg_modeled_sum = df_agg[y_col_mod].sum()
                 
                 mae = (df_agg[y_col_act] - df_agg[y_col_mod]).abs().mean()
+                
+                # Calculate R2
                 r2 = np.corrcoef(df_agg[y_col_act], df_agg[y_col_mod])[0, 1]**2 if len(df_agg) > 1 else 0
+                
+                # Calculate Pearson R
+                pearson_r = df_agg[y_col_act].corr(df_agg[y_col_mod]) if len(df_agg) > 1 else 0
                 
                 # Bias / % Diff
                 diff_pct = ((agg_modeled_sum - agg_actual_sum) / agg_actual_sum) if agg_actual_sum > 0 else 0
@@ -3596,8 +3601,8 @@ with tab_performance:
                 # Display Metrics row 2: Statistical Fit (Context Dependent)
                 m1, m2, m3 = st.columns(3)
                 m1.metric(f"Mean Abs Error ({unit})", f"{mae:.1f}")
-                m2.metric("Correlation (R²)", f"{r2:.2%}")
-                m3.metric("Data Points", f"{len(df_agg):,}")
+                m2.metric("Correlation (R)", f"{pearson_r:.2f}", help="Pearson Correlation Coefficient")
+                m3.metric("Determination (R²)", f"{r2:.2f}")
                 
                 # Visual Overlay
                 fig_bench = go.Figure()
