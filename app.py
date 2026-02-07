@@ -320,6 +320,9 @@ with tab_guide:
     st.success("✅ Ready to get started? Head to the **Scenario Analysis** tab to create your first VPPA scenario!")
 
 with tab_scenarios:
+    st.header("Scenario Analysis")
+    st.markdown("Create and compare VPPA scenarios based on weather models. (Beta)")
+
     # Documentation Section
     with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=False):
         st.markdown("""
@@ -1935,7 +1938,7 @@ if st.session_state.scenarios:
 # --- Bill Validation Tab ---
 with tab_validation:
     st.header("Bill Validation")
-    st.markdown("Upload your generation data (and optional settlement data) to validate against official ERCOT market prices.")
+    st.markdown("Create settlement bills based on weather models or validate incoming bills against official market prices. (Beta)")
 
     # --- Debug / Diagnostics ---
     with st.expander("🔧 Data Diagnostics (Troubleshooting)", expanded=True):
