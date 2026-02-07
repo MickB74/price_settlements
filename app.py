@@ -1357,7 +1357,7 @@ if st.session_state.scenarios:
                         for idx, wx_year in enumerate(weather_years):
                             try:
                                 status_text.text(f"Loading generation profile {idx+1}/{len(weather_years)}: {wx_year}...")
-                                gen_cache[wx_year] = fetch_tmy.get_profile_for_year(
+                                profile = fetch_tmy.get_profile_for_year(
                                     year=wx_year,
                                     tech=mc_config['tech'],
                                     lat=mc_config['lat'],
@@ -1367,12 +1367,25 @@ if st.session_state.scenarios:
                                     turbine_type=mc_config['turbine_type'],
                                     efficiency=0.86
                                 )
+                                
+                                # CRITICAL: Validate the profile is not empty
+                                if profile is None:
+                                    gen_load_errors.append(f"{wx_year}: Profile is None")
+                                    st.error(f"❌ Generation profile for {wx_year} is None")
+                                elif len(profile) == 0:
+                                    gen_load_errors.append(f"{wx_year}: Profile is empty (0 rows)")
+                                    st.error(f"❌ Generation profile for {wx_year} is empty (0 rows)")
+                                else:
+                                    # Profile is valid, add to cache
+                                    gen_cache[wx_year] = profile
+                                    
                             except Exception as e:
                                 gen_load_errors.append(f"{wx_year}: {str(e)}")
                                 st.warning(f"Could not load generation profile for {wx_year}: {e}")
                         
                         if gen_load_errors:
                             st.warning(f"⚠️ Failed to load {len(gen_load_errors)} generation profiles. Monte Carlo will use on-demand fetching for those years (slower).")
+                            st.code("\n".join(gen_load_errors[:10]))  # Show first 10 errors
                         else:
                             st.success(f"✅ Pre-loaded all {len(gen_cache)} generation profiles")
                         
