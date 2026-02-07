@@ -24,6 +24,7 @@ def run_bootstrap_simulation(
     weather_years: List[int] = None,
     price_years: List[int] = None,
     df_market_hub: pd.DataFrame = None,
+    price_data_loader = None,
     progress_callback=None
 ) -> Tuple[pd.DataFrame, Dict]:
     """
@@ -118,18 +119,19 @@ def run_bootstrap_simulation(
             gen_df['Gen_Energy_MWh'] = gen_df['Gen_MW'] * 0.25  # 15-min intervals
             
             # 6. Load price data for sampled price year
-            # For Monte Carlo, we need to load the actual market data for the sampled year
-            # Import load_market_data if not already available
-            try:
-                # Try to import from app context
-                from app import load_market_data
-                price_df = load_market_data(price_year)
-            except (ImportError, AttributeError):
-                # Fallback: use provided df_market_hub if available
-                if df_market_hub is None:
-                    print(f"Warning: No price data available for year {price_year}")
+            # Use provided loader function to get price data
+            if price_data_loader:
+                try:
+                    price_df = price_data_loader(price_year)
+                except Exception as e:
+                    print(f"Warning: Failed to load price data for year {price_year}: {e}")
                     continue
+            elif df_market_hub is not None:
+                # Fallback: use provided df_market_hub if available
                 price_df = df_market_hub[df_market_hub['Time_Central'].dt.year == price_year].copy()
+            else:
+                print(f"Warning: No price data available for year {price_year}")
+                continue
             
             if price_df.empty:
                 print(f"Warning: No price data found for year {price_year}")

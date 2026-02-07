@@ -1337,6 +1337,7 @@ if st.session_state.scenarios:
                             results_df, stats = monte_carlo.run_bootstrap_simulation(
                                 scenario_config=mc_config,
                                 n_iterations=n_iterations,
+                                price_data_loader=load_market_data,
                                 progress_callback=update_progress
                             )
                             
