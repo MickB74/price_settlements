@@ -1370,11 +1370,13 @@ if st.session_state.scenarios:
                                 
                                 # CRITICAL: Validate the profile is not empty
                                 if profile is None:
-                                    gen_load_errors.append(f"{wx_year}: Profile is None")
-                                    st.error(f"❌ Generation profile for {wx_year} is None")
+                                    error_msg = f"{wx_year}: Profile is None (fetch_tmy returned None)"
+                                    gen_load_errors.append(error_msg)
+                                    st.error(f"❌ {error_msg}")
                                 elif len(profile) == 0:
-                                    gen_load_errors.append(f"{wx_year}: Profile is empty (0 rows)")
-                                    st.error(f"❌ Generation profile for {wx_year} is empty (0 rows)")
+                                    error_msg = f"{wx_year}: Profile is empty (0 rows). Check if weather data cache is corrupt or API failed."
+                                    gen_load_errors.append(error_msg)
+                                    st.error(f"❌ {error_msg}")
                                 else:
                                     # Profile is valid, add to cache
                                     gen_cache[wx_year] = profile
