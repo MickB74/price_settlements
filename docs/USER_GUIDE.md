@@ -11,34 +11,71 @@ This guide is for analysts, commercial teams, and project developers using the E
 3. Open the app in your browser.
 4. Review tabs in app order (left to right):
    - `Guide`
+   - `Business Story`
    - `Bill Validation`
    - `Scenario Analysis`
    - `Model Performance`
-5. Go to `Scenario Analysis`.
-6. In the sidebar, set:
+5. Read `Business Story` for decision context.
+6. Go to `Scenario Analysis`.
+7. In the sidebar, set:
    - Technology (`Solar` or `Wind`)
    - Year (2020-2026)
    - Location (Hub or custom map point)
    - Capacity (MW)
    - Strike Price ($/MWh)
-7. Click `Run Scenarios`.
-8. Review net settlement, monthly outcomes, and exports (PDF/Excel).
+8. Click `Run Scenarios`.
+9. Review net settlement, monthly outcomes, and exports (PDF/Excel).
 
-## 2. Which Tab Should I Use?
+## 2. Decision Story (So What)
+
+### What decision this app supports
+
+Use this tool to decide whether a VPPA structure is commercially attractive and defensible before execution.
+
+Typical decisions:
+- Which technology and hub to shortlist for a deal.
+- Which strike-price range is acceptable given downside risk.
+- Whether modeled generation assumptions are credible enough for internal or external approval.
+
+### Inputs that matter most
+
+1. `Hub/Location`: Biggest driver of basis and weather profile behavior.
+2. `Strike Price ($/MWh)`: Directly drives settlement transfer magnitude.
+3. `Technology (Solar/Wind)`: Changes profile shape, seasonality, and capture dynamics.
+4. `Year / Weather Case`: Determines market regime and weather sensitivity.
+5. `Curtailment + Revenue Share assumptions`: Can materially change downside and upside asymmetry.
+
+### Outputs to trust most
+
+Highest confidence:
+- Bill Validation correlation/error metrics for assets with strong overlap and data quality.
+- Relative ranking across scenarios when only one variable is changed at a time.
+
+Use with caution:
+- Absolute dollar outcomes when assumptions differ in multiple dimensions at once.
+- Short-window comparisons (single month) used as annual proxies.
+
+Sanity checks before presenting:
+1. Validate at least one comparable asset in `Bill Validation`.
+2. Show sensitivity around strike (for example low/base/high).
+3. Confirm outputs are consistent across at least two years or weather cases.
+
+## 3. Which Tab Should I Use?
 
 App tab order is:
-`Guide` → `Bill Validation` → `Scenario Analysis` → `Model Performance`
+`Guide` → `Business Story` → `Bill Validation` → `Scenario Analysis` → `Model Performance`
 
 | Tab (in app order) | Use it for | Main output |
 |---|---|---|
 | `Guide` | Onboarding and workflow reference | Setup instructions and process map |
+| `Business Story` | Explain decision context and credibility standards | Decision framing, key inputs, trusted outputs |
 | `Bill Validation` | Check model estimates against actual asset generation | Model-vs-actual validation metrics |
 | `Scenario Analysis` | Build and compare deal cases | Financial comparison across scenarios |
 | `Model Performance` | Understand fleet-wide model quality | Regional and technology benchmark views |
 
-## 3. Standard User Workflows
+## 4. Standard User Workflows
 
-### Workflow A: Bill Validation / QA (Tab 2)
+### Workflow A: Bill Validation / QA (Tab 3)
 
 1. Open `Bill Validation`.
 2. Select a resource ID.
@@ -46,20 +83,20 @@ App tab order is:
 4. Compare modeled profile vs ERCOT actual output.
 5. Check correlation and bias before approving assumptions.
 
-### Workflow B: New VPPA Screening (Tab 3)
+### Workflow B: New VPPA Screening (Tab 4)
 
 1. Create 3-5 scenarios in `Scenario Analysis`.
 2. Vary strike price, hub, and technology.
 3. Review net settlement and downside months.
 4. Export to PDF for stakeholder review.
 
-### Workflow C: Location and Resource Confidence Check (Tab 4)
+### Workflow C: Location and Resource Confidence Check (Tab 5)
 
 1. Open `Model Performance`.
 2. Compare wind/solar performance by region.
 3. Use highest-confidence regions to prioritize scenarios.
 
-## 4. User Workflow Chart
+## 5. User Workflow Chart
 
 ```mermaid
 flowchart TD
@@ -83,7 +120,7 @@ flowchart TD
     O --> C
 ```
 
-## 5. Inputs and Outputs (At a Glance)
+## 6. Inputs and Outputs (At a Glance)
 
 | Category | Key Inputs | Typical Outputs |
 |---|---|---|
@@ -91,14 +128,14 @@ flowchart TD
 | Validation | Resource ID, date range | Correlation, profile comparison charts |
 | Reporting | Scenario set and selected view | PDF settlement bill, Excel export |
 
-## 6. Common Mistakes to Avoid
+## 7. Common Mistakes to Avoid
 
 - Using the wrong hub for the asset location.
 - Comparing scenarios with different capacities when you only intended to test strike sensitivity.
 - Interpreting short date windows as full-year performance.
 - Skipping bill validation before presenting model-driven recommendations.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 - App does not start:
   - Reinstall dependencies with `pip install -r requirements.txt`.
