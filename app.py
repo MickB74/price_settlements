@@ -1332,11 +1332,21 @@ if st.session_state.scenarios:
                         status_text.text(f"Pre-loading price data for {scenario['name']}...")
                         price_cache = {}
                         price_years = list(range(2020, 2027))  # 2020-2026
+                        price_load_errors = []
+                        
                         for price_year in price_years:
                             try:
                                 price_cache[price_year] = load_market_data(price_year)
                             except Exception as e:
-                                st.warning(f"Could not load price data for {price_year}: {e}")
+                                price_load_errors.append(f"{price_year}: {str(e)}")
+                                st.error(f"❌ Failed to load price data for {price_year}: {e}")
+                        
+                        if price_load_errors:
+                            st.error(f"❌ Failed to load {len(price_load_errors)} price years. Monte Carlo CANNOT run without price data!")
+                            st.code("\n".join(price_load_errors))
+                            continue  # Skip this scenario
+                        else:
+                            st.success(f"✅ Pre-loaded all {len(price_cache)} price years (2020-2026)")
                         
                         # PRE-LOAD all generation profiles to avoid repeated API calls/computations (CRITICAL SPEEDUP)
                         status_text.text(f"Pre-loading generation profiles for {scenario['name']}...")
