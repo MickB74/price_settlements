@@ -10,7 +10,7 @@ import patch_gridstatus # Apply monkey patch
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
-from utils import power_curves, variability_analysis
+from utils import power_curves, variability_analysis, monte_carlo
 from datetime import datetime, timedelta
 import zipfile
 import io
@@ -1275,6 +1275,158 @@ if st.session_state.scenarios:
 # --- Main Content ---
 
     if st.session_state.scenarios:
+        
+        # --- Monte Carlo Simulation Section ---
+        st.markdown("---")
+        st.subheader("🎲 Monte Carlo Simulation (Optional)")
+        st.caption("Generate probabilistic outcomes by random sampling from historical weather and price data")
+        
+        with st.expander("📊 **Monte Carlo Settings**", expanded=False):
+            mc_col1, mc_col2 = st.columns([2, 1])
+            
+            with mc_col1:
+                enable_monte_carlo = st.checkbox(
+                    "Enable Probabilistic Analysis",
+                    value=False,
+                    help="Run thousands of scenarios by randomly sampling weather years (2005-2024) and price years (2020-2026)"
+                )
+            
+            with mc_col2:
+                n_iterations = st.number_input(
+                    "Number of Iterations",
+                    min_value=100,
+                    max_value=10000,
+                    value=1000,
+                    step=100,
+                    help="More iterations = smoother distribution but slower",
+                    disabled=not enable_monte_carlo
+                )
+            
+            if enable_monte_carlo:
+                st.info("💡 **How it works:** For each iteration, we randomly select a weather year (e.g., 2014) and a price year (e.g., 2022), then calculate the VPPA settlement. After 1,000+ runs, we show you the P10/P50/P90 outcomes.")
+                
+                if st.button("🎲 Run Monte Carlo Analysis", type="primary", disabled=len(st.session_state.scenarios) == 0):
+                    monte_carlo_results = {}
+                    
+                    progress_mc = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for scenario_idx, scenario in enumerate(st.session_state.scenarios):
+                        status_text.text(f"Running Monte Carlo for: {scenario['name']}...")
+                        
+                        # Prepare scenario config for Monte Carlo
+                        mc_config = {
+                            'hub': scenario['hub'],
+                            'tech': scenario['tech'],
+                            'capacity_mw': scenario['capacity_mw'],
+                            'lat': scenario.get('custom_lat', HUB_LOCATIONS[scenario['hub']][0]),
+                            'lon': scenario.get('custom_lon', HUB_LOCATIONS[scenario['hub']][1]),
+                            'vppa_price': scenario['vppa_price'],
+                            'revenue_share': scenario.get('revenue_share_pct', 100),
+                            'curtail_neg': scenario.get('curtailment', False),
+                            'turbine_type': scenario.get('turbine', 'GENERIC'),
+                            'year': scenario['year']  # For reference
+                        }
+                        
+                        # Define progress callback
+                        def update_progress(current, total):
+                            progress_mc.progress((scenario_idx + current/total) / len(st.session_state.scenarios))
+                        
+                        # Run Monte Carlo simulation
+                        try:
+                            results_df, stats = monte_carlo.run_bootstrap_simulation(
+                                scenario_config=mc_config,
+                                n_iterations=n_iterations,
+                                progress_callback=update_progress
+                            )
+                            
+                            monte_carlo_results[scenario['name']] = (results_df, stats)
+                            
+                        except Exception as e:
+                            st.error(f"Monte Carlo failed for {scenario['name']}: {e}")
+                            continue
+                    
+                    progress_mc.progress(1.0)
+                    status_text.text("Monte Carlo analysis complete!")
+                    
+                    # Store results in session state
+                    st.session_state['monte_carlo_results'] = monte_carlo_results
+                    st.success(f"✅ Completed {n_iterations} iterations for {len(monte_carlo_results)} scenarios")
+        
+        # Display Monte Carlo Results (if available)
+        if 'monte_carlo_results' in st.session_state and st.session_state['monte_carlo_results']:
+            st.markdown("---")
+            st.subheader("📊 Monte Carlo Results")
+            
+            mc_results = st.session_state['monte_carlo_results']
+            
+            # Comparison table
+            st.markdown("### Probabilistic Outcome Comparison")
+            comparison_df = monte_carlo.compare_scenarios_monte_carlo(mc_results)
+            st.dataframe(comparison_df.style.format({
+                'P10 ($)': '${:,.0f}',
+                'P50 ($)': '${:,.0f}',
+                'P90 ($)': '${:,.0f}',
+                'Mean ($)': '${:,.0f}',
+                'Std Dev ($)': '${:,.0f}',
+                'P90-P10 Range ($)': '${:,.0f}'
+            }), use_container_width=True)
+            
+            # Distribution plots for each scenario
+            st.markdown("### Distribution Plots")
+            
+            for scenario_name, (results_df, stats) in mc_results.items():
+                with st.expander(f"📈 {scenario_name}", expanded=True):
+                    col_chart, col_stats = st.columns([2, 1])
+                    
+                    with col_chart:
+                        # Histogram with percentile markers
+                        fig = go.Figure()
+                        
+                        # Histogram
+                        fig.add_trace(go.Histogram(
+                            x=results_df['annual_settlement_$'],
+                            nbinsx=50,
+                            name='Distribution',
+                            marker_color='lightblue',
+                            opacity=0.7
+                        ))
+                        
+                        # Add P10, P50, P90 lines
+                        for percentile, color, label in [
+                            (stats['P10'], 'red', 'P10 (Conservative)'),
+                            (stats['P50'], 'green', 'P50 (Median)'),
+                            (stats['P90'], 'blue', 'P90 (Optimistic)')
+                        ]:
+                            fig.add_vline(
+                                x=percentile,
+                                line_dash="dash",
+                                line_color=color,
+                                annotation_text=f"{label}: ${percentile:,.0f}",
+                                annotation_position="top"
+                            )
+                        
+                        fig.update_layout(
+                            title=f"Distribution of Annual Settlement - {scenario_name}",
+                            xaxis_title="Annual Settlement ($)",
+                            yaxis_title="Frequency",
+                            showlegend=False,
+                            height=400
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    with col_stats:
+                        st.markdown("**Percentile Summary**")
+                        percentile_table = monte_carlo.format_percentile_table(stats)
+                        st.dataframe(percentile_table, use_container_width=True, hide_index=True)
+                        
+                        st.markdown("**Additional Stats**")
+                        st.metric("Mean", f"${stats['Mean']:,.0f}")
+                        st.metric("Std Dev", f"${stats['StdDev']:,.0f}")
+                        st.metric("Range", f"${stats['Max'] - stats['Min']:,.0f}")
+        
+        st.markdown("---")
 
         # Calculate Results
         results = []
