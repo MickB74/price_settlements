@@ -1342,8 +1342,11 @@ if st.session_state.scenarios:
                         status_text.text(f"Pre-loading generation profiles for {scenario['name']}...")
                         gen_cache = {}
                         weather_years = list(range(2005, 2025))  # 2005-2024
-                        for wx_year in weather_years:
+                        gen_load_errors = []
+                        
+                        for idx, wx_year in enumerate(weather_years):
                             try:
+                                status_text.text(f"Loading generation profile {idx+1}/{len(weather_years)}: {wx_year}...")
                                 gen_cache[wx_year] = fetch_tmy.get_profile_for_year(
                                     year=wx_year,
                                     tech=mc_config['tech'],
@@ -1355,13 +1358,20 @@ if st.session_state.scenarios:
                                     efficiency=0.86
                                 )
                             except Exception as e:
+                                gen_load_errors.append(f"{wx_year}: {str(e)}")
                                 st.warning(f"Could not load generation profile for {wx_year}: {e}")
+                        
+                        if gen_load_errors:
+                            st.warning(f"⚠️ Failed to load {len(gen_load_errors)} generation profiles. Monte Carlo will use on-demand fetching for those years (slower).")
+                        else:
+                            st.success(f"✅ Pre-loaded all {len(gen_cache)} generation profiles")
                         
                         # Define progress callback
                         def update_progress(current, total):
                             progress_mc.progress((scenario_idx + current/total) / len(st.session_state.scenarios))
                         
                         # Run Monte Carlo simulation with cached data
+                        status_text.text(f"Running {n_iterations} Monte Carlo iterations...")
                         try:
                             results_df, stats = monte_carlo.run_bootstrap_simulation(
                                 scenario_config=mc_config,
