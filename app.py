@@ -1382,6 +1382,14 @@ if st.session_state.scenarios:
                         
                         # Run Monte Carlo simulation with cached data
                         status_text.text(f"Running {n_iterations} Monte Carlo iterations...")
+                        
+                        # Capture debug output
+                        import io
+                        import sys
+                        debug_output = io.StringIO()
+                        old_stdout = sys.stdout
+                        sys.stdout = debug_output
+                        
                         try:
                             results_df, stats = monte_carlo.run_bootstrap_simulation(
                                 scenario_config=mc_config,
@@ -1391,9 +1399,23 @@ if st.session_state.scenarios:
                                 progress_callback=update_progress
                             )
                             
+                            # Restore stdout and show debug output
+                            sys.stdout = old_stdout
+                            debug_text = debug_output.getvalue()
+                            if debug_text:
+                                with st.expander("🔍 Debug Output", expanded=True):
+                                    st.code(debug_text, language="text")
+                            
                             monte_carlo_results[scenario['name']] = (results_df, stats)
                             
                         except Exception as e:
+                            # Restore stdout
+                            sys.stdout = old_stdout
+                            debug_text = debug_output.getvalue()
+                            if debug_text:
+                                st.warning("🔍 Debug output before error:")
+                                st.code(debug_text, language="text")
+                            
                             st.error(f"Monte Carlo failed for {scenario['name']}: {e}")
                             import traceback
                             st.code(traceback.format_exc())
