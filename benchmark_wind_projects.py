@@ -12,7 +12,7 @@ def calculate_metrics(actual, modeled):
     # Ensure they are the same length and aligned
     combined = pd.DataFrame({'actual': actual, 'modeled': modeled}).dropna()
     if combined.empty:
-        return {'R': 0, 'R_Hourly': 0, 'R_Daily': 0, 'MBE': 0, 'RMSE': 0}
+        return {'R': np.nan, 'R_Hourly': np.nan, 'R_Daily': np.nan, 'MBE': np.nan, 'RMSE': np.nan}
         
     actual = combined['actual']
     modeled = combined['modeled']
@@ -32,10 +32,10 @@ def calculate_metrics(actual, modeled):
     modeled_filtered = modeled[valid_mask]
     
     if len(actual_filtered) < 10:
-        return {'R': 0, 'R_Hourly': 0, 'R_Daily': 0, 'MBE': 0, 'RMSE': 0} 
+        return {'R': np.nan, 'R_Hourly': np.nan, 'R_Daily': np.nan, 'MBE': np.nan, 'RMSE': np.nan}
     
     # 1. 15-Minute Correlation
-    r_15min = actual_filtered.corr(modeled_filtered)
+    r_15min = actual_filtered.corr(modeled_filtered) if actual_filtered.nunique() > 1 and modeled_filtered.nunique() > 1 else np.nan
     
     # 2. Hourly Correlation (Resample)
     # Need datetime index for resampling. 'actual' is likely Series with numeric index if dropped na?
@@ -44,11 +44,11 @@ def calculate_metrics(actual, modeled):
     
     # Resample to Hourly
     hourly = combined_filtered.resample('h').mean().dropna()
-    r_hourly = hourly['actual'].corr(hourly['modeled']) if len(hourly) > 2 else 0
+    r_hourly = hourly['actual'].corr(hourly['modeled']) if len(hourly) > 2 and hourly['actual'].nunique() > 1 and hourly['modeled'].nunique() > 1 else np.nan
     
     # 3. Daily Correlation (Resample)
     daily = combined_filtered.resample('D').mean().dropna()
-    r_daily = daily['actual'].corr(daily['modeled']) if len(daily) > 2 else 0
+    r_daily = daily['actual'].corr(daily['modeled']) if len(daily) > 2 and daily['actual'].nunique() > 1 and daily['modeled'].nunique() > 1 else np.nan
     
     # Mean Bias Error (MBE) - average difference
     mbe = (modeled_filtered - actual_filtered).mean()

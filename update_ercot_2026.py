@@ -133,6 +133,9 @@ def update_ercot_2026():
         for col in float_cols:
             combined[col] = pd.to_numeric(combined[col], downcast='float')
         
+        # Add date column for easier filtering
+        combined['date'] = combined['Time_Central'].dt.date
+        
         # Save
         print("\n" + "-" * 60)
         print(f"Saving updated data to {cache_file}...")

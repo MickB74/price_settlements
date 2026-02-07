@@ -3034,8 +3034,12 @@ with tab_performance:
         max_r_wind = wind_advanced['R'].max()
         
         m1, m2 = st.columns(2)
-        m1.metric("Avg Correlation (R)", f"{avg_r_wind:.2f}", help="Correlation between synthetic and actual generation")
-        m2.metric("Top Correlation", f"{max_r_wind:.2f}")
+        m1.metric(
+            "Avg Correlation (R)",
+            f"{avg_r_wind:.2f}" if pd.notna(avg_r_wind) else "N/A",
+            help="Correlation between synthetic and actual generation"
+        )
+        m2.metric("Top Correlation", f"{max_r_wind:.2f}" if pd.notna(max_r_wind) else "N/A")
 
         st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
         top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
@@ -3090,8 +3094,8 @@ with tab_performance:
         max_r_solar = solar_advanced['R'].max()
         
         m1, m2 = st.columns(2)
-        m1.metric("Avg Correlation (R)", f"{avg_r_solar:.2f}")
-        m2.metric("Top Correlation", f"{max_r_solar:.2f}")
+        m1.metric("Avg Correlation (R)", f"{avg_r_solar:.2f}" if pd.notna(avg_r_solar) else "N/A")
+        m2.metric("Top Correlation", f"{max_r_solar:.2f}" if pd.notna(max_r_solar) else "N/A")
 
         st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
         top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
@@ -3200,7 +3204,10 @@ with tab_performance:
             
         if found_bench:
             # Sort by R descending to find "Best"
-            best_run = sorted(found_bench, key=lambda x: x.get('R') or -1, reverse=True)[0]
+            def bench_r_or_floor(row):
+                val = row.get('R')
+                return float(val) if pd.notna(val) else -1.0
+            best_run = sorted(found_bench, key=bench_r_or_floor, reverse=True)[0]
             
             with st.expander(f"🏆 Benchmark Performance ({best_run.get('Model')})", expanded=True):
                 # Row 1: Key Metrics
@@ -3209,9 +3216,9 @@ with tab_performance:
                 mbe_val = best_run.get('MBE (MW)')
                 rmse_val = best_run.get('RMSE (MW)')
                 
-                c_b1.metric("Correlation (15-min)", f"{r_val:.2f}" if r_val else "N/A", help="Pearson R at 15-min Base Resolution")
-                c_b2.metric("Mean Bias (MBE)", f"{mbe_val:.1f} MW" if mbe_val else "N/A", help="Positive = Model Overpredicts")
-                c_b3.metric("RMSE", f"{rmse_val:.1f} MW" if rmse_val else "N/A", help="Typical Error Magnitude")
+                c_b1.metric("Correlation (15-min)", f"{r_val:.2f}" if pd.notna(r_val) else "N/A", help="Pearson R at 15-min Base Resolution")
+                c_b2.metric("Mean Bias (MBE)", f"{mbe_val:.1f} MW" if pd.notna(mbe_val) else "N/A", help="Positive = Model Overpredicts")
+                c_b3.metric("RMSE", f"{rmse_val:.1f} MW" if pd.notna(rmse_val) else "N/A", help="Typical Error Magnitude")
                 
                 # Row 2: Correlation Granularity
                 st.markdown("##### 📈 Correlation by Time Scale")
@@ -3220,8 +3227,8 @@ with tab_performance:
                 r_hour = best_run.get('R_Hourly')
                 r_day = best_run.get('R_Daily')
                 
-                c_r1.metric("Hourly R", f"{r_hour:.2f}" if r_hour else "N/A", help="Correlation of Hourly Averages")
-                c_r2.metric("Daily R", f"{r_day:.2f}" if r_day else "N/A", help="Correlation of Daily Totals")
+                c_r1.metric("Hourly R", f"{r_hour:.2f}" if pd.notna(r_hour) else "N/A", help="Correlation of Hourly Averages")
+                c_r2.metric("Daily R", f"{r_day:.2f}" if pd.notna(r_day) else "N/A", help="Correlation of Daily Totals")
                 c_r3.caption("Aggregating to Daily usually improves correlation by smoothing out short-term timing mismatches.")
                 
                 st.caption(f"**Best Configuration:** {best_run.get('Model')}")
@@ -3432,7 +3439,7 @@ with tab_performance:
             st.divider()
             st.markdown(f"### 📊 Results for `{res['resource_id']}`")
             
-            df_comp = res['df_comp']
+            df_comp = res['df_comp'].copy()
             
             # Time Granularity Selector
             st.markdown("#### ⏱️ Time Resolution")
@@ -3442,7 +3449,18 @@ with tab_performance:
             # with col_t1:
             granularity = st.radio("Select View:", ["15-Minute", "Hourly", "Daily", "Monthly", "Annual"], horizontal=True, index=0)
             # with col_t2:
-            apply_dispatch = st.checkbox("📉 Apply Economic Dispatch", value=False, help="Limit Modeled Generation to Base Point (Grid Limit) to simulate curtailment.", key=f"chk_disp_{res['resource_id']}")
+            apply_dispatch = st.checkbox(
+                "📉 Apply Economic Dispatch",
+                value=True,
+                help="Limit Modeled Generation to Base Point (Grid Limit) to simulate curtailment. Enabled by default to match leaderboard methodology.",
+                key=f"chk_disp_{res['resource_id']}"
+            )
+            exclude_offline = st.checkbox(
+                "🛠️ Exclude Likely Offline Intervals",
+                value=True,
+                help="Exclude intervals where Actual is near zero but Model is high, consistent with benchmark scripts.",
+                key=f"chk_offline_{res['resource_id']}"
+            )
             
             # Apply Dispatch Logic (Curtail Model)
             if apply_dispatch and 'Base_Point_MW' in df_comp.columns:
@@ -3455,10 +3473,31 @@ with tab_performance:
                 st.caption("⚠️ **Economic Dispatch Applied:** Modeled generation is capped at the Grid Limit (Base Point).")
             elif apply_dispatch:
                 st.warning("⚠️ Base Point data missing for this period. Cannot apply economic dispatch.")
+
+            if exclude_offline:
+                valid_mask = ~((df_comp['Actual_MW'] < 0.5) & (df_comp['Modeled_MW'] > 5.0))
+                dropped = int((~valid_mask).sum())
+                df_comp = df_comp.loc[valid_mask].copy()
+                if dropped > 0:
+                    st.caption(f"Filtered {dropped:,} likely offline intervals for metric consistency with benchmark leaderboard.")
+
+            if df_comp.empty:
+                st.warning("No benchmark intervals available after filters. Adjust filters or date range.")
+                st.stop()
                         
             # Prepare data for aggregation
-            df_comp['Actual_MWh'] = df_comp['Actual_MW'] / 4.0
-            df_comp['Modeled_MWh'] = df_comp['Modeled_MW'] / 4.0
+            time_deltas = (
+                df_comp['Time']
+                .sort_values()
+                .diff()
+                .dt.total_seconds()
+                .div(3600.0)
+            )
+            interval_hours = time_deltas[time_deltas > 0].median()
+            if pd.isna(interval_hours) or interval_hours <= 0 or interval_hours > 4:
+                interval_hours = 0.25
+            df_comp['Actual_MWh'] = df_comp['Actual_MW'] * interval_hours
+            df_comp['Modeled_MWh'] = df_comp['Modeled_MW'] * interval_hours
             
             # Resampling Logic
             if granularity == "15-Minute":
@@ -3498,19 +3537,7 @@ with tab_performance:
             
             # Calculate Metrics on Aggregated Data
             if not df_agg.empty:
-                agg_actual_sum = df_agg[y_col_act].sum()
-                agg_modeled_sum = df_agg[y_col_mod].sum()
-                
                 mae = (df_agg[y_col_act] - df_agg[y_col_mod]).abs().mean()
-                
-                # Calculate R2
-                r2 = np.corrcoef(df_agg[y_col_act], df_agg[y_col_mod])[0, 1]**2 if len(df_agg) > 1 else 0
-                
-                # Calculate Pearson R
-                pearson_r = df_agg[y_col_act].corr(df_agg[y_col_mod]) if len(df_agg) > 1 else 0
-                
-                # Bias / % Diff
-                diff_pct = ((agg_modeled_sum - agg_actual_sum) / agg_actual_sum) if agg_actual_sum > 0 else 0
                 
                 # Display Metrics row 1: Totals (Scale Independent essentially, apart from small resampling diffs)
                 st.markdown("#### 📊 Numerical Summary")
@@ -3520,16 +3547,27 @@ with tab_performance:
                 # Let's keep totals as MWh for clarity on volume
                 total_actual_mwh = df_comp['Actual_MWh'].sum()
                 total_modeled_mwh = df_comp['Modeled_MWh'].sum()
+                diff_pct = ((total_modeled_mwh - total_actual_mwh) / total_actual_mwh) if total_actual_mwh > 0 else np.nan
                 
                 mc1.metric("Total Actual Gen", f"{total_actual_mwh:,.1f} MWh")
-                mc2.metric("Total Model Est", f"{total_modeled_mwh:,.1f} MWh", delta=f"{diff_pct:+.1%}", delta_color="inverse")
+                if pd.notna(diff_pct):
+                    mc2.metric("Total Model Est", f"{total_modeled_mwh:,.1f} MWh", delta=f"{diff_pct:+.1%}", delta_color="inverse")
+                else:
+                    mc2.metric("Total Model Est", f"{total_modeled_mwh:,.1f} MWh", delta="N/A")
                 mc3.metric("Total Bias", f"{total_modeled_mwh - total_actual_mwh:+.1f} MWh")
+
+                # Calculate correlation metrics with explicit N/A behavior for insufficient/constant data.
+                if len(df_agg) > 1 and df_agg[y_col_act].nunique() > 1 and df_agg[y_col_mod].nunique() > 1:
+                    pearson_r = df_agg[y_col_act].corr(df_agg[y_col_mod])
+                else:
+                    pearson_r = np.nan
+                r2 = pearson_r ** 2 if pd.notna(pearson_r) else np.nan
                 
                 # Display Metrics row 2: Statistical Fit (Context Dependent)
                 m1, m2, m3 = st.columns(3)
                 m1.metric(f"Mean Abs Error ({unit})", f"{mae:.1f}")
-                m2.metric("Correlation (R)", f"{pearson_r:.2f}", help="Pearson Correlation Coefficient")
-                m3.metric("Determination (R²)", f"{r2:.2f}")
+                m2.metric("Correlation (R)", f"{pearson_r:.2f}" if pd.notna(pearson_r) else "N/A", help="Pearson Correlation Coefficient")
+                m3.metric("Determination (R²)", f"{r2:.2f}" if pd.notna(r2) else "N/A")
                 
                 # Visual Overlay
                 fig_bench = go.Figure()
