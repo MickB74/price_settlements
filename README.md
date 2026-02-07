@@ -17,7 +17,10 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
     -   **Multi-Weather Sensitivities:** Contrast "Actual Weather" vs. "Typical Meteorological Year" (TMY) profiles side-by-side to understand resource variability.
 -   **Revenue Share Structures:** Model complex "Upside Sharing" PPAs (e.g., 50/50 splits when market price exceeds strike).
 -   **Custom Profiles:** Support for 8760/15-min generation CSV uploads.
--   **🎲 Monte Carlo Simulation:** Generate probabilistic settlement outcomes (P10/P50/P90) by randomly sampling from 20 years of historical weather (2005-2024) and 7 years of price data (2020-2026). Run 100-10,000 iterations to understand risk profiles and distribution of possible outcomes.
+-   **🎲 Monte Carlo Simulation:** Generate probabilistic settlement outcomes (P10/P50/P90).
+    -   Random sampling from 20 years of historical weather (2005-2024)
+    -   Samples from 7 years of actual price data (2020-2026)
+    -   Configurable iterations (100-10,000) to analyze risk profiles and outcome distributions
 
 ### 🏆 Bill Validation & Benchmarking (Beta)
 -   **Bill Creation:** Create settlement bills based on weather models or validate incoming bills against official market prices.
