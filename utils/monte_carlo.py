@@ -185,11 +185,16 @@ def run_bootstrap_simulation(
             })
             
         except Exception as e:
-            # Skip failed iterations silently
-            print(f"Iteration {i} failed: {e}")
+            # Track failed iterations for debugging
+            error_msg = f"Iteration {i} (weather={weather_year}, price={price_year}): {str(e)}"
+            print(error_msg)
+            if i < 5:  # Only store first 5 errors to avoid memory issues
+                errors.append(error_msg)
             continue
     
     if not results:
+        print(f"ERROR: All {n_iterations} iterations failed!")
+        print(f"Sample errors: {errors[:3]}")
         return pd.DataFrame(), {}
     
     # Convert to DataFrame
