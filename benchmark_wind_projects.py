@@ -12,7 +12,7 @@ def calculate_metrics(actual, modeled):
     # Ensure they are the same length and aligned
     combined = pd.DataFrame({'actual': actual, 'modeled': modeled}).dropna()
     if combined.empty:
-        return {'R': 0, 'MBE': 0, 'RMSE': 0}
+        return {'R': 0, 'R_Hourly': 0, 'R_Daily': 0, 'MBE': 0, 'RMSE': 0}
         
     actual = combined['actual']
     modeled = combined['modeled']
@@ -32,26 +32,38 @@ def calculate_metrics(actual, modeled):
     modeled_filtered = modeled[valid_mask]
     
     if len(actual_filtered) < 10:
-        return {'R': 0, 'MBE': 0, 'RMSE': 0} 
+        return {'R': 0, 'R_Hourly': 0, 'R_Daily': 0, 'MBE': 0, 'RMSE': 0} 
     
-    actual = actual_filtered
-    modeled = modeled_filtered
+    # 1. 15-Minute Correlation
+    r_15min = actual_filtered.corr(modeled_filtered)
     
-    # Correlation
-    correlation = actual.corr(modeled)
+    # 2. Hourly Correlation (Resample)
+    # Need datetime index for resampling. 'actual' is likely Series with numeric index if dropped na?
+    # actually combined has index from input.
+    combined_filtered = combined[valid_mask]
+    
+    # Resample to Hourly
+    hourly = combined_filtered.resample('h').mean().dropna()
+    r_hourly = hourly['actual'].corr(hourly['modeled']) if len(hourly) > 2 else 0
+    
+    # 3. Daily Correlation (Resample)
+    daily = combined_filtered.resample('D').mean().dropna()
+    r_daily = daily['actual'].corr(daily['modeled']) if len(daily) > 2 else 0
     
     # Mean Bias Error (MBE) - average difference
-    mbe = (modeled - actual).mean()
+    mbe = (modeled_filtered - actual_filtered).mean()
     
     # Root Mean Square Error (RMSE)
-    rmse = np.sqrt(((modeled - actual)**2).mean())
+    rmse = np.sqrt(((modeled_filtered - actual_filtered)**2).mean())
     
     return {
-        'R': correlation,
+        'R': r_15min,
+        'R_Hourly': r_hourly,
+        'R_Daily': r_daily,
         'MBE': mbe,
         'RMSE': rmse,
-        'Capacity Factor (Actual)': actual.mean() / actual.max() if actual.max() > 0 else 0,
-        'Capacity Factor (Modeled)': modeled.mean() / modeled.max() if modeled.max() > 0 else 0
+        'Capacity Factor (Actual)': actual_filtered.mean() / actual_filtered.max() if actual_filtered.max() > 0 else 0,
+        'Capacity Factor (Modeled)': modeled_filtered.mean() / modeled_filtered.max() if modeled_filtered.max() > 0 else 0
     }
 
 def run_benchmark():
@@ -143,6 +155,8 @@ def run_benchmark():
             'Project': p_name,
             'Model': 'Baseline (Curtailed)',
             'R': metrics_baseline['R'],
+            'R_Hourly': metrics_baseline['R_Hourly'],
+            'R_Daily': metrics_baseline['R_Daily'],
             'MBE (MW)': metrics_baseline['MBE'],
             'RMSE (MW)': metrics_baseline['RMSE']
         })
@@ -150,6 +164,8 @@ def run_benchmark():
             'Project': p_name,
             'Model': f"Advanced (Curtailed)",
             'R': metrics_advanced['R'],
+            'R_Hourly': metrics_advanced['R_Hourly'],
+            'R_Daily': metrics_advanced['R_Daily'],
             'MBE (MW)': metrics_advanced['MBE'],
             'RMSE (MW)': metrics_advanced['RMSE']
         })

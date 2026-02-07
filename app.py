@@ -3180,11 +3180,21 @@ with tab_performance:
         st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
         top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
         st.dataframe(
-            top_wind[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
+            top_wind[['Project', 'R', 'R_Hourly', 'R_Daily', 'MBE (MW)', 'RMSE (MW)']],
             column_config={
                 "R": st.column_config.NumberColumn(
-                    "Correlation (R)",
-                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
+                    "R (15m)",
+                    help="Pearson Correlation (15-min)",
+                    format="%.2f"
+                ),
+                "R_Hourly": st.column_config.NumberColumn(
+                    "R (Hr)",
+                    help="Pearson Correlation (Hourly)",
+                    format="%.2f"
+                ),
+                "R_Daily": st.column_config.NumberColumn(
+                    "R (Day)",
+                    help="Pearson Correlation (Daily)",
                     format="%.2f"
                 ),
                 "MBE (MW)": st.column_config.NumberColumn(
@@ -3218,11 +3228,21 @@ with tab_performance:
         st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
         top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
         st.dataframe(
-            top_solar[['Project', 'R', 'MBE (MW)', 'RMSE (MW)']],
+            top_solar[['Project', 'R', 'R_Hourly', 'R_Daily', 'MBE (MW)', 'RMSE (MW)']],
             column_config={
                 "R": st.column_config.NumberColumn(
-                    "Correlation (R)",
-                    help="Pearson Correlation Coefficient. Measures how well the shape of the modeled profile matches actual generation. (1.0 = Perfect match)",
+                    "R (15m)",
+                    help="Pearson Correlation (15-min)",
+                    format="%.2f"
+                ),
+                "R_Hourly": st.column_config.NumberColumn(
+                    "R (Hr)",
+                    help="Pearson Correlation (Hourly)",
+                    format="%.2f"
+                ),
+                "R_Daily": st.column_config.NumberColumn(
+                    "R (Day)",
+                    help="Pearson Correlation (Daily)",
                     format="%.2f"
                 ),
                 "MBE (MW)": st.column_config.NumberColumn(
@@ -3302,14 +3322,26 @@ with tab_performance:
             best_run = sorted(found_bench, key=lambda x: x.get('R') or -1, reverse=True)[0]
             
             with st.expander(f"🏆 Benchmark Performance ({best_run.get('Model')})", expanded=True):
+                # Row 1: Key Metrics
                 c_b1, c_b2, c_b3 = st.columns(3)
                 r_val = best_run.get('R')
                 mbe_val = best_run.get('MBE (MW)')
                 rmse_val = best_run.get('RMSE (MW)')
                 
-                c_b1.metric("Correlation (R, 15-min)", f"{r_val:.2f}" if r_val else "N/A", help="Dec '24 - Nov '25 Benchmark")
+                c_b1.metric("Correlation (15-min)", f"{r_val:.2f}" if r_val else "N/A", help="Pearson R at 15-min Base Resolution")
                 c_b2.metric("Mean Bias (MBE)", f"{mbe_val:.1f} MW" if mbe_val else "N/A", help="Positive = Model Overpredicts")
                 c_b3.metric("RMSE", f"{rmse_val:.1f} MW" if rmse_val else "N/A", help="Typical Error Magnitude")
+                
+                # Row 2: Correlation Granularity
+                st.markdown("##### 📈 Correlation by Time Scale")
+                c_r1, c_r2, c_r3 = st.columns(3)
+                
+                r_hour = best_run.get('R_Hourly')
+                r_day = best_run.get('R_Daily')
+                
+                c_r1.metric("Hourly R", f"{r_hour:.2f}" if r_hour else "N/A", help="Correlation of Hourly Averages")
+                c_r2.metric("Daily R", f"{r_day:.2f}" if r_day else "N/A", help="Correlation of Daily Totals")
+                c_r3.caption("Aggregating to Daily usually improves correlation by smoothing out short-term timing mismatches.")
                 
                 st.caption(f"**Best Configuration:** {best_run.get('Model')}")
                 

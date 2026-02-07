@@ -3,6 +3,8 @@
         "Project":"Anchor Wind Iii",
         "Model":"Baseline (Curtailed)",
         "R":0.7574570985,
+        "R_Hourly":0.7680234787,
+        "R_Daily":0.891381994,
         "MBE (MW)":-2.5658144407,
         "RMSE (MW)":4.5871612985
     },
@@ -10,6 +12,8 @@
         "Project":"Anchor Wind Iii",
         "Model":"Advanced (Curtailed)",
         "R":0.7574570985,
+        "R_Hourly":0.7680234787,
+        "R_Daily":0.891381994,
         "MBE (MW)":-2.5658144407,
         "RMSE (MW)":4.5871612985
     },
@@ -17,6 +21,8 @@
         "Project":"Maryneal Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.314325165,
+        "R_Hourly":0.3143522112,
+        "R_Daily":0.3561884992,
         "MBE (MW)":-24.7806683585,
         "RMSE (MW)":84.5257871583
     },
@@ -24,6 +30,8 @@
         "Project":"Maryneal Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.3144796156,
+        "R_Hourly":0.314860577,
+        "R_Daily":0.3578595828,
         "MBE (MW)":-24.1203267104,
         "RMSE (MW)":84.3987349736
     },
@@ -31,6 +39,8 @@
         "Project":"Whitehorse Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8691187292,
+        "R_Hourly":0.8758077846,
+        "R_Daily":0.9450097063,
         "MBE (MW)":-17.5330888835,
         "RMSE (MW)":34.2729967152
     },
@@ -38,6 +48,8 @@
         "Project":"Whitehorse Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.8691187292,
+        "R_Hourly":0.8758077846,
+        "R_Daily":0.9450097063,
         "MBE (MW)":-17.5330888835,
         "RMSE (MW)":34.2729967152
     },
@@ -45,6 +57,8 @@
         "Project":"Wildwind",
         "Model":"Baseline (Curtailed)",
         "R":0.8742540968,
+        "R_Hourly":0.8814792655,
+        "R_Daily":0.9466732504,
         "MBE (MW)":-0.8111788802,
         "RMSE (MW)":2.5962865162
     },
@@ -52,6 +66,8 @@
         "Project":"Wildwind",
         "Model":"Advanced (Curtailed)",
         "R":0.8742540968,
+        "R_Hourly":0.8814792655,
+        "R_Daily":0.9466732504,
         "MBE (MW)":-0.8111788802,
         "RMSE (MW)":2.5962865162
     },
@@ -59,6 +75,8 @@
         "Project":"Ajax Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8429459598,
+        "R_Hourly":0.8526379905,
+        "R_Daily":0.9430446983,
         "MBE (MW)":-29.3006486644,
         "RMSE (MW)":46.3658012618
     },
@@ -66,6 +84,8 @@
         "Project":"Ajax Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.8855283651,
+        "R_Hourly":0.8937070141,
+        "R_Daily":0.9600025837,
         "MBE (MW)":-21.4896737223,
         "RMSE (MW)":37.782310676
     },
@@ -73,6 +93,8 @@
         "Project":"Shaffer Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8593053544,
+        "R_Hourly":0.8688374131,
+        "R_Daily":0.927659753,
         "MBE (MW)":-30.1444365189,
         "RMSE (MW)":44.8920807714
     },
@@ -80,6 +102,8 @@
         "Project":"Shaffer Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.9156661929,
+        "R_Hourly":0.9223524387,
+        "R_Daily":0.9602599142,
         "MBE (MW)":-17.0352266719,
         "RMSE (MW)":31.2116201331
     },
@@ -87,6 +111,8 @@
         "Project":"Rio Bravo Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.7748884892,
+        "R_Hourly":0.7843715566,
+        "R_Daily":0.8900606466,
         "MBE (MW)":-12.7830926568,
         "RMSE (MW)":23.5442705156
     },
@@ -94,6 +120,8 @@
         "Project":"Rio Bravo Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.882511844,
+        "R_Hourly":0.8890874259,
+        "R_Daily":0.9438433468,
         "MBE (MW)":-6.1671757652,
         "RMSE (MW)":16.1414919738
     },
@@ -101,6 +129,8 @@
         "Project":"Route 66 Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.7411818566,
+        "R_Hourly":0.7527349281,
+        "R_Daily":0.8289427795,
         "MBE (MW)":-30.6004816772,
         "RMSE (MW)":46.3156035559
     },
@@ -108,6 +138,8 @@
         "Project":"Route 66 Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.7411818566,
+        "R_Hourly":0.7527349281,
+        "R_Daily":0.8289427795,
         "MBE (MW)":-30.6004816772,
         "RMSE (MW)":46.3156035559
     },
@@ -115,6 +147,8 @@
         "Project":"Los Mirasoles Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.9707763391,
+        "R_Hourly":0.975901563,
+        "R_Daily":0.991606216,
         "MBE (MW)":-0.5767128451,
         "RMSE (MW)":4.0419685534
     },
@@ -122,6 +156,8 @@
         "Project":"Los Mirasoles Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.9761924346,
+        "R_Hourly":0.980925305,
+        "R_Daily":0.9939794323,
         "MBE (MW)":-0.3829714282,
         "RMSE (MW)":3.6246622124
     },
@@ -129,6 +165,8 @@
         "Project":"Capricorn Ridge",
         "Model":"Baseline (Curtailed)",
         "R":0.887478516,
+        "R_Hourly":0.8943985951,
+        "R_Daily":0.7633578847,
         "MBE (MW)":-1.2992239265,
         "RMSE (MW)":5.3534593705
     },
@@ -136,6 +174,8 @@
         "Project":"Capricorn Ridge",
         "Model":"Advanced (Curtailed)",
         "R":0.887478516,
+        "R_Hourly":0.8943985951,
+        "R_Daily":0.7633578847,
         "MBE (MW)":-1.2992239265,
         "RMSE (MW)":5.3534593705
     },
@@ -143,6 +183,8 @@
         "Project":"Horse Hollow",
         "Model":"Baseline (Curtailed)",
         "R":0.9810604112,
+        "R_Hourly":0.9838353546,
+        "R_Daily":0.9951898128,
         "MBE (MW)":-2.2234028745,
         "RMSE (MW)":11.3753776831
     },
@@ -150,6 +192,8 @@
         "Project":"Horse Hollow",
         "Model":"Advanced (Curtailed)",
         "R":0.9810604112,
+        "R_Hourly":0.9838353546,
+        "R_Daily":0.9951898128,
         "MBE (MW)":-2.2234028745,
         "RMSE (MW)":11.3753776831
     },
@@ -157,6 +201,8 @@
         "Project":"South Plains",
         "Model":"Baseline (Curtailed)",
         "R":0.9329053524,
+        "R_Hourly":0.9423087995,
+        "R_Daily":0.9798396708,
         "MBE (MW)":-4.2884944554,
         "RMSE (MW)":12.7101641809
     },
@@ -164,6 +210,8 @@
         "Project":"South Plains",
         "Model":"Advanced (Curtailed)",
         "R":0.953355357,
+        "R_Hourly":0.9618196175,
+        "R_Daily":0.9873822367,
         "MBE (MW)":-2.7984236268,
         "RMSE (MW)":10.3849781942
     },
@@ -171,6 +219,8 @@
         "Project":"Green Pastures",
         "Model":"Baseline (Curtailed)",
         "R":0.8864145062,
+        "R_Hourly":0.8984022211,
+        "R_Daily":0.9506395107,
         "MBE (MW)":-5.8765896366,
         "RMSE (MW)":15.2018963556
     },
@@ -178,6 +228,8 @@
         "Project":"Green Pastures",
         "Model":"Advanced (Curtailed)",
         "R":0.9031633281,
+        "R_Hourly":0.9146010028,
+        "R_Daily":0.9594189999,
         "MBE (MW)":-5.0041972438,
         "RMSE (MW)":13.9339447004
     },
@@ -185,6 +237,8 @@
         "Project":"Hereford Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8269003766,
+        "R_Hourly":0.845291024,
+        "R_Daily":0.9224583835,
         "MBE (MW)":-8.6040332343,
         "RMSE (MW)":17.769989764
     },
@@ -192,6 +246,8 @@
         "Project":"Hereford Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.8430305572,
+        "R_Hourly":0.8611233106,
+        "R_Daily":0.9320166576,
         "MBE (MW)":-7.7016305401,
         "RMSE (MW)":16.7718121714
     },
@@ -199,6 +255,8 @@
         "Project":"Cameron Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8644926216,
+        "R_Hourly":0.8727027161,
+        "R_Daily":0.9336756375,
         "MBE (MW)":-14.3913802359,
         "RMSE (MW)":24.0231984004
     },
@@ -206,6 +264,8 @@
         "Project":"Cameron Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.9007260799,
+        "R_Hourly":0.9076888948,
+        "R_Daily":0.9531187545,
         "MBE (MW)":-10.0395956952,
         "RMSE (MW)":19.6171114713
     },
@@ -213,6 +273,8 @@
         "Project":"San Roman Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8019741917,
+        "R_Hourly":0.8153702509,
+        "R_Daily":0.9086575417,
         "MBE (MW)":-13.235263476,
         "RMSE (MW)":19.9786393121
     },
@@ -220,6 +282,8 @@
         "Project":"San Roman Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.8502581087,
+        "R_Hourly":0.8626967115,
+        "R_Daily":0.933721775,
         "MBE (MW)":-9.7223705887,
         "RMSE (MW)":16.5722960525
     },
@@ -227,6 +291,8 @@
         "Project":"Tyler Bluff",
         "Model":"Baseline (Curtailed)",
         "R":0.8355308237,
+        "R_Hourly":0.8446107177,
+        "R_Daily":0.9265981847,
         "MBE (MW)":-14.9330860236,
         "RMSE (MW)":24.7164645016
     },
@@ -234,6 +300,8 @@
         "Project":"Tyler Bluff",
         "Model":"Advanced (Curtailed)",
         "R":0.8355308237,
+        "R_Hourly":0.8446107177,
+        "R_Daily":0.9265981847,
         "MBE (MW)":-14.9330860236,
         "RMSE (MW)":24.7164645016
     },
@@ -241,6 +309,8 @@
         "Project":"Flat Top Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.7941662832,
+        "R_Hourly":0.8017373316,
+        "R_Daily":0.9168815363,
         "MBE (MW)":-37.2809880118,
         "RMSE (MW)":55.1097544518
     },
@@ -248,6 +318,8 @@
         "Project":"Flat Top Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.8237847663,
+        "R_Hourly":0.8310892386,
+        "R_Daily":0.932359093,
         "MBE (MW)":-31.7592419965,
         "RMSE (MW)":49.477274133
     },
@@ -255,6 +327,8 @@
         "Project":"Bobcat Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.8227075572,
+        "R_Hourly":0.8295011318,
+        "R_Daily":0.9115589959,
         "MBE (MW)":-15.277573784,
         "RMSE (MW)":31.1812960829
     },
@@ -262,6 +336,8 @@
         "Project":"Bobcat Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.8227075572,
+        "R_Hourly":0.8295011318,
+        "R_Daily":0.9115589959,
         "MBE (MW)":-15.277573784,
         "RMSE (MW)":31.1812960829
     },
@@ -269,6 +345,8 @@
         "Project":"Goat Mountain",
         "Model":"Baseline (Curtailed)",
         "R":0.8576688924,
+        "R_Hourly":0.8686270854,
+        "R_Daily":0.9279899384,
         "MBE (MW)":-3.5937445082,
         "RMSE (MW)":10.0532817768
     },
@@ -276,6 +354,8 @@
         "Project":"Goat Mountain",
         "Model":"Advanced (Curtailed)",
         "R":0.8576688924,
+        "R_Hourly":0.8686270854,
+        "R_Daily":0.9279899384,
         "MBE (MW)":-3.5937445082,
         "RMSE (MW)":10.0532817768
     },
@@ -283,6 +363,8 @@
         "Project":"South Ranch Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.5321139807,
+        "R_Hourly":0.5380605664,
+        "R_Daily":0.6225554785,
         "MBE (MW)":-30.5777854047,
         "RMSE (MW)":50.0575410356
     },
@@ -290,6 +372,8 @@
         "Project":"South Ranch Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.5407569557,
+        "R_Hourly":0.5466957818,
+        "R_Daily":0.6298612738,
         "MBE (MW)":-29.995058251,
         "RMSE (MW)":49.4986884318
     },
@@ -297,6 +381,8 @@
         "Project":"Vera Wind",
         "Model":"Baseline (Curtailed)",
         "R":0.9536014341,
+        "R_Hourly":0.9594691066,
+        "R_Daily":0.9877358881,
         "MBE (MW)":-0.3857895349,
         "RMSE (MW)":1.3371281444
     },
@@ -304,6 +390,8 @@
         "Project":"Vera Wind",
         "Model":"Advanced (Curtailed)",
         "R":0.9684566717,
+        "R_Hourly":0.9734843678,
+        "R_Daily":0.9927339731,
         "MBE (MW)":-0.259520403,
         "RMSE (MW)":1.0844830763
     }

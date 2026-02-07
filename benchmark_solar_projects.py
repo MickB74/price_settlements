@@ -10,7 +10,7 @@ def calculate_metrics(actual, modeled):
     """Calculate R, MBE, and RMSE between actual and modeled series."""
     combined = pd.DataFrame({'actual': actual, 'modeled': modeled}).dropna()
     if combined.empty:
-        return {'R': 0, 'MBE': 0, 'RMSE': 0}
+        return {'R': 0, 'R_Hourly': 0, 'R_Daily': 0, 'MBE': 0, 'RMSE': 0}
         
     actual = combined['actual']
     modeled = combined['modeled']
@@ -30,17 +30,27 @@ def calculate_metrics(actual, modeled):
     modeled_filtered = modeled[valid_mask]
     
     if len(actual_filtered) < 10:
-        return {'R': 0, 'MBE': 0, 'RMSE': 0} # Too much filtered
+        return {'R': 0, 'R_Hourly': 0, 'R_Daily': 0, 'MBE': 0, 'RMSE': 0} # Too much filtered
     
-    actual = actual_filtered
-    modeled = modeled_filtered
+    # 1. 15-Minute Correlation
+    r_15min = actual_filtered.corr(modeled_filtered)
     
-    correlation = actual.corr(modeled)
-    mbe = (modeled - actual).mean()
-    rmse = np.sqrt(((modeled - actual)**2).mean())
+    # 2. Hourly Correlation (Resample)
+    combined_filtered = combined[valid_mask]
+    hourly = combined_filtered.resample('h').mean().dropna()
+    r_hourly = hourly['actual'].corr(hourly['modeled']) if len(hourly) > 2 else 0
+    
+    # 3. Daily Correlation (Resample)
+    daily = combined_filtered.resample('D').mean().dropna()
+    r_daily = daily['actual'].corr(daily['modeled']) if len(daily) > 2 else 0
+    
+    mbe = (modeled_filtered - actual_filtered).mean()
+    rmse = np.sqrt(((modeled_filtered - actual_filtered)**2).mean())
     
     return {
-        'R': correlation,
+        'R': r_15min,
+        'R_Hourly': r_hourly,
+        'R_Daily': r_daily,
         'MBE': mbe,
         'RMSE': rmse
     }
@@ -119,6 +129,8 @@ def run_benchmark():
             'Project': p_name,
             'Model': 'Baseline (Fixed+Curtailed)',
             'R': metrics_fixed['R'],
+            'R_Hourly': metrics_fixed['R_Hourly'],
+            'R_Daily': metrics_fixed['R_Daily'],
             'MBE (MW)': metrics_fixed['MBE'],
             'RMSE (MW)': metrics_fixed['RMSE']
         })
@@ -126,6 +138,8 @@ def run_benchmark():
             'Project': p_name,
             'Model': 'Advanced (Tracking+Curtailed)',
             'R': metrics_tracking['R'],
+            'R_Hourly': metrics_tracking['R_Hourly'],
+            'R_Daily': metrics_tracking['R_Daily'],
             'MBE (MW)': metrics_tracking['MBE'],
             'RMSE (MW)': metrics_tracking['RMSE']
         })
