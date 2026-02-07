@@ -9,6 +9,7 @@ import gridstatus
 import patch_gridstatus # Apply monkey patch
 import plotly.express as px
 import plotly.graph_objects as go
+from pathlib import Path
 from utils import power_curves, variability_analysis
 from datetime import datetime, timedelta
 import zipfile
@@ -100,224 +101,73 @@ components.html(
 # --- Tab: Guide ---
 with tab_guide:
     st.header("📖 How to Use the VPPA Settlement Estimator")
-    
-    st.markdown("""
-    Welcome to the **VPPA Settlement Estimator** — a professional tool for analyzing Virtual Power Purchase Agreements (VPPAs) in the ERCOT market.
-    
-    This guide will help you understand how to use the application, what each tab does, and how to get the most out of the analysis.
-    """)
-    
-    # --- Quick Start ---
-    st.subheader("🚀 Quick Start")
-    st.markdown("""
-    **New to the app? Start here:**
-    
-    1. **Go to the Scenario Analysis tab**
-    2. **Use the sidebar** on the left to configure your first VPPA scenario:
-       - Select technology (Solar/Wind)
-       - Choose market year (2020-2026)
-       - Pick an ERCOT hub location
-       - Set capacity (MW) and VPPA strike price ($/MWh)
-    3. **Click "Run Scenarios"** to calculate settlements
-    4. **Compare results** using the interactive charts and tables
-    5. **Export reports** as PDF or Excel for client presentations
-    """)
-    
-    st.divider()
-    
-    # --- Application Overview ---
-    st.subheader("💡 What Does This App Do?")
-    st.markdown("""
-    This application helps you:
-    
-    - **Model VPPA settlements** using actual ERCOT market prices (2020-2026)
-    - **Generate realistic renewable profiles** based on weather data (solar & wind)
-    - **Compare multiple scenarios** side-by-side to identify the best deal
-    - **Validate models** against actual ERCOT generation data
-    - **Assess financial risk** including basis risk, negative pricing exposure, and curtailment
-    - **Create professional reports** (PDF/Excel) for stakeholders
-    
-    **Key Insight:** A VPPA is a financial contract where:
-    - **Buyer pays**: Generation (MWh) × Strike Price ($/MWh)
-    - **Buyer receives**: Generation (MWh) × Market Price ($/MWh)  
-    - **Net Settlement** = Amount Received - Amount Paid
-    
-    This tool calculates these settlements at 15-minute intervals using real ERCOT prices.
-    """)
-    
-    st.divider()
-    
-    # --- Tab Descriptions ---
-    st.subheader("📑 Tab Guide: What Each Tab Does")
-    
-    # Tab 1: Bill Validation
-    with st.expander("**✅ Bill Validation** — Create Bills or Validate Generation (Beta)", expanded=True):
-        st.markdown("""
-        **Purpose:** Create settlement bills based on weather models or validate incoming bills against official market prices.
-        
-        **Use Cases:**
-        - **Model validation**: How accurate is the weather-to-power conversion?
-        - **Benchmarking**: Compare model performance across different regions
-        - **Due diligence**: Validate assumptions before finalizing a VPPA
-        - **Asset-specific analysis**: Analyze specific plants (e.g., "SHAFFER_UNIT1")
-        
-        **Data Source:**
-        - ERCOT publishes **actual 15-minute generation** from individual assets via SCED reports
-        - Data is available with a 60-day delay for market transparency
-        - 800+ wind and solar resources available for validation
-        
-        **How to Use:**
-        1. Select a resource from the dropdown (or search by name)
-        2. Choose a date range (last 60 days)
-        3. Model generates synthetic profile for that location
-        4. Compare model vs actual in side-by-side charts
-        5. Review correlation metrics and monthly performance
-        
-        **Expected Performance:**
-        - **High-quality wind sites**: R > 0.85 correlation
-        - **Solar**: R > 0.90 correlation (more predictable)
-        - **Coastal wind** (Houston Hub): Best performance due to steady sea breeze
-        """)
-    
-    # Tab 2: Scenario Analysis
-    with st.expander("**⚡ Scenario Analysis** — Create & Compare Scenarios (Beta)"):
-        st.markdown("""
-        **Purpose:** Create and compare VPPA scenarios based on weather models.
-        
-        **Use Cases:**
-        - **Compare strike prices**: How does a \$50/MWh VPPA compare to \$55/MWh?
-        - **Evaluate locations**: Is HB_WEST better than HB_SOUTH for wind?
-        - **Analyze vintage years**: How did 2024 perform vs 2025?
-        - **Solar vs Wind**: Which technology has better economics at a specific hub?
-        - **Revenue sharing structures**: Model "upside sharing" PPAs (e.g., 50/50 split above strike)
-        - **Weather sensitivity**: Compare "Actual Weather" vs "Typical Meteorological Year (TMY)"
-        
-        **Key Features:**
-        - 📊 **Batch scenario creation**: Build up to 10+ scenarios at once
-        - 🗺️ **Custom locations**: Use the map picker to analyze any Texas coordinate
-        - 📈 **Interactive charts**: Cumulative settlement, monthly performance, price duration curves
-        - 💰 **Financial metrics**: Net settlement, capture price, curtailment impacts
-        - 📄 **Export**: Download PDF reports or Excel workbooks
-        
-        **How to Use:**
-        1. Configure scenarios in the sidebar (left)
-        2. Click "Run Scenarios" to calculate
-        3. Review comparison table and charts
-        4. Export results for presentations
-        """)
-    
-    # Tab 3: Model Performance
-    with st.expander("**📊 Model Performance** — Fleet-Wide Validation Metrics"):
-        st.markdown("""
-        **Purpose:** View aggregated performance metrics from **fleet-wide validation** against actual ERCOT data.
-        
-        **Use Cases:**
-        - **Understand model accuracy** by region and technology
-        - **Identify best-performing** wind/solar areas in Texas
-        - **Review calibration results** from real-world benchmarking
-        - **Assess confidence levels** for different hub locations
-        
-        **What You'll See:**
-        - 💨 **Wind Performance**: Correlation by region, seasonal accuracy, capacity factor comparisons
-        - ☀️ **Solar Performance**: Regional benchmarking, monthly generation patterns, capture rates
-        - 📈 **Validation Charts**: Model vs Actual scatter plots, error distributions, time series
-        
-        **Key Insight:**
-        - **West Texas Wind**: Highest wind speeds (6.5 m/s @ 80m), best for large-scale wind
-        - **Houston Coastal**: Most consistent wind (7.5 m/s @ 80m), highest capacity factors
-        - **North Solar**: Best solar resource in I-35 corridor
-        
-        **How to Use:**
-        1. Select Wind or Solar performance tab
-        2. Review validation metrics and charts
-        3. Use insights to inform your scenario selections in the main tab
-        """)
-    
-    st.divider()
-    
-    # --- Key Features ---
-    st.subheader("🎯 Key Features & Capabilities")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **Data & Analysis:**
-        - ✅ Actual ERCOT market prices (2020-2026)
-        - ✅ 1,100+ settlement point locations
-        - ✅ 15-minute interval resolution
-        - ✅ Weather-based generation profiles
-        - ✅ Multi-year historical analysis
-        - ✅ Custom CSV profile uploads
-        """)
-    
-    with col2:
-        st.markdown("""
-        **Modeling & Reporting:**
-        - ✅ Revenue sharing structures
-        - ✅ Curtailment modeling
-        - ✅ Basis risk visualization
-        - ✅ TMY vs Actual weather sensitivity
-        - ✅ Professional PDF reports
-        - ✅ Excel export with charts
-        """)
-    
-    st.divider()
-    
-    # --- Data Sources ---
-    st.subheader("📡 Data Sources")
-    st.markdown("""
-    | Data Type | Source | Coverage |
-    |-----------|--------|----------|
-    | **Market Prices** | ERCOT (via GridStatus) | 2020-2026 RTM Hub & Load Zone Prices |
-    | **Actual Generation** | ERCOT SCED | 60-day delayed unit-level production |
-    | **Weather (2024-2026)** | Open-Meteo ERA5 | Actual GHI & wind speed (15-min) |
-    | **Historical Weather** | PVGIS | Satellite & reanalysis (2005-2023) |
-    
-    💡 **See the "Documentation" expander in the Scenario Analysis tab for detailed methodology.**
-    """)
-    
-    st.divider()
-    
-    # --- Tips & Best Practices ---
-    st.subheader("💡 Tips & Best Practices")
-    
-    st.markdown("""
-    **Getting Accurate Results:**
-    - 🗺️ **Use custom locations** via the map picker for project-specific analysis
-    - 📅 **Compare multiple years** to understand vintage risk
-    - ⚖️ **Test strike price sensitivity** (e.g., \\$45, \\$50, \\$55/MWh)
-    - 🌤️ **Toggle TMY vs Actual** to assess weather variability impact
-    - 📊 **Validate first** using the Bill Validation tab before trusting results
-    
-    **Performance Optimization:**
-    - ⚡ Data is cached — first load takes ~1 min, subsequent runs are instant
-    - 🔄 Restarting the app clears cache if you need fresh ERCOT data
-    - 📦 Large exports (10+ scenarios) may take 10-15 seconds to generate
-    
-    **Common Workflows:**
-    1. **Strike Price Negotiation**: Run 5-10 scenarios with different strike prices, compare NPV
-    2. **Site Selection**: Test same configuration across all 5 ERCOT hubs
-    3. **Technology Comparison**: Solar vs Wind at the same location and year
-    4. **Vintage Analysis**: Same config for 2024, 2025, 2026 to see market trends
-    """)
-    
-    st.divider()
-    
-    # --- Support & Documentation ---
-    st.subheader("📚 Additional Resources")
-    st.markdown("""
-    - **Detailed Methodology**: See the "Documentation" expander in the Scenario Analysis tab
-    - **Model Validation Report**: Review the `RENEWABLE_FLEET_REPORT.md` in the project repository
-    - **README**: Installation and technical details in `README.md`
-    
-    **Need Help?**
-    - Check the expandable "Documentation" section in each tab for context-specific help
-    - Review example scenarios to understand configuration options
-    - Validate your assumptions using the Bill Validation tab
-    """)
-    
-    st.success("✅ Ready to get started? Head to the **Scenario Analysis** tab to create your first VPPA scenario!")
+    st.markdown(
+        "Use this tab for onboarding and workflow guidance. "
+        "The full guide below is loaded from `docs/USER_GUIDE.md`."
+    )
+
+    guide_path = Path(__file__).resolve().parent / "docs" / "USER_GUIDE.md"
+    if guide_path.exists():
+        guide_text = guide_path.read_text(encoding="utf-8")
+        with st.expander("📘 Open Full User Guide", expanded=True):
+            st.markdown(guide_text)
+        st.caption("Source of truth: docs/USER_GUIDE.md")
+    else:
+        st.warning("User guide file not found at docs/USER_GUIDE.md.")
+
+    st.subheader("🗺️ User Workflow Chart")
+    flow_labels = [
+        "Start: Define Business Goal",
+        "Price or Structure VPPA",
+        "Validate Model vs Actual",
+        "Review Model Quality",
+        "Scenario Analysis",
+        "Bill Validation",
+        "Model Performance",
+        "Set Assumptions",
+        "Run Scenarios",
+        "Review Metrics & Risk",
+        "Export PDF/Excel",
+        "Select Resource + Date Range",
+        "Compare Model vs Actual",
+        "Check Correlation/Errors",
+        "Refine Assumptions",
+        "Review Regional Benchmarks",
+        "Pick Higher-Confidence Hubs",
+    ]
+    flow_source = [0, 0, 0, 1, 2, 3, 4, 7, 8, 9, 5, 11, 12, 13, 6, 15, 16]
+    flow_target = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 4]
+    flow_value = [1] * len(flow_source)
+
+    flow_fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node=dict(
+                    pad=16,
+                    thickness=18,
+                    line=dict(color="rgba(70,70,70,0.5)", width=0.5),
+                    label=flow_labels,
+                    color=[
+                        "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#4E79A7",
+                        "#E15759", "#76B7B2", "#59A14F", "#59A14F", "#59A14F",
+                        "#59A14F", "#EDC948", "#EDC948", "#EDC948", "#EDC948",
+                        "#B07AA1", "#B07AA1",
+                    ],
+                ),
+                link=dict(
+                    source=flow_source,
+                    target=flow_target,
+                    value=flow_value,
+                    color="rgba(78,121,167,0.28)",
+                ),
+            )
+        ]
+    )
+    flow_fig.update_layout(height=560, margin=dict(l=10, r=10, t=10, b=10), font=dict(size=12))
+    st.plotly_chart(flow_fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.success("Ready to start? Open the Scenario Analysis tab to build your first case.")
 
 with tab_scenarios:
     st.header("Scenario Analysis")

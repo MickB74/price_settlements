@@ -65,3 +65,6 @@ The framework's synthetic models have been validated against the actual ERCOT fl
 -   **Map Search:** Use the "Pick Location" expander in the sidebar to search for any Texas town or project site.
 -   **Benchmarking:** Target specific Resource IDs (e.g., `SHAFFER_UNIT1`) in the Bill Validation tab to fetch actual production data.
 -   **Timezones:** All data is automatically synchronized to **Central Prevailing Time (CPT)** for market alignment.
+
+## 📘 User Documentation
+-   **User Guide + Workflow Chart:** See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for quick start steps, standard workflows, and a decision flowchart for end users.
