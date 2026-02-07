@@ -277,12 +277,15 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                  # Let's print it to stdout (which is captured in debug log) AND proceed.
                  pass
 
-    # 2. Try Open-Meteo 2024-2025 (Solar + Wind)
-    if use_openmeteo_actual and df_data.empty:
+    # 2. Try Open-Meteo (2024+ OR Fallback for PVGIS failure)
+    # CRITICAL FIX: If PVGIS failed for 2005-2023, use Open-Meteo as robust fallback
+    if (use_openmeteo_actual or (df_data.empty and not force_tmy)):
+        print(f"Fetching Open-Meteo data for {year} ({'primary' if use_openmeteo_actual else 'PVGIS fallback'})...")
         df_om = get_openmeteo_data(year, lat, lon)
         if not df_om.empty:
             df_data = df_om
             source_type = "OpenMeteo_Actual"
+            print(f"✓ Open-Meteo data loaded for {year}")
 
     # 3. Fallback to TMY (or if enabled)
     if df_data.empty:
