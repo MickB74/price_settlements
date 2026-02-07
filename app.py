@@ -404,7 +404,18 @@ def get_ercot_data(year, _mtime=None):
         
         return df
     except Exception as e:
-        st.error(f"Error fetching data for {year}: {e}")
+        # Raise instead of returning empty so a transient fetch error is not cached as valid data.
+        raise RuntimeError(f"Error fetching data for {year}: {e}") from e
+
+
+def load_market_data(year):
+    """Loads ERCOT market data with cache invalidation and safe UI error reporting."""
+    cache_path = f"ercot_rtm_{year}.parquet"
+    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+    try:
+        return get_ercot_data(year, _mtime=mtime)
+    except Exception as e:
+        st.error(str(e))
         return pd.DataFrame()
 
 @st.cache_data(show_spinner=False)
@@ -516,9 +527,10 @@ def calculate_scenario(scenario, df_rtm):
                     profile_central = pd.Series(df_custom[mw_col].values, index=idx)
 
             else:
-                # File missing?
-                potential_gen = np.zeros(len(df_hub))
-                profile_central = None
+                raise FileNotFoundError(
+                    f"Custom profile not found for scenario '{scenario.get('name', 'Unnamed')}'. "
+                    "Re-upload the profile CSV and re-run."
+                )
 
         else:
             # Standard TMY/Actual Logic
@@ -550,11 +562,9 @@ def calculate_scenario(scenario, df_rtm):
              potential_gen = np.zeros(len(df_hub))
         
     except Exception as e:
-        try:
-            # Fallback if strict reindex fails due to tz issues
-             potential_gen = np.zeros(len(df_hub))
-        except:
-             potential_gen = np.zeros(len(df_hub))
+        raise RuntimeError(
+            f"Profile generation failed for scenario '{scenario.get('name', 'Unnamed')}': {e}"
+        ) from e
 
     df_hub['Potential_Gen_MW'] = potential_gen
     
@@ -1212,15 +1222,17 @@ if st.session_state.scenarios:
 
         for i, scenario in enumerate(st.session_state.scenarios):
             # Fetch Data
-            cache_path = f"ercot_rtm_{scenario['year']}.parquet"
-            mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
-            df_rtm = get_ercot_data(scenario['year'], _mtime=mtime)
+            df_rtm = load_market_data(scenario['year'])
             if df_rtm.empty:
                 st.warning(f"Could not fetch data for {scenario['name']}")
                 continue
         
             # Calculate
-            df_res = calculate_scenario(scenario, df_rtm)
+            try:
+                df_res = calculate_scenario(scenario, df_rtm)
+            except Exception as e:
+                st.error(f"Scenario '{scenario['name']}' failed: {e}")
+                continue
     
             # Aggregates
             total_rev = df_res['Settlement_Amount'].sum()
@@ -1326,11 +1338,11 @@ if st.session_state.scenarios:
         if len(final_settlements) > 1:
             st.markdown(
                 f"**Insight:** The **{best_scen}** scenario leads with a total settlement of "
-                f"**\${best_val:,.0f}**, while **{worst_scen}** trails at **\${worst_val:,.0f}**."
+                f"**${best_val:,.0f}**, while **{worst_scen}** trails at **${worst_val:,.0f}**."
             )
         else:
             st.markdown(
-                f"**Insight:** The **{best_scen}** scenario has a total settlement of **\${best_val:,.0f}**."
+                f"**Insight:** The **{best_scen}** scenario has a total settlement of **${best_val:,.0f}**."
             )
 
         # Initialize Plotly Graph Object for improved flexibility
@@ -1415,7 +1427,7 @@ if st.session_state.scenarios:
                 best_val = df_annual_settle['Settlement_Amount'].max()
         
                 st.markdown(
-                    f"**Insight:** **{best_scen}** led with a total settlement of **\${best_val:,.0f}**."
+                    f"**Insight:** **{best_scen}** led with a total settlement of **${best_val:,.0f}**."
                 )
         
                 fig_settle = px.bar(
@@ -1447,9 +1459,9 @@ if st.session_state.scenarios:
                 worst_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmin()]
         
                 st.markdown(
-                    f"**Insight:** The highest monthly return was **\${best_month_row['Settlement_Amount']:,.0f}** "
+                    f"**Insight:** The highest monthly return was **${best_month_row['Settlement_Amount']:,.0f}** "
                     f"in **{best_month_row['Month_Date'].strftime('%B %Y')}** ({best_month_row['Scenario']}), "
-                    f"whereas the lowest was **\${worst_month_row['Settlement_Amount']:,.0f}** "
+                    f"whereas the lowest was **${worst_month_row['Settlement_Amount']:,.0f}** "
                     f"in **{worst_month_row['Month_Date'].strftime('%B %Y')}** ({worst_month_row['Scenario']})."
                 )
     
@@ -1600,11 +1612,16 @@ if st.session_state.scenarios:
         
                 # Re-calculate on demand
                 year_val = selected_scenario_config['year']
-                cache_path = f"ercot_rtm_{year_val}.parquet"
-                mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
-                df_rtm = get_ercot_data(year_val, _mtime=mtime)
+                df_rtm = load_market_data(year_val)
                 if not df_rtm.empty:
-                    df_display = calculate_scenario(selected_scenario_config, df_rtm)
+                    try:
+                        df_display = calculate_scenario(selected_scenario_config, df_rtm)
+                    except Exception as e:
+                        st.error(f"Could not generate detailed data for {selected_scenario_name}: {e}")
+                        df_display = None
+                    if df_display is None:
+                        st.warning("Detailed interval export is unavailable for this scenario.")
+                        df_display = pd.DataFrame()
             
                     st.markdown(f"**Showing data for: {selected_scenario_name}**")
             
@@ -1906,10 +1923,7 @@ with tab_validation:
                 with st.spinner("Generating profile..."):
                     try:
                         # Market Data
-                        cache_path = f"ercot_rtm_{val_year}.parquet"
-                        mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
-                        
-                        df_market = get_ercot_data(val_year, _mtime=mtime)
+                        df_market = load_market_data(val_year)
                         if df_market.empty:
                             st.error(f"No market data for {val_year}")
                         else:
@@ -2719,9 +2733,7 @@ with tab_validation:
                     st.info("📊 Detected monthly summary data. Calculating expected totals from interval-level market data...")
                     
                     # 3. Fetch Market Data for the entire year
-                    cache_path = f"ercot_rtm_{val_year}.parquet"
-                    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
-                    df_market = get_ercot_data(val_year, _mtime=mtime)
+                    df_market = load_market_data(val_year)
                     
                     if df_market.empty:
                         st.error(f"Could not find market data for {val_year}.")
@@ -2859,9 +2871,7 @@ with tab_validation:
                 else:
                     # Original interval-level validation logic
                     # 3. Fetch Market Data
-                    cache_path = f"ercot_rtm_{val_year}.parquet"
-                    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
-                    df_market = get_ercot_data(val_year, _mtime=mtime)
+                    df_market = load_market_data(val_year)
                 
                     if df_market.empty:
                         st.error(f"Could not find market data for {val_year}.")
@@ -3149,7 +3159,13 @@ with tab_performance:
     # Asset Selection Logic
     col_reg, col_cust = st.columns([0.6, 0.4])
     with col_reg:
-        benchmark_asset_name = st.selectbox("Select Curated Project", options=["None (Use Custom ID)"] + list(asset_registry.keys()), index=1)
+        curated_options = ["None (Use Custom ID)"] + list(asset_registry.keys())
+        default_curated_index = 1 if len(curated_options) > 1 else 0
+        benchmark_asset_name = st.selectbox(
+            "Select Curated Project",
+            options=curated_options,
+            index=default_curated_index
+        )
     with col_cust:
         custom_resource_id = st.text_input("OR Enter Custom Resource ID (from ercot_renewable_assets.txt)", help="Example: FRYE_SLR_UNIT1, MONTECR1_WIND1")
 
@@ -3318,10 +3334,18 @@ with tab_performance:
                                 df_actual = pd.DataFrame()
                             else:
                                 df_actual = df_actual.rename(columns={time_col: 'Time', gen_col: 'Actual_MW'})
-                                df_actual['Time'] = pd.to_datetime(df_actual['Time'])
-                                # Assume local if naive, or convert to UTC? SCED is UTC? No, SCED is usually Central? 
-                                # Current app uses Central for display.
-                                # Let's assume input is Central for now or naive-local.
+                                df_actual['Time'] = pd.to_datetime(df_actual['Time'], errors='coerce')
+                                df_actual['Actual_MW'] = pd.to_numeric(df_actual['Actual_MW'], errors='coerce')
+                                # Normalize to UTC so downstream merge uses consistent timezone-aware datetimes.
+                                if df_actual['Time'].dt.tz is None:
+                                    df_actual['Time'] = (
+                                        df_actual['Time']
+                                        .dt.tz_localize('US/Central', ambiguous='NaT', nonexistent='shift_forward')
+                                        .dt.tz_convert('UTC')
+                                    )
+                                else:
+                                    df_actual['Time'] = df_actual['Time'].dt.tz_convert('UTC')
+                                df_actual = df_actual.dropna(subset=['Time', 'Actual_MW']).copy()
                                 
                         except Exception as e:
                             st.error(f"Error parsing file: {e}")
@@ -3350,6 +3374,12 @@ with tab_performance:
                             # Use the preview selector if no asset meta
                             compare_turbine = selected_turbine if selected_turbine != "GENERIC" else "GENERIC"
                         
+                        # Normalize actual timestamps to UTC for safe alignment/merge.
+                        if df_actual['Time'].dt.tz is None:
+                            df_actual['Time'] = df_actual['Time'].dt.tz_localize('UTC')
+                        else:
+                            df_actual['Time'] = df_actual['Time'].dt.tz_convert('UTC')
+
                         # Run model for all years in range
                         target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
                         model_dfs = []
