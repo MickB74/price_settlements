@@ -222,6 +222,39 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
     Uses TMY data only when force_tmy=True.
     efficiency: System efficiency (default 0.85 for 15% losses). Pass 0.86 for 14% losses.
     """
+    
+    # PRIORITY 1: Check for pregenerated profiles (committed to repo for Streamlit Cloud)
+    # This eliminates API dependency issues
+    PREGEN_DIR = os.path.join(CACHE_DIR, "pregenerated")
+    if os.path.exists(PREGEN_DIR) and not force_tmy:
+        # Try to find matching pregenerated profile by location proximity
+        HUB_LOCATIONS = {
+            "HB_NORTH": (32.3865, -96.8475),
+            "HB_SOUTH": (26.9070, -99.2715),
+            "HB_WEST": (32.4518, -100.5371),
+            "HB_HOUSTON": (29.3013, -94.7977),
+            "HB_PAN": (35.2220, -101.8313),
+        }
+        
+        # Find closest hub (within 0.1 degrees ~= 11 km)
+        for hub_name, (hub_lat, hub_lon) in HUB_LOCATIONS.items():
+            if abs(lat - hub_lat) < 0.1 and abs(lon - hub_lon) < 0.1:
+                pregen_file = os.path.join(PREGEN_DIR, f"{hub_name}_{tech}_{year}.parquet")
+                if os.path.exists(pregen_file):
+                    try:
+                        df = pd.read_parquet(pregen_file)
+                        if not df.empty and len(df) > 30000:
+                            # Scale to requested capacity
+                            series = pd.Series(df['gen_mw'].values * (capacity_mw / 100.0), 
+                                             index=pd.to_datetime(df['datetime'], utc=True),
+                                             name="Gen_MW")
+                            print(f"✓ Using pregenerated profile: {hub_name}_{tech}_{year}")
+                            return series
+                    except Exception as e:
+                        print(f"Warning: Could not load pregenerated profile: {e}")
+                break
+    
+    # PRIORITY 2-4: API sources (PVGIS, OpenMeteo, TMY) - original logic
     # Determine Data Source
     # If forced TMY, disable all actuals
     use_pvgis_actual = (2005 <= year <= 2023) and not force_tmy
