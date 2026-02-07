@@ -251,20 +251,31 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                     "outputformat": "json", "pvcalculation": 0, "components": 1,
                     "angle": 0 # Horizontal
                 }
-                print(f"Fetching PVGIS Actual data for {year}...")
+                print(f"Fetching PVGIS Actual data for {year} from {url} with params {params}...")
                 response = requests.get(url, params=params)
                 if response.status_code == 200:
                     data = response.json()
                     if 'outputs' in data and 'hourly' in data['outputs']:
                         df_data = pd.DataFrame(data['outputs']['hourly'])
                         df_data.to_parquet(cache_file)
+                    else:
+                        raise ValueError(f"PVGIS returned 200 but no 'hourly' data found. Response keys: {list(data.keys())}")
                 else:
-                    print(f"PVGIS Error: {response.status_code}")
+                    raise  ValueError(f"PVGIS API Error: {response.status_code} - {response.text[:200]}")
             
             if not df_data.empty:
                 source_type = "Actual"
         except Exception as e:
             print(f"Error in PVGIS flow: {e}")
+            if use_openmeteo_actual: # If we can fallback to OpenMeteo, log warning but continue
+                print("Falling back to next source...")
+            else:
+                 # If this was our primary source and we can't fallback easily (or we want to know why it failed), re-raise
+                 # Actually, we should let the fallback logic (TMY) try. 
+                 # But if TMY also fails, we want to know the FIRST error.
+                 # Let's attach the error to the empty dataframe? No.
+                 # Let's print it to stdout (which is captured in debug log) AND proceed.
+                 pass
 
     # 2. Try Open-Meteo 2024-2025 (Solar + Wind)
     if use_openmeteo_actual and df_data.empty:
