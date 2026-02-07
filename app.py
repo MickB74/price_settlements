@@ -1344,6 +1344,8 @@ if st.session_state.scenarios:
                             
                         except Exception as e:
                             st.error(f"Monte Carlo failed for {scenario['name']}: {e}")
+                            import traceback
+                            st.code(traceback.format_exc())
                             continue
                     
                     progress_mc.progress(1.0)
@@ -1351,7 +1353,13 @@ if st.session_state.scenarios:
                     
                     # Store results in session state
                     st.session_state['monte_carlo_results'] = monte_carlo_results
-                    st.success(f"✅ Completed {n_iterations} iterations for {len(monte_carlo_results)} scenarios")
+                    
+                    # Show success message
+                    successful_count = sum(1 for _, (_, stats) in monte_carlo_results.items() if stats)
+                    if successful_count > 0:
+                        st.success(f"✅ Completed {n_iterations} iterations for {successful_count} scenarios")
+                    else:
+                        st.error("❌ All Monte Carlo simulations failed. Check that price data is available for years 2020-2026.")
         
         # Display Monte Carlo Results (if available)
         if 'monte_carlo_results' in st.session_state and st.session_state['monte_carlo_results']:
@@ -1360,71 +1368,77 @@ if st.session_state.scenarios:
             
             mc_results = st.session_state['monte_carlo_results']
             
-            # Comparison table
-            st.markdown("### Probabilistic Outcome Comparison")
-            comparison_df = monte_carlo.compare_scenarios_monte_carlo(mc_results)
-            st.dataframe(comparison_df.style.format({
-                'P10 ($)': '${:,.0f}',
-                'P50 ($)': '${:,.0f}',
-                'P90 ($)': '${:,.0f}',
-                'Mean ($)': '${:,.0f}',
-                'Std Dev ($)': '${:,.0f}',
-                'P90-P10 Range ($)': '${:,.0f}'
-            }), use_container_width=True)
+            # Filter out failed simulations
+            valid_results = {name: (df, stats) for name, (df, stats) in mc_results.items() if stats}
             
-            # Distribution plots for each scenario
-            st.markdown("### Distribution Plots")
-            
-            for scenario_name, (results_df, stats) in mc_results.items():
-                with st.expander(f"📈 {scenario_name}", expanded=True):
-                    col_chart, col_stats = st.columns([2, 1])
-                    
-                    with col_chart:
-                        # Histogram with percentile markers
-                        fig = go.Figure()
+            if not valid_results:
+                st.warning("⚠️ No valid Monte Carlo results to display. All simulations may have failed due to missing data.")
+            else:
+                # Comparison table
+                st.markdown("### Probabilistic Outcome Comparison")
+                comparison_df = monte_carlo.compare_scenarios_monte_carlo(valid_results)
+                st.dataframe(comparison_df.style.format({
+                    'P10 ($)': '${:,.0f}',
+                    'P50 ($)': '${:,.0f}',
+                    'P90 ($)': '${:,.0f}',
+                    'Mean ($)': '${:,.0f}',
+                    'Std Dev ($)': '${:,.0f}',
+                    'P90-P10 Range ($)': '${:,.0f}'
+                }), use_container_width=True)
+                
+                # Distribution plots for each scenario
+                st.markdown("### Distribution Plots")
+                
+                for scenario_name, (results_df, stats) in valid_results.items():
+                    with st.expander(f"📈 {scenario_name}", expanded=True):
+                        col_chart, col_stats = st.columns([2, 1])
                         
-                        # Histogram
-                        fig.add_trace(go.Histogram(
-                            x=results_df['annual_settlement_$'],
-                            nbinsx=50,
-                            name='Distribution',
-                            marker_color='lightblue',
-                            opacity=0.7
-                        ))
-                        
-                        # Add P10, P50, P90 lines
-                        for percentile, color, label in [
-                            (stats['P10'], 'red', 'P10 (Conservative)'),
-                            (stats['P50'], 'green', 'P50 (Median)'),
-                            (stats['P90'], 'blue', 'P90 (Optimistic)')
-                        ]:
-                            fig.add_vline(
-                                x=percentile,
-                                line_dash="dash",
-                                line_color=color,
-                                annotation_text=f"{label}: ${percentile:,.0f}",
-                                annotation_position="top"
+                        with col_chart:
+                            # Histogram with percentile markers
+                            fig = go.Figure()
+                            
+                            # Histogram
+                            fig.add_trace(go.Histogram(
+                                x=results_df['annual_settlement_$'],
+                                nbinsx=50,
+                                name='Distribution',
+                                marker_color='lightblue',
+                                opacity=0.7
+                            ))
+                            
+                            # Add P10, P50, P90 lines
+                            for percentile, color, label in [
+                                (stats['P10'], 'red', 'P10 (Conservative)'),
+                                (stats['P50'], 'green', 'P50 (Median)'),
+                                (stats['P90'], 'blue', 'P90 (Optimistic)')
+                            ]:
+                                fig.add_vline(
+                                    x=percentile,
+                                    line_dash="dash",
+                                    line_color=color,
+                                    annotation_text=f"{label}: ${percentile:,.0f}",
+                                    annotation_position="top"
+                                )
+                            
+                            fig.update_layout(
+                                title=f"Distribution of Annual Settlement - {scenario_name}",
+                                xaxis_title="Annual Settlement ($)",
+                                yaxis_title="Frequency",
+                                showlegend=False,
+                                height=400
                             )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
                         
-                        fig.update_layout(
-                            title=f"Distribution of Annual Settlement - {scenario_name}",
-                            xaxis_title="Annual Settlement ($)",
-                            yaxis_title="Frequency",
-                            showlegend=False,
-                            height=400
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    with col_stats:
-                        st.markdown("**Percentile Summary**")
-                        percentile_table = monte_carlo.format_percentile_table(stats)
-                        st.dataframe(percentile_table, use_container_width=True, hide_index=True)
-                        
-                        st.markdown("**Additional Stats**")
-                        st.metric("Mean", f"${stats['Mean']:,.0f}")
-                        st.metric("Std Dev", f"${stats['StdDev']:,.0f}")
-                        st.metric("Range", f"${stats['Max'] - stats['Min']:,.0f}")
+                        with col_stats:
+                            st.markdown("**Percentile Summary**")
+                            percentile_table = monte_carlo.format_percentile_table(stats)
+                            st.dataframe(percentile_table, use_container_width=True, hide_index=True)
+                            
+                            st.markdown("**Additional Stats**")
+                            st.metric("Mean", f"${stats['Mean']:,.0f}")
+                            st.metric("Std Dev", f"${stats['StdDev']:,.0f}")
+                            st.metric("Range", f"${stats['Max'] - stats['Min']:,.0f}")
         
         st.markdown("---")
 

@@ -117,13 +117,23 @@ def run_bootstrap_simulation(
             gen_df['Time_Central'] = gen_df['Time_Source'].apply(replace_year)
             gen_df['Gen_Energy_MWh'] = gen_df['Gen_MW'] * 0.25  # 15-min intervals
             
-            # 6. Load price data for sampled price year (if not pre-loaded)
-            if df_market_hub is None or price_year != scenario_config.get('year'):
-                # Would need to load market data here
-                # For now, assume df_market_hub is passed in with all years
+            # 6. Load price data for sampled price year
+            # For Monte Carlo, we need to load the actual market data for the sampled year
+            # Import load_market_data if not already available
+            try:
+                # Try to import from app context
+                from app import load_market_data
+                price_df = load_market_data(price_year)
+            except (ImportError, AttributeError):
+                # Fallback: use provided df_market_hub if available
+                if df_market_hub is None:
+                    print(f"Warning: No price data available for year {price_year}")
+                    continue
                 price_df = df_market_hub[df_market_hub['Time_Central'].dt.year == price_year].copy()
-            else:
-                price_df = df_market_hub.copy()
+            
+            if price_df.empty:
+                print(f"Warning: No price data found for year {price_year}")
+                continue
             
             # 7. Merge generation with prices
             merged = pd.merge(
@@ -237,14 +247,20 @@ def compare_scenarios_monte_carlo(scenario_results: Dict[str, Tuple[pd.DataFrame
     comparison_data = []
     
     for scenario_name, (results_df, stats) in scenario_results.items():
+        # Skip scenarios with no results
+        if not stats or len(stats) == 0:
+            print(f"Warning: No statistics available for scenario '{scenario_name}'")
+            continue
+        
+        # Safely get stats with defaults
         comparison_data.append({
             'Scenario': scenario_name,
-            'P10 ($)': stats['P10'],
-            'P50 ($)': stats['P50'],
-            'P90 ($)': stats['P90'],
-            'Mean ($)': stats['Mean'],
-            'Std Dev ($)': stats['StdDev'],
-            'P90-P10 Range ($)': stats['P90'] - stats['P10']
+            'P10 ($)': stats.get('P10', 0),
+            'P50 ($)': stats.get('P50', 0),
+            'P90 ($)': stats.get('P90', 0),
+            'Mean ($)': stats.get('Mean', 0),
+            'Std Dev ($)': stats.get('StdDev', 0),
+            'P90-P10 Range ($)': stats.get('P90', 0) - stats.get('P10', 0)
         })
     
     return pd.DataFrame(comparison_data)
