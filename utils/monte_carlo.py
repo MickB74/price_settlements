@@ -73,6 +73,10 @@ def run_bootstrap_simulation(
     results = []
     errors = []
     
+    # DEBUG: Verify caches are passed correctly
+    print(f"DEBUG: price_data_cache type: {type(price_data_cache)}, keys: {list(price_data_cache.keys()) if price_data_cache else 'None'}")
+    print(f"DEBUG: generation_profile_cache type: {type(generation_profile_cache)}, keys: {list(generation_profile_cache.keys()) if generation_profile_cache else 'None'}")
+    
     for i in range(n_iterations):
         if progress_callback and i % 50 == 0:
             progress_callback(i, n_iterations)
@@ -133,10 +137,18 @@ def run_bootstrap_simulation(
             gen_df['Gen_Energy_MWh'] = gen_df['Gen_MW'] * 0.25  # 15-min intervals
             
             # 6. Load price data for sampled price year from cache
+            if i < 3:
+                print(f"DEBUG: Looking for price_year={price_year} in cache. Cache exists: {price_data_cache is not None}, In cache: {price_year in price_data_cache if price_data_cache else 'N/A'}")
+            
             if price_data_cache and price_year in price_data_cache:
                 price_df = price_data_cache[price_year]
+                if i < 3:
+                    print(f"DEBUG: Loaded price data from cache, shape: {price_df.shape if price_df is not None else 'None'}")
             else:
-                print(f"Warning: No cached price data for year {price_year}")
+                error_detail = f"Warning: No cached price data for year {price_year}. Cache is None: {price_data_cache is None}, Year not in cache: {price_year not in price_data_cache if price_data_cache else 'N/A'}"
+                print(error_detail)
+                if i < 5:
+                    errors.append(error_detail)
                 continue
             
             if price_df.empty:
