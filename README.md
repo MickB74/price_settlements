@@ -4,7 +4,7 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 
 ## 🚀 Key Features
 
-### 🛠️ Advanced Scenario Modeling
+### 🛠️ Advanced Scenario Modeling (Beta)
 -   **Multi-Year Analysis:** Simulate settlements for 2020–2026 using actual historical prices.
 -   **Granular Location Data:** Select from major ERCOT Hubs or pick any coordinate on an interactive map.
 -   **Weather-to-Power Profiles:**
@@ -14,7 +14,8 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 -   **Revenue Share Structures:** Model complex "Upside Sharing" PPAs (e.g., 50/50 splits when market price exceeds strike).
 -   **Custom Profiles:** Support for 8760/15-min generation CSV uploads.
 
-### 🏆 Real Asset Benchmarking
+### 🏆 Bill Validation & Benchmarking (Beta)
+-   **Bill Creation:** Create settlement bills based on weather models or validate incoming bills against official market prices.
 -   **Curated Registry:** Select from **45+ major ERCOT assets** (Horse Hollow, Capricorn Ridge, Shaffer Wind, etc.) with pre-loaded metadata.
 -   **Interactive Map Picker:** Click anywhere in Texas to auto-find the nearest settlement hub or specify exact coordinates via geocoding (search by town/ZIP).
 -   **SCED Validation:** Retrieve and compare model results against **real-world production data** from ERCOT's 60-day disclosure reports.
