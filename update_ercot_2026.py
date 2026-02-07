@@ -76,6 +76,7 @@ def update_ercot_2026():
         #    If no existing data, maybe get_rtm_spp(2026) first then gap fill?
         
         new_df = pd.DataFrame()
+        fetch_timestamp = pd.Timestamp.now(tz='US/Central')
         
         if existing_df.empty:
             print("Fetching base 2026 data (fast bulk)...")
@@ -86,6 +87,7 @@ def update_ercot_2026():
                     if not pd.api.types.is_datetime64_any_dtype(base_df['Time']):
                         base_df['Time'] = pd.to_datetime(base_df['Time'], utc=True)
                     base_df['Time_Central'] = base_df['Time'].dt.tz_convert('US/Central')
+                    base_df['fetched_at'] = fetch_timestamp
                     
                     existing_df = base_df
                     # Update start_date based on what we just got
@@ -93,6 +95,7 @@ def update_ercot_2026():
                     print(f"Fetched base data up to {start_date}")
             except Exception as e:
                 print(f"Bulk fetch failed/empty: {e}")
+
 
         # Now fetch the gap (or refinement)
         if start_date <= today:
@@ -106,7 +109,9 @@ def update_ercot_2026():
                 if not pd.api.types.is_datetime64_any_dtype(gap_df['Time']):
                     gap_df['Time'] = pd.to_datetime(gap_df['Time'], utc=True)
                 gap_df['Time_Central'] = gap_df['Time'].dt.tz_convert('US/Central')
+                gap_df['fetched_at'] = fetch_timestamp
                 new_df = gap_df
+
 
         # Merge
         if not new_df.empty:
@@ -127,6 +132,10 @@ def update_ercot_2026():
         print("Deduplicating...")
         combined = combined.sort_values('Time')
         combined = combined.drop_duplicates(subset=['Time', 'Location'], keep='last')
+        
+        # Ensure fetched_at column exists (backward compatibility)
+        if 'fetched_at' not in combined.columns:
+            combined['fetched_at'] = pd.NaT  # Set to NaT for old data
         
         # Memory Optimization
         float_cols = combined.select_dtypes(include=['float64']).columns
