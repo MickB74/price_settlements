@@ -2,6 +2,10 @@
 
 A professional-grade framework for modeling, analyzing, and comparing Virtual Power Purchase Agreement (VPPA) scenarios in the ERCOT market.
 
+## 🌐 Live Application
+
+**Access the app:** [price-settlements.streamlit.app](https://price-settlements.streamlit.app) *(or your actual Streamlit Cloud URL)*
+
 ## 🚀 Key Features
 
 ### 🛠️ Advanced Scenario Modeling (Beta)
@@ -13,6 +17,7 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
     -   **Multi-Weather Sensitivities:** Contrast "Actual Weather" vs. "Typical Meteorological Year" (TMY) profiles side-by-side to understand resource variability.
 -   **Revenue Share Structures:** Model complex "Upside Sharing" PPAs (e.g., 50/50 splits when market price exceeds strike).
 -   **Custom Profiles:** Support for 8760/15-min generation CSV uploads.
+-   **🎲 Monte Carlo Simulation:** Generate probabilistic settlement outcomes (P10/P50/P90) by randomly sampling from 20 years of historical weather (2005-2024) and 7 years of price data (2020-2026). Run 100-10,000 iterations to understand risk profiles and distribution of possible outcomes.
 
 ### 🏆 Bill Validation & Benchmarking (Beta)
 -   **Bill Creation:** Create settlement bills based on weather models or validate incoming bills against official market prices.
@@ -26,6 +31,7 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 -   **Financial Metrics:** Tracking of **Total Amount Paid**, **Total Amount Received**, and **Net Settlement**.
 -   **Risk Modeling:** Visualize basis risk, negative pricing exposure, and the impact of economic curtailment ($0/MWh floor).
 -   **Comparison Suite:** Side-by-side benchmarking of up to 10 distinct scenarios.
+-   **Probabilistic Outcomes:** Monte Carlo distributions showing full range of possible results with percentile analysis.
 
 ### 📄 Professional Reporting
 -   **PDF Settlement Bills:** Generate professional, client-ready PDF reports including monthly summaries and detailed daily performance metrics.
@@ -40,23 +46,9 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 | **Solar/Wind (2024+)** | **Open-Meteo** | ERA5 Reanalysis (GHI, 10m Wind Speed) at 15-min resolution. |
 | **Historical Weather**| **PVGIS** | Long-term satellite and reanalysis averages. |
 
-## 📦 Installation
+## 📦 Installation & Setup
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/MickB74/price_settlements.git
-    cd price_settlements
-    ```
-
-2.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Run the App:**
-    ```bash
-    streamlit run app.py
-    ```
+For local development or contributing to the project, see the [Installation Guide on GitHub](https://github.com/MickB74/price_settlements#installation).
 
 ## 📈 Validation Results
 The framework's synthetic models have been validated against the actual ERCOT fleet. For a detailed breakdown of performance by region and technology, see the [Renewable Fleet Report](RENEWABLE_FLEET_REPORT.md).
