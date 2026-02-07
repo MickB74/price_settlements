@@ -24,6 +24,7 @@ def run_bootstrap_simulation(
     weather_years: List[int] = None,
     price_years: List[int] = None,
     price_data_cache: Dict[int, pd.DataFrame] = None,
+    generation_profile_cache: Dict[int, pd.Series] = None,
     progress_callback=None
 ) -> Tuple[pd.DataFrame, Dict]:
     """
@@ -82,17 +83,21 @@ def run_bootstrap_simulation(
             # 2. Random sample: price year
             price_year = random.choice(price_years)
             
-            # 3. Get generation profile for sampled weather year
-            generation_profile = fetch_tmy.get_profile_for_year(
-                year=weather_year,
-                tech=tech,
-                lat=lat,
-                lon=lon,
-                capacity_mw=capacity_mw,
-                force_tmy=False,  # Use actual historical weather
-                turbine_type=turbine_type,
-                efficiency=0.86  # 14% losses
-            )
+            # 3. Get generation profile for sampled weather year (from cache if available)
+            if generation_profile_cache and weather_year in generation_profile_cache:
+                generation_profile = generation_profile_cache[weather_year]
+            else:
+                # Fallback: fetch if not cached (slower)
+                generation_profile = fetch_tmy.get_profile_for_year(
+                    year=weather_year,
+                    tech=tech,
+                    lat=lat,
+                    lon=lon,
+                    capacity_mw=capacity_mw,
+                    force_tmy=False,  # Use actual historical weather
+                    turbine_type=turbine_type,
+                    efficiency=0.86  # 14% losses
+                )
             
             if generation_profile is None or generation_profile.empty:
                 continue

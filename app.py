@@ -1338,16 +1338,36 @@ if st.session_state.scenarios:
                             except Exception as e:
                                 st.warning(f"Could not load price data for {price_year}: {e}")
                         
+                        # PRE-LOAD all generation profiles to avoid repeated API calls/computations (CRITICAL SPEEDUP)
+                        status_text.text(f"Pre-loading generation profiles for {scenario['name']}...")
+                        gen_cache = {}
+                        weather_years = list(range(2005, 2025))  # 2005-2024
+                        for wx_year in weather_years:
+                            try:
+                                gen_cache[wx_year] = fetch_tmy.get_profile_for_year(
+                                    year=wx_year,
+                                    tech=mc_config['tech'],
+                                    lat=mc_config['lat'],
+                                    lon=mc_config['lon'],
+                                    capacity_mw=mc_config['capacity_mw'],
+                                    force_tmy=False,
+                                    turbine_type=mc_config['turbine_type'],
+                                    efficiency=0.86
+                                )
+                            except Exception as e:
+                                st.warning(f"Could not load generation profile for {wx_year}: {e}")
+                        
                         # Define progress callback
                         def update_progress(current, total):
                             progress_mc.progress((scenario_idx + current/total) / len(st.session_state.scenarios))
                         
-                        # Run Monte Carlo simulation with cached price data
+                        # Run Monte Carlo simulation with cached data
                         try:
                             results_df, stats = monte_carlo.run_bootstrap_simulation(
                                 scenario_config=mc_config,
                                 n_iterations=n_iterations,
                                 price_data_cache=price_cache,
+                                generation_profile_cache=gen_cache,
                                 progress_callback=update_progress
                             )
                             
