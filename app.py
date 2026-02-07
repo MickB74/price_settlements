@@ -3179,8 +3179,16 @@ with tab_performance:
 
         st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
         top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
+        
+        # Prepare columns for display, ensuring new metrics exist
+        display_cols = ['Project', 'R', 'MBE (MW)', 'RMSE (MW)']
+        extra_cols = ['R_Hourly', 'R_Daily']
+        for c in extra_cols:
+            if c in top_wind.columns:
+                display_cols.insert(2, c) # Insert after R
+                
         st.dataframe(
-            top_wind[['Project', 'R', 'R_Hourly', 'R_Daily', 'MBE (MW)', 'RMSE (MW)']],
+            top_wind[display_cols],
             column_config={
                 "R": st.column_config.NumberColumn(
                     "R (15m)",
@@ -3227,8 +3235,15 @@ with tab_performance:
 
         st.markdown("### 🏆 Solar Leaderboard (Tracking Model)")
         top_solar = solar_advanced.sort_values('R', ascending=False).head(10)
+        # Prepare columns for display, ensuring new metrics exist
+        display_cols = ['Project', 'R', 'MBE (MW)', 'RMSE (MW)']
+        extra_cols = ['R_Hourly', 'R_Daily']
+        for c in extra_cols:
+            if c in top_solar.columns:
+                display_cols.insert(2, c) # Insert after R
+
         st.dataframe(
-            top_solar[['Project', 'R', 'R_Hourly', 'R_Daily', 'MBE (MW)', 'RMSE (MW)']],
+            top_solar[display_cols],
             column_config={
                 "R": st.column_config.NumberColumn(
                     "R (15m)",
