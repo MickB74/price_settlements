@@ -18,7 +18,10 @@ def get_tmy_data(lat=32.4487, lon=-99.7331, force_refresh=False):
     
     if not force_refresh and os.path.exists(cache_file):
         try:
-            return pd.read_parquet(cache_file)
+            df = pd.read_parquet(cache_file)
+            if not df.empty:
+                return df
+            print(f"Cache file {cache_file} is empty. Re-fetching...")
         except Exception as e:
             print(f"Error reading cache: {e}")
             
@@ -151,10 +154,15 @@ def get_openmeteo_data(year, lat, lon):
     cache_file = os.path.join(CACHE_DIR, f"openmeteo_{year}_{lat}_{lon}.parquet")
     
     # Check if cache exists (and verify columns if old cache used 100m)
+    # Check if cache exists (and verify columns if old cache used 100m)
     if os.path.exists(cache_file):
-        df = pd.read_parquet(cache_file)
-        if 'Wind_Speed_10m_mps' in df.columns:
-            return df
+        try:
+            df = pd.read_parquet(cache_file)
+            if not df.empty and 'Wind_Speed_10m_mps' in df.columns:
+                return df
+            print(f"Cache file {cache_file} is empty or outdated. Re-fetching...")
+        except Exception:
+            pass # Ignore corrupt cache
         # If old cache (100m), ignore it and re-fetch
         
     url = "https://archive-api.open-meteo.com/v1/archive"
@@ -227,8 +235,16 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
         try:
             cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
             if os.path.exists(cache_file):
-                 df_data = pd.read_parquet(cache_file)
-            else:
+                 try:
+                     cached_df = pd.read_parquet(cache_file)
+                     if not cached_df.empty:
+                         df_data = cached_df
+                     else:
+                         print(f"Cache file {cache_file} is empty. Ignoring.")
+                 except Exception:
+                     pass # Ignore corrupt cache
+            
+            if df_data.empty: # Only fetch if cache miss or empty cache
                 url = "https://re.jrc.ec.europa.eu/api/seriescalc"
                 params = {
                     "lat": lat, "lon": lon, "startyear": year, "endyear": year,
