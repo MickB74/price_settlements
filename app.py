@@ -1833,8 +1833,9 @@ with tab_validation:
                     dt = datetime.fromtimestamp(mtime)
                     st.write(f"**File:** `{fpath}` | **Modified:** {dt.strftime('%H:%M:%S')}")
                     # Peek at file
-                    meta_df = pd.read_parquet(fpath, columns=['Time_Central'])
-                    st.write(f"**Range:** {meta_df['Time_Central'].min().date()} to **{meta_df['Time_Central'].max().date()}** ({len(meta_df):,} rows)")
+                    meta_df = pd.read_parquet(fpath, columns=['Time_Central', 'date'])
+                    date_range = f"{meta_df['date'].min()} to {meta_df['date'].max()}" if 'date' in meta_df.columns else f"{meta_df['Time_Central'].min().date()} to {meta_df['Time_Central'].max().date()}"
+                    st.write(f"**Range:** {date_range} ({len(meta_df):,} rows)")
                 else:
                     st.error("File not found!")
             except Exception as e:
