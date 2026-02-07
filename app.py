@@ -151,9 +151,9 @@ with tab_guide:
     st.subheader("📑 Tab Guide: What Each Tab Does")
     
     # Tab 1: Bill Validation
-    with st.expander("**✅ Bill Validation** — Validate Against Actual Generation Data", expanded=True):
+    with st.expander("**✅ Bill Validation** — Create Bills or Validate Generation (Beta)", expanded=True):
         st.markdown("""
-        **Purpose:** Compare your synthetic model to **actual ERCOT production data** from real wind/solar plants.
+        **Purpose:** Create settlement bills based on weather models or validate incoming bills against official market prices.
         
         **Use Cases:**
         - **Model validation**: How accurate is the weather-to-power conversion?
@@ -180,9 +180,9 @@ with tab_guide:
         """)
     
     # Tab 2: Scenario Analysis
-    with st.expander("**⚡ Scenario Analysis** — Create and Compare VPPA Scenarios"):
+    with st.expander("**⚡ Scenario Analysis** — Create & Compare Scenarios (Beta)"):
         st.markdown("""
-        **Purpose:** This is the main analysis workspace where you create and compare VPPA scenarios.
+        **Purpose:** Create and compare VPPA scenarios based on weather models.
         
         **Use Cases:**
         - **Compare strike prices**: How does a \$50/MWh VPPA compare to \$55/MWh?
