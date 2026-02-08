@@ -1311,6 +1311,30 @@ if st.session_state.scenarios:
                     progress_mc = st.progress(0)
                     status_text = st.empty()
                     
+                    # PRE-LOAD SHARED CACHES (CRITICAL: Load once for all scenarios to ensure consistency)
+                    # This ensures identical scenarios get identical Monte Carlo results
+                    status_text.text("Pre-loading price data (shared across all scenarios)...")
+                    price_cache = {}
+                    price_years = list(range(2020, 2026))  # 2020-2025 (exclude 2026 - incomplete YTD data)
+                    price_load_errors = []
+                    
+                    for price_year in price_years:
+                        try:
+                            price_cache[price_year] = load_market_data(price_year)
+                        except Exception as e:
+                            price_load_errors.append(f"{price_year}: {str(e)}")
+                            st.error(f"❌ Failed to load price data for {price_year}: {e}")
+                    
+                    if price_load_errors:
+                        st.error(f"❌ Failed to load {len(price_load_errors)} price years. Monte Carlo CANNOT run without price data!")
+                        st.code("\n".join(price_load_errors))
+                    else:
+                        st.success(f"✅ Pre-loaded all {len(price_cache)} price years (2020-2025)")
+                    
+                    # PRE-LOAD GENERATION PROFILES (scenario-specific, but cached across scenarios with same config)
+                    # Key: (tech, lat, lon, capacity_mw, turbine_type) -> {year: profile}
+                    gen_cache_by_config = {}
+                    
                     for scenario_idx, scenario in enumerate(st.session_state.scenarios):
                         status_text.text(f"Running Monte Carlo for: {scenario['name']}...")
                         
@@ -1328,68 +1352,58 @@ if st.session_state.scenarios:
                             'year': scenario['year']  # For reference
                         }
                         
-                        # PRE-LOAD all price data to avoid repeated disk reads (MAJOR SPEEDUP)
-                        status_text.text(f"Pre-loading price data for {scenario['name']}...")
-                        price_cache = {}
-                        price_years = list(range(2020, 2026))  # 2020-2025 (exclude 2026 - incomplete YTD data)
-                        price_load_errors = []
+                        # Create cache key for this scenario's generation config
+                        cache_key = (mc_config['tech'], mc_config['lat'], mc_config['lon'], 
+                                   mc_config['capacity_mw'], mc_config['turbine_type'])
                         
-                        for price_year in price_years:
-                            try:
-                                price_cache[price_year] = load_market_data(price_year)
-                            except Exception as e:
-                                price_load_errors.append(f"{price_year}: {str(e)}")
-                                st.error(f"❌ Failed to load price data for {price_year}: {e}")
-                        
-                        if price_load_errors:
-                            st.error(f"❌ Failed to load {len(price_load_errors)} price years. Monte Carlo CANNOT run without price data!")
-                            st.code("\n".join(price_load_errors))
-                            continue  # Skip this scenario
-                        else:
-                            st.success(f"✅ Pre-loaded all {len(price_cache)} price years (2020-2026)")
-                        
-                        # PRE-LOAD all generation profiles to avoid repeated API calls/computations (CRITICAL SPEEDUP)
-                        status_text.text(f"Pre-loading generation profiles for {scenario['name']}...")
-                        gen_cache = {}
-                        weather_years = list(range(2005, 2025))  # 2005-2024
-                        gen_load_errors = []
-                        
-                        for idx, wx_year in enumerate(weather_years):
-                            try:
-                                status_text.text(f"Loading generation profile {idx+1}/{len(weather_years)}: {wx_year}...")
-                                profile = fetch_tmy.get_profile_for_year(
-                                    year=wx_year,
-                                    tech=mc_config['tech'],
-                                    lat=mc_config['lat'],
-                                    lon=mc_config['lon'],
-                                    capacity_mw=mc_config['capacity_mw'],
-                                    force_tmy=False,
-                                    turbine_type=mc_config['turbine_type'],
-                                    efficiency=0.86
-                                )
-                                
-                                # CRITICAL: Validate the profile is not empty
-                                if profile is None:
-                                    error_msg = f"{wx_year}: Profile is None (fetch_tmy returned None)"
-                                    gen_load_errors.append(error_msg)
-                                    st.error(f"❌ {error_msg}")
-                                elif len(profile) == 0:
-                                    error_msg = f"{wx_year}: Profile is empty (0 rows). Check if weather data cache is corrupt or API failed."
-                                    gen_load_errors.append(error_msg)
-                                    st.error(f"❌ {error_msg}")
-                                else:
-                                    # Profile is valid, add to cache
-                                    gen_cache[wx_year] = profile
+                        # Check if we already loaded profiles for this config
+                        if cache_key not in gen_cache_by_config:
+                            status_text.text(f"Pre-loading generation profiles for {scenario['name']}...")
+                            gen_cache = {}
+                            weather_years = list(range(2005, 2025))  # 2005-2024
+                            gen_load_errors = []
+                            
+                            for idx, wx_year in enumerate(weather_years):
+                                try:
+                                    status_text.text(f"Loading generation profile {idx+1}/{len(weather_years)}: {wx_year}...")
+                                    profile = fetch_tmy.get_profile_for_year(
+                                        year=wx_year,
+                                        tech=mc_config['tech'],
+                                        lat=mc_config['lat'],
+                                        lon=mc_config['lon'],
+                                        capacity_mw=mc_config['capacity_mw'],
+                                        force_tmy=False,
+                                        turbine_type=mc_config['turbine_type'],
+                                        efficiency=0.86
+                                    )
                                     
-                            except Exception as e:
-                                gen_load_errors.append(f"{wx_year}: {str(e)}")
-                                st.warning(f"Could not load generation profile for {wx_year}: {e}")
-                        
-                        if gen_load_errors:
-                            st.warning(f"⚠️ Failed to load {len(gen_load_errors)} generation profiles. Monte Carlo will use on-demand fetching for those years (slower).")
-                            st.code("\n".join(gen_load_errors[:10]))  # Show first 10 errors
+                                    # CRITICAL: Validate the profile is not empty
+                                    if profile is None:
+                                        error_msg = f"{wx_year}: Profile is None (fetch_tmy returned None)"
+                                        gen_load_errors.append(error_msg)
+                                        st.error(f"❌ {error_msg}")
+                                    elif len(profile) == 0:
+                                        error_msg = f"{wx_year}: Profile is empty (0 rows). Check if weather data cache is corrupt or API failed."
+                                        gen_load_errors.append(error_msg)
+                                        st.error(f"❌ {error_msg}")
+                                    else:
+                                        # Profile is valid, add to cache
+                                        gen_cache[wx_year] = profile
+                                        
+                                except Exception as e:
+                                    gen_load_errors.append(f"{wx_year}: {str(e)}")
+                                    st.warning(f"Could not load generation profile for {wx_year}: {e}")
+                            
+                            if gen_load_errors:
+                                st.warning(f"⚠️ Failed to load {len(gen_load_errors)} generation profiles. Monte Carlo will use on-demand fetching for those years (slower).")
+                                st.code("\n".join(gen_load_errors[:10]))  # Show first 10 errors
+                            else:
+                                st.success(f"✅ Pre-loaded all {len(gen_cache)} generation profiles")
+                            
+                            gen_cache_by_config[cache_key] = gen_cache # Store for reuse
                         else:
-                            st.success(f"✅ Pre-loaded all {len(gen_cache)} generation profiles")
+                            gen_cache = gen_cache_by_config[cache_key] # Reuse existing cache
+                            st.info(f"✅ Reusing pre-loaded generation profiles for {scenario['name']}")
                         
                         # Define progress callback
                         def update_progress(current, total):
