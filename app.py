@@ -1331,7 +1331,7 @@ if st.session_state.scenarios:
                         # PRE-LOAD all price data to avoid repeated disk reads (MAJOR SPEEDUP)
                         status_text.text(f"Pre-loading price data for {scenario['name']}...")
                         price_cache = {}
-                        price_years = list(range(2020, 2027))  # 2020-2026
+                        price_years = list(range(2020, 2026))  # 2020-2025 (exclude 2026 - incomplete YTD data)
                         price_load_errors = []
                         
                         for price_year in price_years:
