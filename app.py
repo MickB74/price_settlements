@@ -1787,11 +1787,19 @@ if st.session_state.scenarios:
                 best_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmax()]
                 worst_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmin()]
         
+                best_amount = best_month_row['Settlement_Amount']
+                best_month = best_month_row['Month_Date'].strftime('%B %Y')
+                best_scenario = best_month_row['Scenario']
+                
+                worst_amount = worst_month_row['Settlement_Amount']
+                worst_month = worst_month_row['Month_Date'].strftime('%B %Y')
+                worst_scenario = worst_month_row['Scenario']
+        
                 st.markdown(
-                    f"**Insight:** The highest monthly return was **${best_month_row['Settlement_Amount']:,.0f}** "
-                    f"in **{best_month_row['Month_Date'].strftime('%B %Y')}** ({best_month_row['Scenario']}), "
-                    f"whereas the lowest was **${worst_month_row['Settlement_Amount']:,.0f}** "
-                    f"in **{worst_month_row['Month_Date'].strftime('%B %Y')}** ({worst_month_row['Scenario']})."
+                    f"**Insight:** The highest monthly return was **${best_amount:,.0f}** "
+                    f"in **{best_month}** ({best_scenario}), "
+                    f"whereas the lowest was **${worst_amount:,.0f}** "
+                    f"in **{worst_month}** ({worst_scenario})."
                 )
     
                 fig_settle = px.bar(
