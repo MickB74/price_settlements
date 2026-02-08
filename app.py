@@ -29,6 +29,7 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
 import sced_fetcher
 import json
+from utils.wind_calibration import get_offline_threshold_mw
 
 # --- Constants & Configuration ---
 HUB_LOCATIONS = {
@@ -610,7 +611,9 @@ def calculate_scenario(scenario, df_rtm):
                 capacity_mw=capacity_mw,
                 lat=lat,
                 lon=lon,
-                force_tmy=force_tmy
+                force_tmy=force_tmy,
+                hub_name=scenario.get('hub'),
+                apply_wind_calibration=(tech == "Wind"),
             )
             # Align profile with df_hub timestamps
             profile_central = profile_series.tz_convert('US/Central')
@@ -1374,7 +1377,9 @@ if st.session_state.scenarios:
                                         capacity_mw=mc_config['capacity_mw'],
                                         force_tmy=False,
                                         turbine_type=mc_config['turbine_type'],
-                                        efficiency=0.86
+                                        efficiency=0.86,
+                                        hub_name=mc_config.get('hub'),
+                                        apply_wind_calibration=(mc_config['tech'] == "Wind"),
                                     )
                                     
                                     # CRITICAL: Validate the profile is not empty
@@ -2319,7 +2324,9 @@ with tab_validation:
                                     capacity_mw=preview_capacity, 
                                     force_tmy=source["force_tmy"], 
                                     turbine_type=selected_turbine,
-                                    efficiency=0.86 # Standardize to 14% losses to match P50 calc
+                                    efficiency=0.86, # Standardize to 14% losses to match P50 calc
+                                    hub_name=val_hub,
+                                    apply_wind_calibration=(preview_tech == "Wind"),
                                 )
                                 
                                 if profile is not None:
@@ -3729,7 +3736,30 @@ with tab_performance:
                         target_years = sorted(list(set([d.year for d in pd.to_datetime(df_actual['Time'])])))
                         model_dfs = []
                         for yr in target_years:
-                            m_df = fetch_tmy.get_profile_for_year(yr, compare_tech, compare_cap, compare_lat, compare_lon, turbine_type=compare_turbine, efficiency=1.0)
+                            if compare_tech == "Wind":
+                                m_df = fetch_tmy.get_profile_for_year(
+                                    yr,
+                                    compare_tech,
+                                    compare_cap,
+                                    compare_lat,
+                                    compare_lon,
+                                    turbine_type=compare_turbine,
+                                    efficiency=1.0,
+                                    hub_name=asset_meta.get('hub') if asset_meta else None,
+                                    project_name=asset_meta.get('project_name') if asset_meta else None,
+                                    resource_id=final_resource_id,
+                                    apply_wind_calibration=True,
+                                )
+                            else:
+                                m_df = fetch_tmy.get_profile_for_year(
+                                    yr,
+                                    compare_tech,
+                                    compare_cap,
+                                    compare_lat,
+                                    compare_lon,
+                                    turbine_type=compare_turbine,
+                                    efficiency=1.0,
+                                )
                             model_dfs.append(m_df)
                         df_modeled_full = pd.concat(model_dfs).to_frame(name='Gen_MW')
                         
@@ -3765,7 +3795,9 @@ with tab_performance:
                             'resource_id': final_resource_id,
                             'start': start_bench,
                             'end': end_bench,
-                            'turbine': compare_turbine
+                            'turbine': compare_turbine,
+                            'tech': compare_tech,
+                            'capacity_mw': compare_cap,
                         }
                     else:
                         st.error(f"No generation data found for `{final_resource_id}` in this period. Note: Data stops ~60 days before today.")
@@ -3796,7 +3828,7 @@ with tab_performance:
             exclude_offline = st.checkbox(
                 "🛠️ Exclude Likely Offline Intervals",
                 value=True,
-                help="Exclude intervals where Actual is near zero but Model is high, consistent with benchmark scripts.",
+                help="Exclude intervals where Actual is near zero but Model is high, using a capacity-aware threshold.",
                 key=f"chk_offline_{res['resource_id']}"
             )
             
@@ -3813,11 +3845,15 @@ with tab_performance:
                 st.warning("⚠️ Base Point data missing for this period. Cannot apply economic dispatch.")
 
             if exclude_offline:
-                valid_mask = ~((df_comp['Actual_MW'] < 0.5) & (df_comp['Modeled_MW'] > 5.0))
+                offline_threshold = get_offline_threshold_mw(res.get('capacity_mw'))
+                valid_mask = ~((df_comp['Actual_MW'] < 0.5) & (df_comp['Modeled_MW'] > offline_threshold))
                 dropped = int((~valid_mask).sum())
                 df_comp = df_comp.loc[valid_mask].copy()
                 if dropped > 0:
-                    st.caption(f"Filtered {dropped:,} likely offline intervals for metric consistency with benchmark leaderboard.")
+                    st.caption(
+                        f"Filtered {dropped:,} likely offline intervals "
+                        f"(offline threshold {offline_threshold:.1f} MW)."
+                    )
 
             if df_comp.empty:
                 st.warning("No benchmark intervals available after filters. Adjust filters or date range.")

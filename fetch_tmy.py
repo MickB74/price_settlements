@@ -121,6 +121,7 @@ def get_actual_data(year, lat=32.4487, lon=-99.7331, force_refresh=False):
         return pd.DataFrame()
 
 from utils import power_curves
+from utils.wind_calibration import get_hub_shear_alpha, get_wind_bias_multiplier
 
 def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85, tracking=True, dc_ac_ratio=1.3):
     """
@@ -214,7 +215,22 @@ def get_openmeteo_2024_data(lat, lon):
     """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
     return get_openmeteo_data(2024, lat, lon)
 
-def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, force_tmy=False, turbine_type="GENERIC", hub_height=80, tracking=True, efficiency=0.85):
+def get_profile_for_year(
+    year,
+    tech,
+    capacity_mw,
+    lat=32.4487,
+    lon=-99.7331,
+    force_tmy=False,
+    turbine_type="GENERIC",
+    hub_height=80,
+    tracking=True,
+    efficiency=0.85,
+    hub_name=None,
+    project_name=None,
+    resource_id=None,
+    apply_wind_calibration=False,
+):
     """
     Generates a full year profile.
     Uses Actual data for 2005-2023 (PVGIS).
@@ -245,9 +261,20 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                         df = pd.read_parquet(pregen_file)
                         if not df.empty and len(df) > 30000:
                             # Scale to requested capacity
-                            series = pd.Series(df['gen_mw'].values * (capacity_mw / 100.0), 
-                                             index=pd.to_datetime(df['datetime'], utc=True),
-                                             name="Gen_MW")
+                            series = pd.Series(
+                                df['gen_mw'].values * (capacity_mw / 100.0),
+                                index=pd.to_datetime(df['datetime'], utc=True),
+                                name="Gen_MW"
+                            )
+                            if tech == "Wind" and apply_wind_calibration:
+                                bias_mult, _ = get_wind_bias_multiplier(
+                                    lat=lat,
+                                    lon=lon,
+                                    hub_name=hub_name,
+                                    project_name=project_name,
+                                    resource_id=resource_id,
+                                )
+                                series = (series * bias_mult).clip(lower=0.0, upper=capacity_mw)
                             print(f"✓ Using pregenerated profile: {hub_name}_{tech}_{year}")
                             return series
                     except Exception as e:
@@ -353,15 +380,19 @@ def get_profile_for_year(year, tech, capacity_mw, lat=32.4487, lon=-99.7331, for
                 else:
                     ws_10m = df_data['Wind_Speed_10m_mps']
                 
-                # Dynamic Scaling based on Longitude and Hub Height using power law
-                # v_h = v_10 * (h/10)^alpha
-                if lon > -96.0:
-                    alpha = 0.22  # Coastal/East (Houston) - matches previous ~1.6 factor at 80m
-                else:
-                    alpha = 0.32  # Inland/West, South, Panhandle - matches previous ~1.95 factor at 80m
-                
+                # Hub-aware scaling at hub height (power law: v_h = v_10 * (h/10)^alpha).
+                alpha, _ = get_hub_shear_alpha(lat=lat, lon=lon, hub_name=hub_name)
                 wind_speed_hub = ws_10m * ((hub_height / 10.0) ** alpha)
                 mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type) * efficiency
+                if apply_wind_calibration:
+                    bias_mult, _ = get_wind_bias_multiplier(
+                        lat=lat,
+                        lon=lon,
+                        hub_name=hub_name,
+                        project_name=project_name,
+                        resource_id=resource_id,
+                    )
+                    mw_hourly = (mw_hourly * bias_mult).clip(lower=0.0, upper=capacity_mw)
             else:
                 return pd.Series()
         else:

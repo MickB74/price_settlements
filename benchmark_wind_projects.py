@@ -6,8 +6,9 @@ from datetime import datetime
 import fetch_tmy
 import sced_fetcher
 from utils import power_curves
+from utils.wind_calibration import get_offline_threshold_mw
 
-def calculate_metrics(actual, modeled):
+def calculate_metrics(actual, modeled, capacity_mw=None):
     """Calculate R, MBE, and RMSE between actual and modeled series."""
     # Ensure they are the same length and aligned
     combined = pd.DataFrame({'actual': actual, 'modeled': modeled}).dropna()
@@ -19,12 +20,12 @@ def calculate_metrics(actual, modeled):
     
     # --- FILTER: Exclude "Offline" periods ---
     # User concern: "Offline actual project skewing numbers"
-    # If Actual is ~0 but Model predicts significant generation (>5 MW), assume outage/maintenance.
+    # If Actual is ~0 but Model predicts significant generation, assume outage/maintenance.
     # Exclude these from R/Bias calc as they reflect operational status, not model accuracy.
     
-    threshold_mw = 5.0 
+    threshold_mw = get_offline_threshold_mw(capacity_mw)
     # Mask: Keep only points where (Actual > 0) OR (Model is also low)
-    # i.e. Throw away points where (Actual == 0 AND Model > 5)
+    # i.e. Throw away points where (Actual == 0 AND Model > capacity-aware threshold)
     
     valid_mask = ~((actual < 0.5) & (modeled > threshold_mw))
     
@@ -117,15 +118,37 @@ def run_benchmark():
         
         # B. Model 1: Baseline (80m, Generic Curve)
         print(f"  Running Baseline Model (80m, Generic)...")
-        p24_base = fetch_tmy.get_profile_for_year(2024, "Wind", capacity, lat=lat, lon=lon, hub_height=80, turbine_type="GENERIC")
-        p25_base = fetch_tmy.get_profile_for_year(2025, "Wind", capacity, lat=lat, lon=lon, hub_height=80, turbine_type="GENERIC")
+        p24_base = fetch_tmy.get_profile_for_year(
+            2024, "Wind", capacity, lat=lat, lon=lon, hub_height=80, turbine_type="GENERIC", apply_wind_calibration=False
+        )
+        p25_base = fetch_tmy.get_profile_for_year(
+            2025, "Wind", capacity, lat=lat, lon=lon, hub_height=80, turbine_type="GENERIC", apply_wind_calibration=False
+        )
         prof_baseline = pd.concat([p24_base, p25_base])
         prof_baseline = prof_baseline[~prof_baseline.index.duplicated(keep='first')]
 
         # C. Model 2: Advanced (Actual Hub, Actual Curve)
         print(f"  Running Advanced Model ({actual_hub_h}m, {actual_tech_type})...")
-        p24_adv = fetch_tmy.get_profile_for_year(2024, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h, turbine_type=actual_tech_type)
-        p25_adv = fetch_tmy.get_profile_for_year(2025, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h, turbine_type=actual_tech_type)
+        p24_adv = fetch_tmy.get_profile_for_year(
+            2024,
+            "Wind",
+            capacity,
+            lat=lat,
+            lon=lon,
+            hub_height=actual_hub_h,
+            turbine_type=actual_tech_type,
+            apply_wind_calibration=False,
+        )
+        p25_adv = fetch_tmy.get_profile_for_year(
+            2025,
+            "Wind",
+            capacity,
+            lat=lat,
+            lon=lon,
+            hub_height=actual_hub_h,
+            turbine_type=actual_tech_type,
+            apply_wind_calibration=False,
+        )
         prof_advanced = pd.concat([p24_adv, p25_adv])
         prof_advanced = prof_advanced[~prof_advanced.index.duplicated(keep='first')]
         
@@ -148,8 +171,8 @@ def run_benchmark():
             print("  ! Warning: No Base Point data found. Using unconstrained physics model.")
 
         # E. Calculate Metrics
-        metrics_baseline = calculate_metrics(df_actual_full['Actual_MW'], baseline_aligned)
-        metrics_advanced = calculate_metrics(df_actual_full['Actual_MW'], advanced_aligned)
+        metrics_baseline = calculate_metrics(df_actual_full['Actual_MW'], baseline_aligned, capacity_mw=capacity)
+        metrics_advanced = calculate_metrics(df_actual_full['Actual_MW'], advanced_aligned, capacity_mw=capacity)
         
         results.append({
             'Project': p_name,
