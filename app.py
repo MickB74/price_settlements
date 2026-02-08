@@ -1408,6 +1408,7 @@ if st.session_state.scenarios:
                         # Define progress callback
                         def update_progress(current, total):
                             progress_mc.progress((scenario_idx + current/total) / len(st.session_state.scenarios))
+                            status_text.text(f"Running Monte Carlo iteration {current}/{total} for {scenario['name']}...")
                         
                         # Run Monte Carlo simulation with cached data
                         status_text.text(f"Running {n_iterations} Monte Carlo iterations...")
