@@ -110,6 +110,10 @@ def run_bootstrap_simulation(
                     turbine_type=turbine_type,
                     efficiency=0.86  # 14% losses
                 )
+                
+                # Cache for future iterations
+                if generation_profile_cache is not None and generation_profile is not None and not generation_profile.empty:
+                    generation_profile_cache[weather_year] = generation_profile
             
             if generation_profile is None or generation_profile.empty:
                 if i < 3:
@@ -155,9 +159,25 @@ def run_bootstrap_simulation(
                 print(f"Warning: No price data found for year {price_year}")
                 continue
             
-            # 7. Merge generation with prices
+            # 7. Filter Price Data by Hub and Merge
+            hub_name = scenario_config.get('hub')
+            
+            # Filter by hub if column exists (it should, from get_ercot_data)
+            if 'Location' in price_df.columns:
+                price_df_filtered = price_df[price_df['Location'] == hub_name]
+            elif 'Settlement Point Name' in price_df.columns:
+                price_df_filtered = price_df[price_df['Settlement Point Name'] == hub_name]
+            else:
+                # Fallback: assume pre-filtered or single hub
+                price_df_filtered = price_df
+                
+            if price_df_filtered.empty:
+                if i < 3:
+                     print(f"Warning: Hub {hub_name} not found in price data for {price_year}")
+                continue
+
             merged = pd.merge(
-                price_df,
+                price_df_filtered,
                 gen_df[['Time_Central', 'Gen_Energy_MWh', 'Gen_MW']],
                 on='Time_Central',
                 how='inner'
