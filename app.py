@@ -1061,7 +1061,7 @@ with st.sidebar:
         
         # Display map and capture clicks
         # Increased width to match main area
-        map_data = st_folium(m, height=400, width=None, returned_objects=["last_clicked"])
+        map_data = st_folium(m, height=400, width=None, returned_objects=["last_clicked"], key="scenario_map")
         
         if map_data and map_data.get("last_clicked"):
             clicked_lat = map_data["last_clicked"]["lat"]
