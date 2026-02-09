@@ -2565,19 +2565,19 @@ with tab_validation:
     # Map Logic continues above...
     
     # Custom Location Toggle and Manual Input (Moved after Map Logic)
-    val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
-
-    # Auto-populate defaults when switching to Custom mode
-    if val_use_custom_location and not st.session_state.get('prev_use_custom', False):
-        st.session_state.val_custom_lat = 31.55907
-        st.session_state.val_custom_lon = -96.88108
-        st.session_state.prev_use_custom = True
-        st.rerun()
-
-    st.session_state.prev_use_custom = val_use_custom_location
-    
     # --- Input Widgets (Visual Order: Top, Execution Order: Second) ---
     with input_container:
+        val_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Specify exact project coordinates", key="val_use_custom_location")
+    
+        # Auto-populate defaults when switching to Custom mode
+        if val_use_custom_location and not st.session_state.get('prev_use_custom', False):
+            st.session_state.val_custom_lat = 31.55907
+            st.session_state.val_custom_lon = -96.88108
+            st.session_state.prev_use_custom = True
+            st.rerun()
+    
+        st.session_state.prev_use_custom = val_use_custom_location
+
         col_lat, col_lon = st.columns(2)
         with col_lat:
             val_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, step=0.01, format="%.4f", key="val_custom_lat")
