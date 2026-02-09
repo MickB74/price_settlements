@@ -886,134 +886,7 @@ st.sidebar.header("Scenario Builder")
 
 # --- Solar/Wind (Batch) Mode ---
 # --- Map Location Picker (outside form) ---
-with st.sidebar.expander("🗺️ Pick Location on Map", expanded=False):
-    st.caption("Search by name or click on the map")
-    
-    # Location search box
-    search_query = st.text_input("🔍 Search location", placeholder="e.g., Abilene, TX or 79601", key="location_search")
-    
-    if search_query:
-        try:
-            geolocator = Nominatim(user_agent="vppa_estimator")
-            # Append Texas to improve search accuracy
-            if "texas" not in search_query.lower() and "tx" not in search_query.lower():
-                search_with_state = f"{search_query}, Texas, USA"
-            else:
-                search_with_state = f"{search_query}, USA"
-            
-            location = geolocator.geocode(search_with_state, timeout=5)
-            
-            if location:
-                # Clamp to Texas bounds
-                found_lat = max(25.5, min(36.5, location.latitude))
-                found_lon = max(-106.5, min(-93.5, location.longitude))
-                
-                st.session_state.map_lat = found_lat
-                st.session_state.map_lon = found_lon
-                st.session_state.sb_custom_lat = found_lat
-                st.session_state.sb_custom_lon = found_lon
-                # Auto-check the "Use Custom Location" checkbox
-                st.session_state.sb_use_custom_location = True
-                st.success(f"📍 Found: {location.address[:50]}...")
-                st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
-            else:
-                st.warning("Location not found. Try a different name.")
-        except GeocoderTimedOut:
-            st.warning("Search timed out. Try again.")
-        except Exception as e:
-            st.error(f"Search error: {str(e)[:50]}")
-    
-    
-    # Initialize map location from session state or defaults
-    if 'map_lat' not in st.session_state:
-        st.session_state.map_lat = 32.0
-    if 'map_lon' not in st.session_state:
-        st.session_state.map_lon = -100.0
-    
-    # Sync map with custom location inputs if manually entered
-    if 'sb_custom_lat' in st.session_state and 'sb_custom_lon' in st.session_state:
-        st.session_state.map_lat = st.session_state.sb_custom_lat
-        st.session_state.map_lon = st.session_state.sb_custom_lon
-    
-    # Create map centered on Texas/ERCOT region
-    m = folium.Map(
-        location=[31.0, -100.0],  # Center of Texas
-        zoom_start=6,
-        tiles="OpenStreetMap"
-    )
-    
-    # Add marker for current selected location
-    folium.Marker(
-        [st.session_state.map_lat, st.session_state.map_lon],
-        popup=f"Selected: {st.session_state.map_lat:.4f}, {st.session_state.map_lon:.4f}",
-        icon=folium.Icon(color='red', icon='info-sign')
-    ).add_to(m)
-    
-    # Add ERCOT hub markers for reference
-    hub_locations = {
-        "HB_NORTH": (32.3865, -96.8475),
-        "HB_SOUTH": (26.9070, -99.2715),
-        "HB_WEST": (32.4518, -100.5371),
-        "HB_HOUSTON": (29.3013, -94.7977),
-        "HB_PAN": (35.2220, -101.8313),
-    }
-    for hub, (lat, lon) in hub_locations.items():
-        folium.CircleMarker(
-            [lat, lon],
-            radius=8,
-            popup=hub,
-            color='blue',
-            fill=True,
-            fillOpacity=0.6
-        ).add_to(m)
-    
-    # Display map and capture clicks
-    map_data = st_folium(m, height=300, width=280, returned_objects=["last_clicked"])
-    
-    if map_data and map_data.get("last_clicked"):
-        clicked_lat = map_data["last_clicked"]["lat"]
-        clicked_lon = map_data["last_clicked"]["lng"]
-        # Clamp to Texas bounds to prevent errors in form inputs
-        clicked_lat = max(25.5, min(36.5, clicked_lat))
-        clicked_lon = max(-106.5, min(-93.5, clicked_lon))
-        st.session_state.map_lat = clicked_lat
-        st.session_state.map_lon = clicked_lon
-        # Also sync to form input keys so they update
-        st.session_state.sb_custom_lat = clicked_lat
-        st.session_state.sb_custom_lon = clicked_lon
-        # Auto-check the "Use Custom Location" checkbox
-        st.session_state.sb_use_custom_location = True
-        
-        # Calculate nearest hub on click and auto-select it
-        def calc_dist(lat1, lon1, lat2, lon2):
-            return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
-        click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
-        nearest = min(click_distances, key=click_distances.get)
-        st.session_state.sb_hubs = [nearest]
-        
-        st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
-    
-    # Calculate and suggest nearest hub
-    def calc_distance(lat1, lon1, lat2, lon2):
-        """Simple Euclidean distance (good enough for nearby points)"""
-        return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
-    
-    current_lat = st.session_state.get('map_lat', 32.0)
-    current_lon = st.session_state.get('map_lon', -100.0)
-    
-    distances = {}
-    for hub_name, (hub_lat, hub_lon) in hub_locations.items():
-        distances[hub_name] = calc_distance(current_lat, current_lon, hub_lat, hub_lon)
-    
-    nearest_hub = min(distances, key=distances.get)
-    nearest_dist_miles = distances[nearest_hub] * 69  # Rough lat/lon to miles
-    
-    st.info(f"💡 **Suggested Hub:** {nearest_hub} (~{nearest_dist_miles:.0f} mi)")
-    
-    # Store suggested hub in session state for form to use
-    st.session_state.suggested_hub = nearest_hub
-    
-    st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
+
 
 # --- Solar/Wind Batch Form ---
 # --- Solar/Wind Batch Form ---
@@ -1104,6 +977,137 @@ with st.sidebar:
     # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
     # Button Layout: 
     # Row 1: Add (Primary Action)
+    # --- Map Location Picker (Moved from sidebar) ---
+    with st.expander("🗺️ Pick Location on Map", expanded=False):
+        st.caption("Search by name or click on the map")
+        
+        # Location search box
+        search_query = st.text_input("🔍 Search location", placeholder="e.g., Abilene, TX or 79601", key="location_search")
+        
+        if search_query:
+            try:
+                geolocator = Nominatim(user_agent="vppa_estimator")
+                # Append Texas to improve search accuracy
+                if "texas" not in search_query.lower() and "tx" not in search_query.lower():
+                    search_with_state = f"{search_query}, Texas, USA"
+                else:
+                    search_with_state = f"{search_query}, USA"
+                
+                location = geolocator.geocode(search_with_state, timeout=5)
+                
+                if location:
+                    # Clamp to Texas bounds
+                    found_lat = max(25.5, min(36.5, location.latitude))
+                    found_lon = max(-106.5, min(-93.5, location.longitude))
+                    
+                    st.session_state.map_lat = found_lat
+                    st.session_state.map_lon = found_lon
+                    st.session_state.sb_custom_lat = found_lat
+                    st.session_state.sb_custom_lon = found_lon
+                    # Auto-check the "Use Custom Location" checkbox
+                    st.session_state.sb_use_custom_location = True
+                    st.success(f"📍 Found: {location.address[:50]}...")
+                    st.caption(f"Coordinates: {found_lat:.4f}, {found_lon:.4f}")
+                else:
+                    st.warning("Location not found. Try a different name.")
+            except GeocoderTimedOut:
+                st.warning("Search timed out. Try again.")
+            except Exception as e:
+                st.error(f"Search error: {str(e)[:50]}")
+        
+        
+        # Initialize map location from session state or defaults
+        if 'map_lat' not in st.session_state:
+            st.session_state.map_lat = 32.0
+        if 'map_lon' not in st.session_state:
+            st.session_state.map_lon = -100.0
+        
+        # Sync map with custom location inputs if manually entered
+        if 'sb_custom_lat' in st.session_state and 'sb_custom_lon' in st.session_state:
+            st.session_state.map_lat = st.session_state.sb_custom_lat
+            st.session_state.map_lon = st.session_state.sb_custom_lon
+        
+        # Create map centered on Texas/ERCOT region
+        m = folium.Map(
+            location=[31.0, -100.0],  # Center of Texas
+            zoom_start=6,
+            tiles="OpenStreetMap"
+        )
+        
+        # Add marker for current selected location
+        folium.Marker(
+            [st.session_state.map_lat, st.session_state.map_lon],
+            popup=f"Selected: {st.session_state.map_lat:.4f}, {st.session_state.map_lon:.4f}",
+            icon=folium.Icon(color='red', icon='info-sign')
+        ).add_to(m)
+        
+        # Add ERCOT hub markers for reference
+        hub_locations = {
+            "HB_NORTH": (32.3865, -96.8475),
+            "HB_SOUTH": (26.9070, -99.2715),
+            "HB_WEST": (32.4518, -100.5371),
+            "HB_HOUSTON": (29.3013, -94.7977),
+            "HB_PAN": (35.2220, -101.8313),
+        }
+        for hub, (lat, lon) in hub_locations.items():
+            folium.CircleMarker(
+                [lat, lon],
+                radius=8,
+                popup=hub,
+                color='blue',
+                fill=True,
+                fillOpacity=0.6
+            ).add_to(m)
+        
+        # Display map and capture clicks
+        # Increased width to match main area
+        map_data = st_folium(m, height=400, width=None, returned_objects=["last_clicked"])
+        
+        if map_data and map_data.get("last_clicked"):
+            clicked_lat = map_data["last_clicked"]["lat"]
+            clicked_lon = map_data["last_clicked"]["lng"]
+            # Clamp to Texas bounds to prevent errors in form inputs
+            clicked_lat = max(25.5, min(36.5, clicked_lat))
+            clicked_lon = max(-106.5, min(-93.5, clicked_lon))
+            st.session_state.map_lat = clicked_lat
+            st.session_state.map_lon = clicked_lon
+            # Also sync to form input keys so they update
+            st.session_state.sb_custom_lat = clicked_lat
+            st.session_state.sb_custom_lon = clicked_lon
+            # Auto-check the "Use Custom Location" checkbox
+            st.session_state.sb_use_custom_location = True
+            
+            # Calculate nearest hub on click and auto-select it
+            def calc_dist(lat1, lon1, lat2, lon2):
+                return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+            click_distances = {hub: calc_dist(clicked_lat, clicked_lon, lat, lon) for hub, (lat, lon) in hub_locations.items()}
+            nearest = min(click_distances, key=click_distances.get)
+            st.session_state.sb_hubs = [nearest]
+            
+            st.success(f"📍 Selected: {clicked_lat:.4f}, {clicked_lon:.4f}")
+        
+        # Calculate and suggest nearest hub (re-defined locally to ensure access)
+        def calc_distance(lat1, lon1, lat2, lon2):
+            """Simple Euclidean distance (good enough for nearby points)"""
+            return ((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2) ** 0.5
+        
+        current_lat = st.session_state.get('map_lat', 32.0)
+        current_lon = st.session_state.get('map_lon', -100.0)
+        
+        distances = {}
+        for hub_name, (hub_lat, hub_lon) in hub_locations.items():
+            distances[hub_name] = calc_distance(current_lat, current_lon, hub_lat, hub_lon)
+        
+        nearest_hub = min(distances, key=distances.get)
+        nearest_dist_miles = distances[nearest_hub] * 69  # Rough lat/lon to miles
+        
+        st.info(f"💡 **Suggested Hub:** {nearest_hub} (~{nearest_dist_miles:.0f} mi)")
+        
+        # Store suggested hub in session state for form to use
+        st.session_state.suggested_hub = nearest_hub
+        
+        st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
+
     # Row 1: Add (Primary Action)
     add_button = st.button("➕ Add Scenarios", type="primary", use_container_width=True)
     
