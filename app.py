@@ -915,57 +915,7 @@ with st.sidebar:
     if not s_years:
         st.warning("Please select at least one year.")
     
-    # Use suggested hub from map if available, otherwise default to HB_NORTH
-    default_hub = st.session_state.get('suggested_hub', 'HB_NORTH')
-    if default_hub not in common_hubs:
-        default_hub = 'HB_NORTH'
-    
-    s_hubs = st.multiselect("Hubs", common_hubs, default=[default_hub], key="sb_hubs")
-    if not s_hubs:
-        st.warning("Please select at least one hub.")
-    
-    # Duration Selection
-    use_specific_month = st.checkbox("Filter by specific month", key="sb_use_specific_month")
-    s_duration = "Specific Month" if use_specific_month else "Full Year"
-    
-    s_months = None
-    if use_specific_month:
-        all_months = [
-            "January", "February", "March", "April", "May", "June", 
-            "July", "August", "September", "October", "November", "December"
-        ]
-        s_months = st.multiselect("Months", all_months, default=["January"], key="sb_months")
-        if not s_months:
-            st.warning("Please select at least one month.")
-    
-    s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
-    s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
-    
-    # Revenue Share Option (configurable upside split)
-    s_revenue_share_pct = st.number_input(
-        "Buyer's Upside Share % (when SPP > PPA)", 
-        min_value=0, 
-        max_value=100, 
-        value=100, 
-        step=5,
-        help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA (buyer keeps all upside). 50% = 50/50 split with seller.",
-        key="sb_revenue_share_pct"
-    )
-    
-    # Curtailment Option
-    s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
-
-    # TMY Override
-    s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
-    
-
-    st.markdown("---")
-    
-    # Two buttons: Add (append) vs Clear & Run (reset)
-    # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
-    # Button Layout: 
-    # Row 1: Add (Primary Action)
-    # --- Map Location Picker (Moved from sidebar) ---
+    # --- Map Location Picker (Moved before Hub selection) ---
     with st.expander("🗺️ Pick Location on Map", expanded=False):
         st.caption("Search by name or click on the map")
         
@@ -1095,6 +1045,59 @@ with st.sidebar:
         st.session_state.suggested_hub = nearest_hub
         
         st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
+
+    # Use suggested hub from map if available, otherwise default to HB_NORTH
+    default_hub = st.session_state.get('suggested_hub', 'HB_NORTH')
+    if default_hub not in common_hubs:
+        default_hub = 'HB_NORTH'
+    
+    s_hubs = st.multiselect("Hubs", common_hubs, default=[default_hub], key="sb_hubs")
+    if not s_hubs:
+        st.warning("Please select at least one hub.")
+    
+    # Duration Selection
+    use_specific_month = st.checkbox("Filter by specific month", key="sb_use_specific_month")
+    s_duration = "Specific Month" if use_specific_month else "Full Year"
+    
+    s_months = None
+    if use_specific_month:
+        all_months = [
+            "January", "February", "March", "April", "May", "June", 
+            "July", "August", "September", "October", "November", "December"
+        ]
+        s_months = st.multiselect("Months", all_months, default=["January"], key="sb_months")
+        if not s_months:
+            st.warning("Please select at least one month.")
+    
+    s_capacity = st.number_input("Capacity (MW)", value=80.0, step=10.0, key="sb_capacity")
+    s_vppa_price = st.number_input("VPPA Price ($/MWh)", value=50.0, step=1.0, key="sb_vppa_price")
+    
+    # Revenue Share Option (configurable upside split)
+    s_revenue_share_pct = st.number_input(
+        "Buyer's Upside Share % (when SPP > PPA)", 
+        min_value=0, 
+        max_value=100, 
+        value=100, 
+        step=5,
+        help="% of upside buyer receives when SPP > PPA price. 100% = standard PPA (buyer keeps all upside). 50% = 50/50 split with seller.",
+        key="sb_revenue_share_pct"
+    )
+    
+    # Curtailment Option
+    s_no_curtailment = st.checkbox("Remove $0 floor (No Curtailment)", key="sb_no_curtailment")
+
+    # TMY Override
+    s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
+    
+
+    st.markdown("---")
+    
+    # Two buttons: Add (append) vs Clear & Run (reset)
+    # Three buttons: Add (append), Clear & Run (replace), Reset All (clear)
+    # Button Layout: 
+    # Row 1: Add (Primary Action)
+    # --- Map Location Picker (Moved from sidebar) ---
+
 
     # Custom Location Override (Moved after Map)
     s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Enter coordinates to override hub defaults.", key="sb_use_custom_location")
