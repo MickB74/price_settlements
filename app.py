@@ -958,19 +958,7 @@ with st.sidebar:
     # TMY Override
     s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
     
-    # Custom Location Override
-    s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Enter coordinates to override hub defaults.", key="sb_use_custom_location")
-    
-    s_custom_lat = None
-    s_custom_lon = None
-    if s_use_custom_location:
-        st.caption("💡 Enter your project's coordinates (or use map picker above)")
-        col_lat, col_lon = st.columns(2)
-        with col_lat:
-            s_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="sb_custom_lat")
-        with col_lon:
-            s_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="sb_custom_lon")
-    
+
     st.markdown("---")
     
     # Two buttons: Add (append) vs Clear & Run (reset)
@@ -1107,6 +1095,19 @@ with st.sidebar:
         st.session_state.suggested_hub = nearest_hub
         
         st.caption("🔵 Blue = Hub locations | 🔴 Red = Your selection")
+
+    # Custom Location Override (Moved after Map)
+    s_use_custom_location = st.checkbox("Use Custom Project Location", value=False, help="Enter coordinates to override hub defaults.", key="sb_use_custom_location")
+    
+    s_custom_lat = None
+    s_custom_lon = None
+    if s_use_custom_location:
+        st.caption("💡 Enter your project's coordinates (or use map picker above)")
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            s_custom_lat = st.number_input("Latitude", min_value=25.0, max_value=40.0, value=32.0, step=0.01, format="%.4f", key="sb_custom_lat")
+        with col_lon:
+            s_custom_lon = st.number_input("Longitude", min_value=-107.0, max_value=-93.0, value=-100.0, step=0.01, format="%.4f", key="sb_custom_lon")
 
     # Row 1: Add (Primary Action)
     add_button = st.button("➕ Add Scenarios", type="primary", use_container_width=True)
