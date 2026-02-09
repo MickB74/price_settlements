@@ -2273,7 +2273,7 @@ with tab_validation:
         c8, c9 = st.columns([3, 1])
         with c8:
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            curtail_neg = st.checkbox("Curtail when Price < $0", value=True, help="Set Generation to 0 MWh when Hub Price is negative")
+            curtail_neg = st.checkbox("Curtail when Price < $0", value=True, help="Set Generation to 0 MWh when Hub Price is negative", key="val_curtail_neg")
         with c9:
              if st.button("📈 Generate Preview", type="primary", use_container_width=True):
                 with st.spinner("Generating profile..."):
