@@ -2225,6 +2225,8 @@ with tab_validation:
             else:
                 lat = st.session_state.get('val_custom_lat', 32.0)
                 lon = st.session_state.get('val_custom_lon', -100.0)
+                st.session_state.val_map_lat = lat
+                st.session_state.val_map_lon = lon
         with c2:
             val_year = st.selectbox("Year", [2026, 2025, 2024, 2023, 2022, 2021, 2020], key="val_year")
         with c3:
