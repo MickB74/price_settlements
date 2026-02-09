@@ -2235,7 +2235,7 @@ with tab_validation:
             preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
         with c7:
             # Historical Weather Logic
-            weather_options = ["Compare All (Act/TMY/P50)", "Actual Weather", "Typical Year (TMY)", "Calculated P50 (Historical)"]
+            weather_options = ["Actual Weather", "Typical Year (TMY)"]
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
             
         # Optional Turbine Selector (if Wind)
