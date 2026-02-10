@@ -10,7 +10,9 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 
 ### 🛠️ Advanced Scenario Modeling (Beta)
 -   **Multi-Year Analysis:** Simulate settlements for 2020–2026 using actual historical prices.
--   **Granular Location Data:** Select from major ERCOT Hubs or pick any coordinate on an interactive map.
+-   **Granular Location Data:**
+    -   Select from major ERCOT Hubs.
+    -   **Interactive Map Picker:** Pick any coordinate on an interactive map (now integrated seamlessly into the main workflow) or specify exact Lat/Lon.
 -   **Weather-to-Power Profiles:**
     -   **2024–2026:** Uses **Actual Weather** (Open-Meteo ERA5 Reanalysis) for high-fidelity Solar & Wind profiles.
     -   **Historical (2005–2023):** Leverages **PVGIS** satellite-based solar and reanalysis wind data.
@@ -25,7 +27,14 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 ### 🏆 Bill Validation & Benchmarking (Beta)
 -   **Bill Creation:** Create settlement bills based on weather models or validate incoming bills against official market prices.
 -   **Curated Registry:** Select from **45+ major ERCOT assets** (Horse Hollow, Capricorn Ridge, Shaffer Wind, etc.) with pre-loaded metadata.
--   **Interactive Map Picker:** Click anywhere in Texas to auto-find the nearest settlement hub or specify exact coordinates via geocoding (search by town/ZIP).
+-   **Smart Defaults:**
+    -   **Auto-Curtailment:** "Curtail when Price < $0" is enabled by default to reflect rational economic behavior.
+    -   **Robust Location Handling:** Seamlessly switch between Hub-based and Custom Coordinate-based validation.
+-   **Advanced Weather Context:**
+    -   **Actual Weather:** Validate against what actually happened.
+    -   **Typical Year (TMY):** Compare against long-term averages.
+    -   **Calculated P50:** On-the-fly P50 calculation using 20 years of historical data.
+    -   **Compare All:** Side-by-side view of Actual vs. TMY vs. P50 performance.
 -   **SCED Validation:** Retrieve and compare model results against **real-world production data** from ERCOT's 60-day disclosure reports.
 -   **High Correlation:** Model achieves an $R > 0.85$ correlation for top-tier coastal wind assets.
 
