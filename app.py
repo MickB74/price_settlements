@@ -2348,6 +2348,7 @@ with tab_validation:
                                         merged['Settlement_$'] = merged['Gen_Energy_MWh'] * settle_p
                                         merged['Market_Revenue_$'] = merged['Gen_Energy_MWh'] * merged['SPP']
                                         merged['VPPA_Payment_$'] = merged['Gen_Energy_MWh'] * val_vppa_price
+                                        merged['VPPA_Price'] = val_vppa_price
                                         preview_results[source["name"]] = merged
                             
                             if preview_results:
@@ -2737,6 +2738,9 @@ with tab_validation:
         
         df_primary['Implied_REC_Cost_$/MWh'] = -(df_primary['Settlement_$'] / df_primary['Gen_Energy_MWh']).fillna(0)
         
+        if 'VPPA_Price' not in df_primary.columns:
+            df_primary['VPPA_Price'] = val_vppa_price
+        
         display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$/MWh', 'VPPA_Price']
         preview_df = df_primary[display_cols].head(100).copy()
         preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
@@ -2779,6 +2783,9 @@ with tab_validation:
                 # Ensure Implied REC Cost is calculated
                 if 'Implied_REC_Cost_$/MWh' not in df_scen.columns:
                      df_scen['Implied_REC_Cost_$/MWh'] = -(df_scen['Settlement_$'] / df_scen['Gen_Energy_MWh']).fillna(0)
+                
+                if 'VPPA_Price' not in df_scen.columns:
+                     df_scen['VPPA_Price'] = val_vppa_price
                 
                 # Select columns
                 # SPP is common, but might vary if we had different price years (unlikely here)
