@@ -170,5 +170,5 @@ For each iteration (default 1000), the model:
 | **Market Prices** | **GridStatus** | [gridstatus.io](https://www.gridstatus.io/) | Real-time ERCOT LZ/Hub prices (2020–2026). <br> *Note: 2026 data is YTD.* |
 | **Solar/Wind Weather (2024+)** | **Open-Meteo** | [open-meteo.com](https://open-meteo.com/) | ERA5 Reanalysis for GHI and 10m/80m Wind Speed. Used for high-fidelity recent simulation. |
 | **Historical Weather (2005-2023)** | **PVGIS** | [re.jrc.ec.europa.eu/pvgis](https://re.jrc.ec.europa.eu/pvgis/) | Long-term satellite data for historical backtesting and TMY profiles. |
-| **Asset Metadata** | **ERCOT** | [ercot.com](https://www.ercot.com/gridinfo/generation) | Resource Integration and Efficiency (RIER) reports for facility details. |
-| **Actual Gen Performance** | **ERCOT SCED** | [ercot.com](https://www.ercot.com/mktinfo/rtm) | 60-day delayed unit-level generation for model validation. |
+| **Asset Metadata** | **ERCOT** | [Resource Integration](https://www.ercot.com/gridinfo/generation) | Resource Integration and Efficiency (RIER) / GIS Reports for facility details. |
+| **Actual Gen Performance** | **ERCOT SCED** | [60-Day Disclosure](https://www.ercot.com/mktinfo/rtm) | 60-day delayed unit-level generation for model validation. <br> **Settlement Timeline:** Initial (T+10), Final (T+55), True-Up (T+180). |
