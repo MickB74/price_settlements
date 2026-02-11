@@ -1,0 +1,15 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    # Runs at 30 minute intervals every day
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  wake_up:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up App
+        run: |
+          curl -I https://price-settlements.streamlit.app/ || echo "Failed to ping"

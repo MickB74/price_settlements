@@ -64,8 +64,8 @@ if 'scenarios' not in st.session_state:
 
 
 # Create Tabs
-tab_guide, tab_story, tab_validation, tab_scenarios, tab_performance = st.tabs(
-    ["📖 Guide", "💼 Business Story", "Bill Validation", "Scenario Analysis", "Model Performance"]
+tab_guide, tab_validation, tab_scenarios, tab_performance = st.tabs(
+    ["📘 Guide & Business Context", "Bill Validation", "Scenario Analysis", "Model Performance"]
 )
 
 # --- Dynamic Sidebar Visibility ---
@@ -81,7 +81,8 @@ components.html(
             let hideSidebar = false;
             
             tabs.forEach(tab => {
-                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Business Story") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability")) && tab.getAttribute("aria-selected") === "true") {
+                // Check for Guide, Validation, Performance, etc.
+                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
@@ -101,19 +102,15 @@ components.html(
     width=0,
 )
 
-# --- Tab: Guide ---
+# --- Tab: Guide & Business Context ---
 with tab_guide:
-    st.header("📖 How to Use the VPPA Settlement Estimator")
-    st.markdown(
-        "Use this tab for onboarding and workflow guidance. "
-        "The full guide below is loaded from `docs/USER_GUIDE.md`."
-    )
-
+    st.header("📘 Guide & Business Context")
+    
+    # Load Guide Content from Markdown File
     guide_path = Path(__file__).resolve().parent / "docs" / "USER_GUIDE.md"
     if guide_path.exists():
         guide_text = guide_path.read_text(encoding="utf-8")
-        with st.expander("📘 Open Full User Guide", expanded=True):
-            st.markdown(guide_text)
+        st.markdown(guide_text)
         st.caption("Source of truth: docs/USER_GUIDE.md")
     else:
         st.warning("User guide file not found at docs/USER_GUIDE.md.")
@@ -171,64 +168,6 @@ with tab_guide:
     st.plotly_chart(flow_fig, use_container_width=True, config={"displayModeBar": False})
 
     st.success("Ready to start? Open the Scenario Analysis tab to build your first case.")
-
-# --- Tab: Business Story ---
-with tab_story:
-    st.header("💼 Business Story")
-    st.markdown("Use this page to explain why this analysis matters, what drives results, and which outputs to trust in decision-making.")
-
-    st.subheader("1) Decision This App Supports")
-    st.markdown(
-        """
-        This app helps teams decide whether a VPPA structure is commercially attractive and defendable before execution.
-
-        Typical decisions:
-        - Which technology and hub/location should be shortlisted.
-        - Which strike-price band is acceptable given downside risk.
-        - Whether model assumptions are credible enough for approval.
-        """
-    )
-
-    st.subheader("2) Inputs That Matter Most")
-    st.markdown(
-        """
-        1. **Hub/Location:** Largest driver of basis and weather profile behavior.
-        2. **Strike Price ($/MWh):** Directly controls settlement transfer magnitude.
-        3. **Technology (Solar/Wind):** Changes profile shape, seasonality, and capture outcomes.
-        4. **Year / Weather Case:** Determines market regime and weather sensitivity.
-        5. **Curtailment + Revenue Share assumptions:** Can materially change downside and upside asymmetry.
-        """
-    )
-
-    st.subheader("3) Outputs To Trust Most")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(
-            """
-            **Highest confidence outputs**
-            - Bill Validation correlation/error metrics for assets with strong data overlap.
-            - Relative scenario ranking when changing one variable at a time.
-            """
-        )
-    with c2:
-        st.markdown(
-            """
-            **Use with caution**
-            - Absolute dollar outcomes when multiple assumptions change at once.
-            - Single-month results used as annual proxies.
-            """
-        )
-
-    st.subheader("4) Minimum Sanity Checks Before Presenting")
-    st.markdown(
-        """
-        1. Validate at least one comparable asset in **Bill Validation**.
-        2. Show strike sensitivity (for example low/base/high).
-        3. Confirm the conclusion holds across at least two years or weather cases.
-        """
-    )
-
-    st.success("Narrative complete. Move to Scenario Analysis for commercial options and Bill Validation for credibility checks.")
 
 with tab_scenarios:
     st.header("Scenario Analysis")

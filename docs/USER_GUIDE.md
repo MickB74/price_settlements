@@ -11,11 +11,10 @@ This guide is for analysts, commercial teams, and project developers using the E
 3. Open the app in your browser.
 4. Review tabs in app order (left to right):
    - `Guide`
-   - `Business Story`
    - `Bill Validation`
    - `Scenario Analysis`
    - `Model Performance`
-5. Read `Business Story` for decision context.
+5. Read `Decision Story` below for decision context.
 6. Go to `Scenario Analysis`.
 7. In the sidebar, set:
    - Technology (`Solar` or `Wind`)
@@ -63,12 +62,11 @@ Sanity checks before presenting:
 ## 3. Which Tab Should I Use?
 
 App tab order is:
-`Guide` → `Business Story` → `Bill Validation` → `Scenario Analysis` → `Model Performance`
+`Guide` → `Bill Validation` → `Scenario Analysis` → `Model Performance`
 
 | Tab (in app order) | Use it for | Main output |
 |---|---|---|
-| `Guide` | Onboarding and workflow reference | Setup instructions and process map |
-| `Business Story` | Explain decision context and credibility standards | Decision framing, key inputs, trusted outputs |
+| `Guide` | Onboarding, context, and workflow reference | Setup instructions and decision framework |
 | `Bill Validation` | Check model estimates against actual asset generation | Model-vs-actual validation metrics |
 | `Scenario Analysis` | Build and compare deal cases | Financial comparison across scenarios |
 | `Model Performance` | Understand fleet-wide model quality | Regional and technology benchmark views |
@@ -128,18 +126,49 @@ flowchart TD
 | Validation | Resource ID, date range | Correlation, profile comparison charts |
 | Reporting | Scenario set and selected view | PDF settlement bill, Excel export |
 
-## 7. Common Mistakes to Avoid
+## 7. Monte Carlo Simulation (Beta)
+
+### Purpose
+Generate probabilistic outcomes by random sampling from historical weather (2005-2024) and price (2020-2026) data to understand the distribution of potential returns.
+
+### How it Works
+For each iteration (default 1000), the model:
+1. Randomly selects a historical weather year (e.g., 2014).
+2. Randomly selects a historical price year (e.g., 2022).
+3. Calculates the VPPA settlement for that combination.
+4. Aggregates results to show P10 (conservative), P50 (median), and P90 (optimistic) outcomes.
+
+### Usage
+1. Define your scenarios in the **Scenario Analysis** tab.
+2. Scroll down to the **Monte Carlo Simulation (Optional)** expander.
+3. Check **Enable Probabilistic Analysis**.
+4. Set the **Number of Iterations** (100 - 10,000).
+5. Click **Run Monte Carlo Analysis**.
+
+### Interpretation
+- **P50**: The median outcome; 50% of simulations were better, 50% were worse.
+- **P10**: A conservative estimate; 90% of simulations were better than this.
+- **P90**: An optimistic estimate; only 10% of simulations exceeded this.
+
+## 8. Common Mistakes to Avoid
 
 - Using the wrong hub for the asset location.
 - Comparing scenarios with different capacities when you only intended to test strike sensitivity.
 - Interpreting short date windows as full-year performance.
 - Skipping bill validation before presenting model-driven recommendations.
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 - App does not start:
   - Reinstall dependencies with `pip install -r requirements.txt`.
 - Charts look empty:
   - Confirm date range and scenario settings are valid.
-- Slow first run:
-  - Initial weather/data fetch and cache build can take longer than later runs.
+## 10. Data Sources
+
+| Data Type | Source | Link | Description |
+|---|---|---|---|
+| **Market Prices** | **GridStatus** | [gridstatus.io](https://www.gridstatus.io/) | Real-time ERCOT LZ/Hub prices (2020–2026). <br> *Note: 2026 data is YTD.* |
+| **Solar/Wind Weather (2024+)** | **Open-Meteo** | [open-meteo.com](https://open-meteo.com/) | ERA5 Reanalysis for GHI and 10m/80m Wind Speed. Used for high-fidelity recent simulation. |
+| **Historical Weather (2005-2023)** | **PVGIS** | [re.jrc.ec.europa.eu/pvgis](https://re.jrc.ec.europa.eu/pvgis/) | Long-term satellite data for historical backtesting and TMY profiles. |
+| **Asset Metadata** | **ERCOT** | [ercot.com](https://www.ercot.com/gridinfo/generation) | Resource Integration and Efficiency (RIER) reports for facility details. |
+| **Actual Gen Performance** | **ERCOT SCED** | [ercot.com](https://www.ercot.com/mktinfo/rtm) | 60-day delayed unit-level generation for model validation. |
