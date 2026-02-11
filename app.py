@@ -2737,7 +2737,7 @@ with tab_validation:
         
         df_primary['Implied_REC_Cost_$/MWh'] = -(df_primary['Settlement_$'] / df_primary['Gen_Energy_MWh']).fillna(0)
         
-        display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$/MWh']
+        display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$/MWh', 'VPPA_Price']
         preview_df = df_primary[display_cols].head(100).copy()
         preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
         
@@ -2748,7 +2748,8 @@ with tab_validation:
                 'SPP': '${:.2f}',
                 'Settlement_$/MWh': '${:.2f}',
                 'Settlement_$': '${:.2f}',
-                'Implied_REC_Cost_$/MWh': '${:.2f}'
+                'Implied_REC_Cost_$/MWh': '${:.2f}',
+                'VPPA_Price': '${:.2f}'
             }),
             use_container_width=True,
             height=400
@@ -2783,7 +2784,7 @@ with tab_validation:
                 # SPP is common, but might vary if we had different price years (unlikely here)
                 # We'll include SPP for each just in case, or skipping it if redundant? 
                 # Better to include it to be safe.
-                cols_to_use = base_cols + ['Implied_REC_Cost_$/MWh']
+                cols_to_use = base_cols + ['Implied_REC_Cost_$/MWh', 'VPPA_Price']
                 
                 temp_df = df_scen[cols_to_use].copy()
                 
