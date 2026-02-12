@@ -167,8 +167,29 @@ def render():
                     st.warning("Please select at least one month.")
                     return
 
+        # Maintenance Filter
+        with st.expander("🛠️ Operational Filters", expanded=False):
+            exclude_maintenance = st.checkbox(
+                "Exclude Potential Maintenance / Forced Outages", 
+                value=False,
+                help="Excludes periods where Modeled > 20 MW but Actual < 2 MW (likely downtime)."
+            )
+            
+        # Apply Maintenance Filter
+        if exclude_maintenance:
+            # Identifies periods where we *should* be generating but aren't
+            maintenance_mask = (df_filtered["Predicted"] > 20) & (df_filtered["Actual"] < 2)
+            n_excluded = maintenance_mask.sum()
+            hours_excluded = n_excluded * 0.25
+            
+            if n_excluded > 0:
+                st.info(f"ℹ️ Excluded {n_excluded} intervals ({hours_excluded:.1f} hours) of potential downtime.")
+                df_filtered = df_filtered[~maintenance_mask]
+            else:
+                st.info("No potential downtime events found in selected period.")
+
         if df_filtered.empty:
-            st.warning("No data in selected range.")
+            st.warning("No data remains after filtering.")
             return
 
         # --- Metrics ---
@@ -177,6 +198,9 @@ def render():
         rmse = np.sqrt(((df_filtered["Predicted"] - df_filtered["Actual"]) ** 2).mean())
         mbe = (df_filtered["Actual"] - df_filtered["Predicted"]).mean()
         
+        # Energy Totals (Scale to GWh)
+        # Note: If we exclude maintenance, "Actual" will naturally be higher relative to "Modeled" 
+        # than before because we removed the zeros.
         total_energy_act = df_filtered["Actual"].sum() * 0.25 / 1000 # GWh
         total_energy_pred = df_filtered["Predicted"].sum() * 0.25 / 1000 # GWh
         delta_energy = total_energy_act - total_energy_pred
