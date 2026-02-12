@@ -2385,20 +2385,28 @@ with tab_validation:
                                 use_sced = source.get("use_sced", False)
                                 
                                 if use_sced and val_source == "Specific Project":
-                                    # Fetch actual ERCOT SCED data
+                                    # Load actual ERCOT SCED data from cached parquet file
                                     resource_id = selected_project_meta.get('resource_name')
                                     if not resource_id:
                                         st.error(f"No resource_name found for {selected_project_name}")
                                         continue
                                     
-                                    start_date = f"{val_year}-01-01"
-                                    end_date = f"{val_year}-12-31"
+                                    # Try to load from pre-cached full-year parquet file
+                                    cache_file = f"sced_cache/{resource_id}_{val_year}_full.parquet"
                                     
-                                    st.info(f"Fetching actual SCED data for {resource_id}...")
-                                    df_sced = sced_fetcher.get_asset_period_data(resource_id, start_date, end_date)
+                                    if not os.path.exists(cache_file):
+                                        st.error(f"No cached SCED data found for {resource_id} in {val_year}. File: {cache_file}")
+                                        st.info("SCED data must be pre-downloaded. Run the download script first.")
+                                        continue
+                                    
+                                    try:
+                                        df_sced = pd.read_parquet(cache_file)
+                                    except Exception as e:
+                                        st.error(f"Error loading SCED data: {e}")
+                                        continue
                                     
                                     if df_sced.empty:
-                                        st.error(f"No SCED data found for {resource_id} in {val_year}")
+                                        st.error(f"SCED data file is empty for {resource_id} in {val_year}")
                                         continue
                                     
                                     # Scale SCED data to settlement MW
