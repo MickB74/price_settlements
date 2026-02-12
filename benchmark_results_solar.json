@@ -41,8 +41,8 @@
         "R":null,
         "R_Hourly":null,
         "R_Daily":null,
-        "MBE (MW)":0.0,
-        "RMSE (MW)":0.0
+        "MBE (MW)":0.3274016163,
+        "RMSE (MW)":0.9929425614
     },
     {
         "Project":"Bynum Solar Project",
@@ -50,8 +50,8 @@
         "R":null,
         "R_Hourly":null,
         "R_Daily":null,
-        "MBE (MW)":0.0,
-        "RMSE (MW)":0.0
+        "MBE (MW)":0.2848425165,
+        "RMSE (MW)":0.9089175494
     },
     {
         "Project":"Diver Solar",
@@ -92,38 +92,38 @@
     {
         "Project":"Dry Creek Solar I",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":0.9659112142,
-        "R_Hourly":0.9707167572,
-        "R_Daily":0.9894877332,
-        "MBE (MW)":-3.9180507668,
-        "RMSE (MW)":14.7978080658
+        "R":0.7825248354,
+        "R_Hourly":0.7892998127,
+        "R_Daily":0.7173360131,
+        "MBE (MW)":8.2578663333,
+        "RMSE (MW)":39.5683665378
     },
     {
         "Project":"Dry Creek Solar I",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":0.9826963671,
-        "R_Hourly":0.9857698496,
-        "R_Daily":0.9970400227,
-        "MBE (MW)":-1.8329047005,
-        "RMSE (MW)":9.7825949098
+        "R":0.8034169113,
+        "R_Hourly":0.8099744476,
+        "R_Daily":0.7382695801,
+        "MBE (MW)":17.7000822453,
+        "RMSE (MW)":47.3510889015
     },
     {
         "Project":"Eliza Solar",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":0.9449111817,
-        "R_Hourly":0.9505150231,
-        "R_Daily":0.9767792689,
-        "MBE (MW)":-7.18957748,
-        "RMSE (MW)":19.0378877693
+        "R":0.8871993404,
+        "R_Hourly":0.9006137545,
+        "R_Daily":0.9022288136,
+        "MBE (MW)":-2.253227079,
+        "RMSE (MW)":24.1802902396
     },
     {
         "Project":"Eliza Solar",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":0.9659753089,
-        "R_Hourly":0.9698490941,
-        "R_Daily":0.9833478985,
-        "MBE (MW)":-3.800862603,
-        "RMSE (MW)":13.9642541035
+        "R":0.892837839,
+        "R_Hourly":0.9058874498,
+        "R_Daily":0.8963932359,
+        "MBE (MW)":5.7359276439,
+        "RMSE (MW)":26.2044836954
     },
     {
         "Project":"Gaia Solar",
@@ -131,8 +131,8 @@
         "R":null,
         "R_Hourly":null,
         "R_Daily":null,
-        "MBE (MW)":0.0,
-        "RMSE (MW)":0.0
+        "MBE (MW)":0.2205221282,
+        "RMSE (MW)":0.8015134015
     },
     {
         "Project":"Gaia Solar",
@@ -140,8 +140,8 @@
         "R":null,
         "R_Hourly":null,
         "R_Daily":null,
-        "MBE (MW)":0.0,
-        "RMSE (MW)":0.0
+        "MBE (MW)":0.190032633,
+        "RMSE (MW)":0.7261211904
     },
     {
         "Project":"Greyhound Solar",
@@ -182,56 +182,56 @@
     {
         "Project":"Long Point Solar",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":null,
-        "R_Hourly":null,
-        "R_Daily":null,
-        "MBE (MW)":-0.1806891026,
-        "RMSE (MW)":1.9246107665
+        "R":0.9040750462,
+        "R_Hourly":0.8956466743,
+        "R_Daily":0.9999277018,
+        "MBE (MW)":0.8166490484,
+        "RMSE (MW)":6.1391488761
     },
     {
         "Project":"Long Point Solar",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":null,
-        "R_Hourly":null,
-        "R_Daily":null,
-        "MBE (MW)":-0.1806891026,
-        "RMSE (MW)":1.9246107665
+        "R":0.9067468092,
+        "R_Hourly":0.9001119948,
+        "R_Daily":0.9999525102,
+        "MBE (MW)":1.0913941517,
+        "RMSE (MW)":8.5761127797
     },
     {
         "Project":"Midpoint Solar",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":0.999547115,
-        "R_Hourly":0.9998585048,
-        "R_Daily":0.9999637217,
-        "MBE (MW)":-0.0014498423,
-        "RMSE (MW)":0.046797504
+        "R":0.8521854416,
+        "R_Hourly":0.8619836327,
+        "R_Daily":0.9332555227,
+        "MBE (MW)":2.2860735981,
+        "RMSE (MW)":9.0854731944
     },
     {
         "Project":"Midpoint Solar",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":0.9997911421,
-        "R_Hourly":0.999930064,
-        "R_Daily":0.9999737344,
-        "MBE (MW)":-0.0010933291,
-        "RMSE (MW)":0.0317864549
+        "R":0.8535874021,
+        "R_Hourly":0.8642209679,
+        "R_Daily":0.9333659556,
+        "MBE (MW)":3.0592587257,
+        "RMSE (MW)":12.4268194499
     },
     {
         "Project":"Norton Solar",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":0.9428519459,
-        "R_Hourly":0.9477476267,
-        "R_Daily":0.9927381248,
-        "MBE (MW)":-5.541641602,
-        "RMSE (MW)":15.7052595233
+        "R":0.7882681792,
+        "R_Hourly":0.7965452636,
+        "R_Daily":0.7277291219,
+        "MBE (MW)":-0.5569905838,
+        "RMSE (MW)":26.9650696551
     },
     {
         "Project":"Norton Solar",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":0.9637275067,
-        "R_Hourly":0.9672423624,
-        "R_Daily":0.9973946495,
-        "MBE (MW)":-3.2193132344,
-        "RMSE (MW)":11.5411188627
+        "R":0.8078389149,
+        "R_Hourly":0.8165399587,
+        "R_Daily":0.7515102375,
+        "MBE (MW)":5.6780547832,
+        "RMSE (MW)":29.0136752844
     },
     {
         "Project":"Roseland Solar",
@@ -308,37 +308,37 @@
     {
         "Project":"Nazareth Solar",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":0.9384933895,
-        "R_Hourly":0.9428098182,
-        "R_Daily":0.9650290767,
-        "MBE (MW)":-6.1686922381,
-        "RMSE (MW)":21.2175826204
+        "R":0.7686551595,
+        "R_Hourly":0.7729188496,
+        "R_Daily":0.7023077886,
+        "MBE (MW)":8.66256664,
+        "RMSE (MW)":45.5055782006
     },
     {
         "Project":"Nazareth Solar",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":0.9579188167,
-        "R_Hourly":0.9613891554,
-        "R_Daily":0.9784052992,
-        "MBE (MW)":-3.9775993218,
-        "RMSE (MW)":17.1315111277
+        "R":0.7824534518,
+        "R_Hourly":0.7862659815,
+        "R_Daily":0.721292686,
+        "MBE (MW)":18.4559330946,
+        "RMSE (MW)":52.8456989109
     },
     {
         "Project":"Pine Forest Solar",
         "Model":"Baseline (Fixed+Curtailed)",
-        "R":0.9721100104,
-        "R_Hourly":0.9758535356,
-        "R_Daily":0.9676021381,
-        "MBE (MW)":-3.0053853915,
-        "RMSE (MW)":14.3097439582
+        "R":0.8559797795,
+        "R_Hourly":0.8690912397,
+        "R_Daily":0.7467255404,
+        "MBE (MW)":23.7449778108,
+        "RMSE (MW)":56.4429588536
     },
     {
         "Project":"Pine Forest Solar",
         "Model":"Advanced (Tracking+Curtailed)",
-        "R":0.9829723644,
-        "R_Hourly":0.985967558,
-        "R_Daily":0.9806412965,
-        "MBE (MW)":-1.4357889568,
-        "RMSE (MW)":11.0339623483
+        "R":0.8627226396,
+        "R_Hourly":0.8757920523,
+        "R_Daily":0.7381099274,
+        "MBE (MW)":40.3387648664,
+        "RMSE (MW)":77.7009185089
     }
 ]
