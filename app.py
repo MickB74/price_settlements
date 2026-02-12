@@ -83,7 +83,7 @@ components.html(
             
             tabs.forEach(tab => {
                 // Check for Guide, Validation, Performance, etc.
-                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability")) && tab.getAttribute("aria-selected") === "true") {
+                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("Azure Sky Analysis")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
