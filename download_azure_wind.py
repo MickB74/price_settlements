@@ -12,7 +12,7 @@ import sced_fetcher
 # Parameters
 RESOURCES = ["VORTEX_WIND1", "VORTEX_WIND2", "VORTEX_WIND3", "VORTEX_WIND4"]
 AGG_NAME = "AZURE_SKY_WIND_AGG"
-YEARS = [2024, 2025]
+YEARS = [2024, 2025, 2026]
 WORKERS = 30
 
 def prefetch_daily_disclosure(date):

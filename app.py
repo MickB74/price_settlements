@@ -2391,11 +2391,13 @@ with tab_validation:
                                         st.error(f"No resource_name found for {selected_project_name}")
                                         continue
                                     
-                                    # Try to load from pre-cached full-year parquet file
-                                    cache_file = f"sced_cache/{resource_id}_{val_year}_full.parquet"
+                                    # Use absolute path to avoid working directory issues
+                                    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sced_cache")
+                                    cache_file = os.path.join(cache_dir, f"{resource_id}_{val_year}_full.parquet")
                                     
                                     if not os.path.exists(cache_file):
-                                        st.error(f"No cached SCED data found for {resource_id} in {val_year}. File: {cache_file}")
+                                        st.error(f"No cached SCED data found for {resource_id} in {val_year}.")
+                                        st.info(f"Looking for: {cache_file}")
                                         st.info("SCED data must be pre-downloaded. Run the download script first.")
                                         continue
                                     
