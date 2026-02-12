@@ -120,28 +120,52 @@ def render():
             return
 
         # --- Metrics ---
-        # Date Range Filter
+        # Date/Time Filter
         min_date = df.index.min().date()
         max_date = df.index.max().date()
         
-        with st.expander("📅 Filter Date Range", expanded=False):
-            date_range = st.date_input(
-                "Select Range",
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date,
-                key="azure_date_range"
-            )
+        with st.expander("📅 Filter Time Period", expanded=False):
+            filter_mode = st.radio("Filter Mode", ["Date Range", "Specific Months"], horizontal=True)
             
-        # Apply Filter
-        if len(date_range) == 2:
-            start_d, end_d = date_range
-            # Convert to localized timestamps to match index
-            # Index is Central Time
-            mask = (df.index.date >= start_d) & (df.index.date <= end_d)
-            df_filtered = df.loc[mask]
-        else:
-            df_filtered = df
+            df_filtered = df.copy()
+            
+            if filter_mode == "Date Range":
+                date_range = st.date_input(
+                    "Select Range",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date,
+                    key="azure_date_range"
+                )
+                if len(date_range) == 2:
+                    start_d, end_d = date_range
+                    mask = (df.index.date >= start_d) & (df.index.date <= end_d)
+                    df_filtered = df.loc[mask]
+                    period_label = f"{start_d} to {end_d}"
+                else:
+                    period_label = "Full Year"
+
+            else: # Specific Months
+                all_months = ["January", "February", "March", "April", "May", "June", 
+                              "July", "August", "September", "October", "November", "December"]
+                # Default to all available months in data
+                available_months = sorted(list(set(df.index.strftime('%B'))), key=lambda x: datetime.strptime(x, '%B').month)
+                
+                selected_months = st.multiselect(
+                    "Select Months", 
+                    all_months, 
+                    default=available_months,
+                    key="azure_month_picker"
+                )
+                
+                if selected_months:
+                    # Filter by month name
+                    mask = df.index.strftime('%B').isin(selected_months)
+                    df_filtered = df.loc[mask]
+                    period_label = ", ".join(selected_months[:3]) + ("..." if len(selected_months) > 3 else "")
+                else:
+                    st.warning("Please select at least one month.")
+                    return
 
         if df_filtered.empty:
             st.warning("No data in selected range.")
@@ -157,7 +181,7 @@ def render():
         total_energy_pred = df_filtered["Predicted"].sum() * 0.25 / 1000 # GWh
         delta_energy = total_energy_act - total_energy_pred
         
-        st.markdown(f"### Performance Metrics ({start_d} to {end_d})")
+        st.markdown(f"### Performance Metrics ({period_label})")
         
         m1, m2, m3, m4, m5 = st.columns(5)
         
