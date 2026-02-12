@@ -60,13 +60,17 @@ def load_data(year):
     CAPACITY = sum(t['count'] * t['capacity_mw'] for t in TURBINES) # ~330.65 MW
     
     with st.spinner(f"Generating modeled profile for {year}..."):
-        s_modeled = fetch_tmy.get_blended_profile_for_year(
-            year=year,
-            tech="Wind",
-            turbines=TURBINES,
-            lat=LAT,
-            lon=LON
-        )
+        try:
+            s_modeled = fetch_tmy.get_blended_profile_for_year(
+                year=year,
+                tech="Wind",
+                turbines=TURBINES,
+                lat=LAT,
+                lon=LON
+            )
+        except Exception as e:
+            st.error(f"Error generating modeled profile: {e}")
+            return pd.DataFrame()
         
     if s_modeled.empty:
         st.warning(f"No modeled data available for {year}.")
