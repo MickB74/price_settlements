@@ -2310,7 +2310,7 @@ with tab_validation:
                     try:
                         # Determine HUB for Price Logic
                         # If Generic, use val_hub. If Specific, use Project's Hub (map to ID).
-                        calc_hub = val_hub # Default
+                        calc_hub = st.session_state.get('val_hub', 'HB_NORTH')  # Default from session state
                         if val_source == "Specific Project" and selected_project_meta:
                             proj_hub_name = selected_project_meta.get('hub', 'North')
                             hub_map_rev = {"North": "HB_NORTH", "South": "HB_SOUTH", "West": "HB_WEST", "Houston": "HB_HOUSTON", "Pan": "HB_PAN"}
@@ -2892,7 +2892,7 @@ with tab_validation:
         st.download_button(
             label=f"📥 Download Full {primary_name} Intervals CSV",
             data=csv,
-            file_name=f"{p_tech}_{val_hub}_{val_year}_{primary_name}_intervals.csv",
+            file_name=f"{p_tech}_{st.session_state.get('val_hub', 'HUB')}_{val_year}_{primary_name}_intervals.csv",
             mime="text/csv",
             key="download_preview_csv"
         )
@@ -2936,14 +2936,14 @@ with tab_validation:
                 st.download_button(
                     label=f"📥 Download All Scenarios (Merged CSV)",
                     data=combined_csv,
-                    file_name=f"comparison_all_{val_hub}_{val_year}_intervals.csv",
+                    file_name=f"comparison_all_{st.session_state.get('val_hub', 'HUB')}_{val_year}_intervals.csv",
                     mime="text/csv",
                     key="download_all_scenarios_csv"
                 )
 
         # Download PDF Bill
         pdf_config = {
-            'hub': st.session_state.get('val_hub', val_hub),
+            'hub': st.session_state.get('val_hub', 'HB_NORTH'),
             'year': st.session_state.get('val_year', val_year),
             'tech': st.session_state.get('preview_tech', 'Unknown'),
             'capacity_mw': st.session_state.get('preview_capacity', 100.0),
@@ -3171,7 +3171,7 @@ with tab_validation:
                         st.error(f"Could not find market data for {val_year}.")
                     else:
                         # Filter for selected Hub
-                        df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                        df_market_hub = df_market[df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH')].copy()
                         
                         # Parse user's time column to get months
                         df_bill['Month'] = pd.to_datetime(df_bill[time_col]).dt.to_period('M')
@@ -3272,7 +3272,7 @@ with tab_validation:
                                 st.markdown(f"""
                                 **Calculation Method:**
                                 1. For each month, we used your reported generation (MWh)
-                                2. We calculated the average market price at **{val_hub}** for that month using ERCOT RTM data
+                                2. We calculated the average market price at **{st.session_state.get('val_hub', 'HB_NORTH')}** for that month using ERCOT RTM data
                                 3. **Revenue Share Applied:** {val_revenue_share}% of upside (when SPP > ${val_vppa_price:.2f})
                                    - Upside: (Avg SPP - Strike) × {val_revenue_share}% × Generation
                                    - Downside: Full exposure (100%) when SPP < Strike
@@ -3289,7 +3289,7 @@ with tab_validation:
                                 st.markdown(f"""
                                 **Calculation Method:**
                                 1. For each month, we used your reported generation (MWh)
-                                2. We calculated the average market price at **{val_hub}** for that month using ERCOT RTM data
+                                2. We calculated the average market price at **{st.session_state.get('val_hub', 'HB_NORTH')}** for that month using ERCOT RTM data
                                 3. Settlement = Generation × (Avg Market Price - Strike Price)
                                 
                                 **Formula:**
@@ -3309,7 +3309,7 @@ with tab_validation:
                         st.error(f"Could not find market data for {val_year}.")
                     else:
                         # Filter for selected Hub
-                        df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                        df_market_hub = df_market[df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH')].copy()
                         
                         # 4. Merge Data
                         # Ensure timezone alignment - Market data is in UTC (Time) and Central (Time_Central)
