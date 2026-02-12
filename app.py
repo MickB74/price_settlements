@@ -2411,13 +2411,14 @@ with tab_validation:
                                         st.error(f"SCED data file is empty for {resource_id} in {val_year}")
                                         continue
                                     
-                                    # Scale SCED data to settlement MW
+                                    # Prepare SCED data for scaling
+                                    # The common scaling block at L2470 will apply the scale_factor
                                     project_total = selected_project_meta.get('capacity_mw', 100.0)
                                     scale_factor = preview_capacity / project_total if project_total > 0 else 1.0
                                     
-                                    # Create profile from SCED data
+                                    # Create profile at full capacity scale
                                     df_sced = df_sced.set_index('Time')
-                                    profile = df_sced['Actual_MW'] * scale_factor
+                                    profile = df_sced['Actual_MW']
                                     profile.name = 'Gen_MW'
                                     
                                 else:
