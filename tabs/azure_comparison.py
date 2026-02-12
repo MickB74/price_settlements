@@ -120,27 +120,61 @@ def render():
             return
 
         # --- Metrics ---
-        col1, col2, col3, col4 = st.columns(4)
+        # Date Range Filter
+        min_date = df.index.min().date()
+        max_date = df.index.max().date()
         
-        correlation = df["Actual"].corr(df["Predicted"])
-        rmse = np.sqrt(((df["Predicted"] - df["Actual"]) ** 2).mean())
-        mbe = (df["Actual"] - df["Predicted"]).mean()
-        total_energy_act = df["Actual"].sum() * 0.25 / 1000 # GWh
-        total_energy_pred = df["Predicted"].sum() * 0.25 / 1000 # GWh
+        with st.expander("📅 Filter Date Range", expanded=False):
+            date_range = st.date_input(
+                "Select Range",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+                key="azure_date_range"
+            )
+            
+        # Apply Filter
+        if len(date_range) == 2:
+            start_d, end_d = date_range
+            # Convert to localized timestamps to match index
+            # Index is Central Time
+            mask = (df.index.date >= start_d) & (df.index.date <= end_d)
+            df_filtered = df.loc[mask]
+        else:
+            df_filtered = df
+
+        if df_filtered.empty:
+            st.warning("No data in selected range.")
+            return
+
+        # --- Metrics ---
+        # Calculate on FILTERED data
+        correlation = df_filtered["Actual"].corr(df_filtered["Predicted"])
+        rmse = np.sqrt(((df_filtered["Predicted"] - df_filtered["Actual"]) ** 2).mean())
+        mbe = (df_filtered["Actual"] - df_filtered["Predicted"]).mean()
         
-        col1.metric("Correlation (R)", f"{correlation:.3f}")
-        col2.metric("RMSE (MW)", f"{rmse:.1f}")
-        col3.metric("Bias (MBE)", f"{mbe:.1f} MW")
-        col4.metric("Energy Delta", f"{total_energy_act - total_energy_pred:.1f} GWh", 
-                    delta_color="normal" if abs(total_energy_act - total_energy_pred) < 10 else "inverse")
+        total_energy_act = df_filtered["Actual"].sum() * 0.25 / 1000 # GWh
+        total_energy_pred = df_filtered["Predicted"].sum() * 0.25 / 1000 # GWh
+        delta_energy = total_energy_act - total_energy_pred
+        
+        st.markdown(f"### Performance Metrics ({start_d} to {end_d})")
+        
+        m1, m2, m3, m4, m5 = st.columns(5)
+        
+        m1.metric("Actual Energy", f"{total_energy_act:,.1f} GWh")
+        m2.metric("Modeled Energy", f"{total_energy_pred:,.1f} GWh")
+        m3.metric("Net Delta", f"{delta_energy:,.1f} GWh", 
+                  delta_color="normal" if abs(delta_energy) < 10 else "inverse")
+        m4.metric("Correlation", f"{correlation:.3f}")
+        m5.metric("RMSE", f"{rmse:.1f} MW")
 
         # --- Time Series ---
         st.subheader("Generation Timeline")
         st.caption("Zoom in to inspect specific events. 'Actual' uses 15-min Time-Weighted Average.")
         
         fig_ts = go.Figure()
-        fig_ts.add_trace(go.Scatter(x=df.index, y=df["Predicted"], name="Modeled (Mixed Fleet)", line=dict(color='gray', width=1)))
-        fig_ts.add_trace(go.Scatter(x=df.index, y=df["Actual"], name="Actual (SCED TWA)", line=dict(color='#0068C9', width=1.5)))
+        fig_ts.add_trace(go.Scatter(x=df_filtered.index, y=df_filtered["Predicted"], name="Modeled (Mixed Fleet)", line=dict(color='gray', width=1)))
+        fig_ts.add_trace(go.Scatter(x=df_filtered.index, y=df_filtered["Actual"], name="Actual (SCED TWA)", line=dict(color='#0068C9', width=1.5)))
         
         fig_ts.update_layout(
             xaxis=dict(rangeslider=dict(visible=True), type="date"),
@@ -155,12 +189,14 @@ def render():
         st.subheader("Error Heatmap (Actual - Predicted)")
         st.caption("Red = Over-performance (Actual > Predicted), Blue = Under-performance (Actual < Predicted)")
         
-        df["Hour"] = df.index.hour
-        df["Date"] = df.index.date
+        # Need to re-create date/hour columns on filtered data
+        df_filtered = df_filtered.copy()
+        df_filtered["Hour"] = df_filtered.index.hour
+        df_filtered["Date"] = df_filtered.index.date
         
         # Pivot for Heatmap: Index=Date, Columns=Hour, Values=Residual
         # We aggregate by mean in case of duplicate hourly entries (shouldn't happen with 15-min, but safe for heatmap)
-        heatmap_data = df.groupby(["Date", "Hour"])["Residual"].mean().unstack()
+        heatmap_data = df_filtered.groupby(["Date", "Hour"])["Residual"].mean().unstack()
         
         fig_heat = px.imshow(
             heatmap_data, 
@@ -176,7 +212,7 @@ def render():
         
         with col_scat:
             fig_scat = px.scatter(
-                df, x="Predicted", y="Actual", 
+                df_filtered, x="Predicted", y="Actual", 
                 trendline="ols", 
                 opacity=0.3,
                 color_discrete_sequence=["#0068C9"],
@@ -187,10 +223,10 @@ def render():
             
         with col_stats:
             st.markdown("##### Quick Stats")
-            st.markdown(f"**Data Points:** {len(df):,}")
-            st.markdown(f"**Mean Actual:** {df['Actual'].mean():.1f} MW")
-            st.markdown(f"**Mean Modeled:** {df['Predicted'].mean():.1f} MW")
-            st.markdown(f"**Max Actual:** {df['Actual'].max():.1f} MW")
+            st.markdown(f"**Data Points:** {len(df_filtered):,}")
+            st.markdown(f"**Mean Actual:** {df_filtered['Actual'].mean():.1f} MW")
+            st.markdown(f"**Mean Modeled:** {df_filtered['Predicted'].mean():.1f} MW")
+            st.markdown(f"**Max Actual:** {df_filtered['Actual'].max():.1f} MW")
     
     except Exception as e:
         st.error(f"CRITICAL ERROR in Render: {e}")
