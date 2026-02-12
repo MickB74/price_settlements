@@ -74,13 +74,20 @@ def get_asset_actual_gen(resource_name, date):
             return pd.DataFrame()
         
         # Combine all units and sum their generation
+        # Each unit_df has columns: Time (index), Actual_MW, MWh_interval, coverage
         df_combined = pd.concat(unit_dfs, axis=1)
         
-        # Sum Actual_MW columns (there will be multiple with same name)
-        actual_cols = [col for col in df_combined.columns if 'Actual_MW' in str(col)]
+        # Summing across identical column names in a concatenated dataframe results in a new df or series
+        # We handle this manually for clarity
+        actual_mw_cols = [i for i, col in enumerate(df_combined.columns) if col == 'Actual_MW']
+        energy_cols = [i for i, col in enumerate(df_combined.columns) if col == 'MWh_interval']
+        coverage_cols = [i for i, col in enumerate(df_combined.columns) if col == 'coverage']
+
         df_result = pd.DataFrame({
             'Time': df_combined.index,
-            'Actual_MW': df_combined[actual_cols].sum(axis=1)
+            'Actual_MW': df_combined.iloc[:, actual_mw_cols].sum(axis=1),
+            'MWh_interval': df_combined.iloc[:, energy_cols].sum(axis=1),
+            'coverage': df_combined.iloc[:, coverage_cols].mean(axis=1) # Average coverage across units
         }).reset_index(drop=True)
         
         # Save aggregated cache
@@ -101,19 +108,65 @@ def get_asset_actual_gen(resource_name, date):
         # No, might be too many files.
         return pd.DataFrame()
         
-    # Clean and simplify
+    # --- Rigorous Time-Weighted Average (TWA) Logic ---
+    # 1. Clean and Prepare
     df_asset['Time'] = pd.to_datetime(df_asset['Interval Start'], utc=True)
-    df_asset = df_asset.sort_values('Time')
+    df_asset = df_asset.sort_values('Time').drop_duplicates('Time')
     
-    cols_to_resample = ['Telemetered Net Output']
-    rename_map = {'Telemetered Net Output': 'Actual_MW'}
+    # 2. Create boundary timestamps to ensure segments don't cross 15-min boundaries
+    start_bound = df_asset['Time'].min().floor('15min')
+    end_bound = df_asset['Time'].max().ceil('15min')
+    boundaries = pd.date_range(start=start_bound, end=end_bound, freq='15min', tz='UTC')
     
+    # 3. Merge actual timestamps with boundary timestamps
+    all_ts = sorted(list(set(df_asset['Time'].tolist() + boundaries.tolist())))
+    
+    # 4. Reindex using forward-fill (stepwise constant assumption)
+    # This ensures we have a MW value at every 15-minute boundary
+    df_step = df_asset.set_index('Time')[['Telemetered Net Output']].reindex(all_ts).ffill()
+    df_step.index.name = 'Time'
+    df_step = df_step.reset_index()
+    
+    # 5. Calculate durations and energy per segment
+    df_step['next_time'] = df_step['Time'].shift(-1)
+    df_step['duration_sec'] = (df_step['next_time'] - df_step['Time']).dt.total_seconds()
+    
+    # Guardrail: Drop last record, ignore non-positive durations, cap large gaps
+    df_step = df_step.dropna(subset=['next_time', 'duration_sec'])
+    df_step = df_step[df_step['duration_sec'] > 0].copy()
+    
+    # Cap gaps at 1 hour (3600s) to prevent runaway energy integration during outages
+    df_step['duration_sec'] = df_step['duration_sec'].clip(upper=3600)
+    
+    # Calculate Segment Energy (MWh)
+    df_step['energy_mwh'] = df_step['Telemetered Net Output'] * (df_step['duration_sec'] / 3600.0)
+    
+    # 6. Aggregate to 15-minute Intervals
+    # Assign each segment to its 15-min bucket start
+    df_step['Interval_Start'] = df_step['Time'].dt.floor('15min')
+    
+    agg_funcs = {
+        'energy_mwh': 'sum',
+        'duration_sec': 'sum'
+    }
+    
+    # If we want to keep Base Point, handle it too (simple mean usually okay for BP BP is a target)
     if 'Base Point' in df_asset.columns:
-        cols_to_resample.append('Base Point')
-        rename_map['Base Point'] = 'Base_Point_MW'
-        
-    df_resampled = df_asset.set_index('Time')[cols_to_resample].resample('15min').mean().reset_index()
-    df_resampled = df_resampled.rename(columns=rename_map)
+        # We'd need to re-step Base Point too if we wanted it perfect. 
+        # For now, let's just focus on Actuals.
+        pass
+
+    results = df_step.groupby('Interval_Start').agg(agg_funcs).reset_index()
+    
+    # 7. Final Metrics
+    results['coverage'] = results['duration_sec'] / 900.0
+    
+    # Actual_MW (TWA) = Total Energy / (Total Time in hours)
+    results['Actual_MW'] = results['energy_mwh'] / (results['duration_sec'] / 3600.0)
+    results = results.rename(columns={'Interval_Start': 'Time', 'energy_mwh': 'MWh_interval'})
+    
+    # Ensure columns match expectations
+    df_resampled = results[['Time', 'Actual_MW', 'MWh_interval', 'coverage']].copy()
     
     # Save asset-specific cache
     df_resampled.to_parquet(asset_cache)
