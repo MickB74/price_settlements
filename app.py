@@ -364,6 +364,11 @@ with tab_scenarios:
 
 
     
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_ercot_data(year, _mtime=None):
+    cache_file = f"ercot_rtm_{year}.parquet"
+
     # Try loading from local file first
     try:
         if pd.io.common.file_exists(cache_file):
