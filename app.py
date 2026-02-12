@@ -2262,7 +2262,7 @@ with tab_validation:
 
         with c7:
             # Historical Weather Logic
-            weather_options = ["Actual Weather", "Compare All (Act/TMY/P50)", "Typical Year (TMY)", "Calculated P50 (Historical)"]
+            weather_options = ["Actual Weather", "Actual SCED + Model", "Compare All (Act/TMY/P50)", "Typical Year (TMY)", "Calculated P50 (Historical)"]
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
             
         # Optional Turbine Selector (if Wind)
@@ -2358,6 +2358,12 @@ with tab_validation:
 
                             if preview_weather == "Actual Weather": 
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
+                            elif preview_weather == "Actual SCED + Model":
+                                # NEW: Fetch actual SCED data + generate model for comparison
+                                weather_opts = [
+                                    {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
+                                    {"name": "Model", "force_tmy": False, "year_override": None, "use_sced": False}
+                                ]
                             elif preview_weather == "Typical Year (TMY)": 
                                 weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
                             elif preview_weather == "Compare All (Act/TMY/P50)":
@@ -2375,34 +2381,64 @@ with tab_validation:
                                 if target_year is None:
                                     target_year = val_year
                                 
-                                # SCALING LOGIC FOR SPECIFIC PROJECTS
-                                # If Specific Project has 'turbines' list (Mixed Fleet), we must fetch the FULL profile first
-                                # then scale it down.
-                                fetch_capacity = preview_capacity
-                                scale_factor = 1.0
+                                # CHECK IF WE SHOULD USE ACTUAL SCED DATA
+                                use_sced = source.get("use_sced", False)
                                 
-                                turbines_config = None
-                                if val_source == "Specific Project" and 'turbines' in selected_project_meta:
-                                    turbines_config = selected_project_meta['turbines']
+                                if use_sced and val_source == "Specific Project":
+                                    # Fetch actual ERCOT SCED data
+                                    resource_id = selected_project_meta.get('resource_name')
+                                    if not resource_id:
+                                        st.error(f"No resource_name found for {selected_project_name}")
+                                        continue
+                                    
+                                    start_date = f"{val_year}-01-01"
+                                    end_date = f"{val_year}-12-31"
+                                    
+                                    st.info(f"Fetching actual SCED data for {resource_id}...")
+                                    df_sced = sced_fetcher.get_asset_period_data(resource_id, start_date, end_date)
+                                    
+                                    if df_sced.empty:
+                                        st.error(f"No SCED data found for {resource_id} in {val_year}")
+                                        continue
+                                    
+                                    # Scale SCED data to settlement MW
                                     project_total = selected_project_meta.get('capacity_mw', 100.0)
-                                    fetch_capacity = project_total # Fetch full plant
-                                    if project_total > 0:
-                                        scale_factor = preview_capacity / project_total
-                                
-                                profile = fetch_tmy.get_profile_for_year(
-                                    year=target_year, 
-                                    tech=preview_tech, 
-                                    lat=lat, 
-                                    lon=lon, 
-                                    capacity_mw=fetch_capacity, 
-                                    force_tmy=source["force_tmy"], 
-                                    turbine_type=selected_turbine, # Ignored if turbines_config is passed? No, check fetch_tmy
-                                    efficiency=0.86, 
-                                    hub_name=calc_hub,
-                                    apply_wind_calibration=(preview_tech == "Wind"),
-                                    turbines=turbines_config # Pass mixed fleet config if available
-                                )
-                                
+                                    scale_factor = preview_capacity / project_total if project_total \u003e 0 else 1.0
+                                    
+                                    # Create profile from SCED data
+                                    df_sced = df_sced.set_index('Time')
+                                    profile = df_sced['Actual_MW'] * scale_factor
+                                    profile.name = 'Gen_MW'
+                                    
+                                else:
+                                    # SCALING LOGIC FOR SPECIFIC PROJECTS
+                                    # If Specific Project has 'turbines' list (Mixed Fleet), we must fetch the FULL profile first
+                                    # then scale it down.
+                                    fetch_capacity = preview_capacity
+                                    scale_factor = 1.0
+                                    
+                                    turbines_config = None
+                                    if val_source == "Specific Project" and 'turbines' in selected_project_meta:
+                                        turbines_config = selected_project_meta['turbines']
+                                        project_total = selected_project_meta.get('capacity_mw', 100.0)
+                                        fetch_capacity = project_total # Fetch full plant
+                                        if project_total > 0:
+                                            scale_factor = preview_capacity / project_total
+                                    
+                                    profile = fetch_tmy.get_profile_for_year(
+                                        year=target_year, 
+                                        tech=preview_tech, 
+                                        lat=lat, 
+                                        lon=lon, 
+                                        capacity_mw=fetch_capacity, 
+                                        force_tmy=source["force_tmy"], 
+                                        turbine_type=selected_turbine, # Ignored if turbines_config is passed? No, check fetch_tmy
+                                        efficiency=0.86, 
+                                        hub_name=calc_hub,
+                                        apply_wind_calibration=(preview_tech == "Wind"),
+                                        turbines=turbines_config # Pass mixed fleet config if available
+                                    )
+                                    
                                 if profile is not None:
                                     # Apply Scale Factor if needed
                                     if scale_factor != 1.0:
