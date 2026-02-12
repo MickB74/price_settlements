@@ -245,8 +245,8 @@
         "county": "Hidalgo",
         "turbine_manuf": "GENERIC",
         "turbine_model": "GENERIC",
-        "hub_height_m": NaN,
-        "rotor_diameter_m": NaN
+        "hub_height_m": null,
+        "rotor_diameter_m": null
     },
     "Shaffer Wind": {
         "resource_name": "SHAFFER_UNIT1",
@@ -496,5 +496,16 @@
         "turbine_model": "AW116/3000",
         "rotor_diameter_m": 116.0,
         "turbine_manuf": "Acciona"
+    },
+    "Azure Sky Wind": {
+        "resource_name": "AZURE_SKY_WIND_AGG",
+        "tech": "Wind",
+        "capacity_mw": 350.0,
+        "hub": "North",
+        "lat": 33.1534,
+        "lon": -99.2847,
+        "county": "Throckmorton",
+        "turbine_model": "Nordex N149/4.X",
+        "hub_height_m": 105.0
     }
 }
