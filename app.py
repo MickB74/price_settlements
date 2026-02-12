@@ -2731,7 +2731,15 @@ with tab_validation:
         
         # 1. Comparison Table if multiple sources
         if len(preview_results) > 1:
-            st.markdown("### 📊 Contrast: Actual vs Typical (TMY)")
+            # Dynamic title based on weather source
+            if preview_weather == "Actual SCED + Model":
+                comparison_title = "### 📊 Contrast: Actual SCED vs Model"
+            elif preview_weather == "Compare All (Act/TMY/P50)":
+                comparison_title = "### 📊 Contrast: Actual vs TMY vs P50"
+            else:
+                comparison_title = "### 📊 Contrast: Actual vs Typical (TMY)"
+            
+            st.markdown(comparison_title)
             comp_summary = []
             for name, df in preview_results.items():
                 t_gen = df['Gen_Energy_MWh'].sum()
