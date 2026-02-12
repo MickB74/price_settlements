@@ -2140,6 +2140,19 @@ with tab_validation:
         if 'val_custom_lon' not in st.session_state: st.session_state.val_custom_lon = -100.0
         if 'val_hub' not in st.session_state: st.session_state.val_hub = "HB_NORTH"
 
+        # Load Asset Registry
+        @st.cache_data
+        def load_asset_registry():
+            try:
+                with open('ercot_assets.json', 'r') as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        
+        asset_registry = load_asset_registry()
+        # sort by name
+        asset_names = sorted(list(asset_registry.keys()))
+
         def update_loc_from_hub():
             # Only update if custom location is NOT checked (acting as a lock)
             if not st.session_state.get('val_use_custom_location', False):
@@ -2149,23 +2162,54 @@ with tab_validation:
                 st.session_state.val_map_lat = h_lat
                 st.session_state.val_map_lon = h_lon
 
-        # Row 1: Hub & Year & Price
-        # c1, c2, c3, c4 = st.columns(4)
-        c0, c1, c2, c3, c4 = st.columns([0.1, 1, 1, 1, 1]) # spacer
+        # Row 0: Project Source Selection
+        col_src, col_empty = st.columns([1, 3])
+        with col_src:
+            val_source = st.radio("Project Source", ["Generic / Hub", "Specific Project"], horizontal=True, key="val_source")
+
+        # Row 1: Hub/Project & Year & Price
+        c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
+        
+        selected_project_meta = {}
+        
         with c1:
-            # Hub Selection with Callback
-            val_hub = st.selectbox("Select Hub", list(HUB_LOCATIONS.keys()), key="val_hub", on_change=update_loc_from_hub)
-            # Update map location if not using custom location
-            if not st.session_state.get('val_use_custom_location', False):
-                lat, lon = HUB_LOCATIONS.get(val_hub, (32.0, -100.0))
-                # Update map session state if not custom
-                st.session_state.val_map_lat = lat
-                st.session_state.val_map_lon = lon
+            if val_source == "Generic / Hub":
+                # Hub Selection with Callback
+                val_hub = st.selectbox("Select Hub", list(HUB_LOCATIONS.keys()), key="val_hub", on_change=update_loc_from_hub)
+                # Update map location if not using custom location
+                if not st.session_state.get('val_use_custom_location', False):
+                    lat, lon = HUB_LOCATIONS.get(val_hub, (32.0, -100.0))
+                    # Update map session state if not custom
+                    st.session_state.val_map_lat = lat
+                    st.session_state.val_map_lon = lon
+                else:
+                    lat = st.session_state.get('val_custom_lat', 32.0)
+                    lon = st.session_state.get('val_custom_lon', -100.0)
+                    st.session_state.val_map_lat = lat
+                    st.session_state.val_map_lon = lon
             else:
-                lat = st.session_state.get('val_custom_lat', 32.0)
-                lon = st.session_state.get('val_custom_lon', -100.0)
-                st.session_state.val_map_lat = lat
-                st.session_state.val_map_lon = lon
+                # Specific Project Selection
+                val_project_name = st.selectbox("Select Project", asset_names, key="val_project_name")
+                if val_project_name in asset_registry:
+                    selected_project_meta = asset_registry[val_project_name]
+                    # Auto-update location for map
+                    st.session_state.val_map_lat = selected_project_meta.get('lat', 32.0)
+                    st.session_state.val_map_lon = selected_project_meta.get('lon', -100.0)
+                    st.session_state.val_custom_lat = selected_project_meta.get('lat', 32.0)
+                    st.session_state.val_custom_lon = selected_project_meta.get('lon', -100.0)
+                    
+                    # Auto-select Hub if possible (though we might want to keep it editable?)
+                    # Ideally, we key off the project's node or just its lat/lon for price? 
+                    # For now, let's keep Hub selectable or auto-select closest Hub.
+                    # Project meta has 'hub' field usually.
+                    proj_hub = selected_project_meta.get('hub')
+                    # Map friendly name to ID if needed
+                    hub_map_rev = {"North": "HB_NORTH", "South": "HB_SOUTH", "West": "HB_WEST", "Houston": "HB_HOUSTON", "Pan": "HB_PAN"}
+                    if proj_hub in hub_map_rev:
+                        # We can't easily programmatically set the selectbox value without rerunning...
+                        # Just display it for now.
+                        pass
+
         with c2:
             val_year = st.selectbox("Year", [2026, 2025, 2024, 2023, 2022, 2021, 2020], key="val_year")
         with c3:
@@ -2178,13 +2222,44 @@ with tab_validation:
                 key="val_revenue_share"
             )
 
-        # Row 2: Technology & Preview Settings + Action Button
         # Row 2: Technology & Preview Settings
         c5, c6, c7 = st.columns(3)
+        
+        # Determine defaults based on selection
+        default_tech = "Solar"
+        default_cap = 100.0
+        
+        if val_source == "Specific Project" and selected_project_meta:
+            default_tech = selected_project_meta.get('tech', 'Solar')
+            default_cap = selected_project_meta.get('capacity_mw', 100.0)
+
         with c5:
-            preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
+            if val_source == "Generic / Hub":
+                preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
+            else:
+                st.text_input("Technology", value=default_tech, disabled=True, key="preview_tech_display")
+                preview_tech = default_tech # Use project tech
+
         with c6:
-            preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
+            # Capacity / Settlement MW
+            if val_source == "Generic / Hub":
+                preview_capacity = st.number_input("Capacity (MW)", min_value=1.0, max_value=1000.0, value=100.0, step=10.0, key="preview_capacity")
+            else:
+                # Settlement MW Logic
+                project_total_cap = selected_project_meta.get('capacity_mw', 100.0)
+                preview_capacity = st.number_input(
+                    "Settlement Capacity (MW)", 
+                    min_value=0.1, 
+                    max_value=project_total_cap * 1.5, # Allow some buffer, but warn?
+                    value=min(68.0, project_total_cap), # Default to something reasonable or project cap
+                    step=1.0, 
+                    help=f"Enter the MW volume to settle. Project Total: {project_total_cap} MW",
+                    key="val_settlement_mw"
+                )
+                if preview_capacity != project_total_cap:
+                    pct = (preview_capacity / project_total_cap) * 100.0
+                    st.caption(f"Settling {pct:.1f}% of Project ({project_total_cap} MW)")
+
         with c7:
             # Historical Weather Logic
             weather_options = ["Actual Weather", "Compare All (Act/TMY/P50)", "Typical Year (TMY)", "Calculated P50 (Historical)"]
@@ -2192,7 +2267,8 @@ with tab_validation:
             
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
-        if preview_tech == "Wind":
+        # Only show turbine selector for Generic
+        if val_source == "Generic / Hub" and preview_tech == "Wind":
             turbine_opts = ["Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
             c_turb1, c_turb2, c_turb3 = st.columns(3)
             with c_turb1:
@@ -2207,6 +2283,21 @@ with tab_validation:
             }
             if val_turb_ui in turbine_override_map:
                 selected_turbine = turbine_override_map[val_turb_ui]
+        
+        elif val_source == "Specific Project" and preview_tech == "Wind":
+            # Just show what we're using
+            t_model = selected_project_meta.get('turbine_model', 'Generic')
+            if 'turbines' in selected_project_meta:
+                t_model = "Mixed Fleet (Blended Profile)"
+            
+            # We don't allow changing it for specific projects
+            # But we need to pass the correct turbine type to the backend if simple
+            # If complex (turbines list), fetch_tmy handles it.
+            # If simple, we need to map the model string to our internal types ENUM if possible, 
+            # OR fetch_tmy needs to be smart enough. 
+            # For now, let's just display it.
+            st.caption(f"Turbine: {t_model}")
+
 
         # Row 3: Actions
         c8, c9 = st.columns([3, 1])
@@ -2217,17 +2308,30 @@ with tab_validation:
              if st.button("📈 Generate Preview", type="primary", use_container_width=True):
                 with st.spinner("Generating profile..."):
                     try:
+                        # Determine HUB for Price Logic
+                        # If Generic, use val_hub. If Specific, use Project's Hub (map to ID).
+                        calc_hub = val_hub # Default
+                        if val_source == "Specific Project" and selected_project_meta:
+                            proj_hub_name = selected_project_meta.get('hub', 'North')
+                            hub_map_rev = {"North": "HB_NORTH", "South": "HB_SOUTH", "West": "HB_WEST", "Houston": "HB_HOUSTON", "Pan": "HB_PAN"}
+                            calc_hub = hub_map_rev.get(proj_hub_name, "HB_NORTH")
+                        
                         # Market Data
                         df_market = load_market_data(val_year)
                         if df_market.empty:
                             st.error(f"No market data for {val_year}")
                         else:
-                            df_market_hub = df_market[df_market['Location'] == val_hub].copy()
+                            df_market_hub = df_market[df_market['Location'] == calc_hub].copy()
                             
                             # Location handling
-                            # Location handling - Always use custom/synced lat/lon
-                            lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
-                            # Ensure Market Time is strictly UTC for merging to avoid "datetime64[ns] vs datetime64[ns, US/Central]" errors
+                            if val_source == "Specific Project":
+                                lat = selected_project_meta.get('lat', 32.0)
+                                lon = selected_project_meta.get('lon', -100.0)
+                            else:
+                                # Generic/Custom
+                                lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
+                            
+                            # Ensure Market Time is strictly UTC for merging
                             if df_market_hub['Time'].dt.tz is not None:
                                 df_market_hub['Time'] = df_market_hub['Time'].dt.tz_convert('UTC')
                             else:
@@ -2239,6 +2343,9 @@ with tab_validation:
                             # Pre-calculate P50 if needed
                             if preview_weather in ["Compare All (Act/TMY/P50)", "Calculated P50 (Historical)"]:
                                 st.toast("Simulating 20 years to find P50...")
+                                # TODO: Update historical analysis to support specific project turbines if needed
+                                # For now, it uses generic or simple turbine. 
+                                # If mixed fleet, this might be inaccurate.
                                 df_res, stats = variability_analysis.run_historical_analysis(
                                     lat=lat, lon=lon, tech=preview_tech, 
                                     capacity_mw=preview_capacity, losses_pct=14, 
@@ -2268,20 +2375,39 @@ with tab_validation:
                                 if target_year is None:
                                     target_year = val_year
                                 
+                                # SCALING LOGIC FOR SPECIFIC PROJECTS
+                                # If Specific Project has 'turbines' list (Mixed Fleet), we must fetch the FULL profile first
+                                # then scale it down.
+                                fetch_capacity = preview_capacity
+                                scale_factor = 1.0
+                                
+                                turbines_config = None
+                                if val_source == "Specific Project" and 'turbines' in selected_project_meta:
+                                    turbines_config = selected_project_meta['turbines']
+                                    project_total = selected_project_meta.get('capacity_mw', 100.0)
+                                    fetch_capacity = project_total # Fetch full plant
+                                    if project_total > 0:
+                                        scale_factor = preview_capacity / project_total
+                                
                                 profile = fetch_tmy.get_profile_for_year(
                                     year=target_year, 
                                     tech=preview_tech, 
                                     lat=lat, 
                                     lon=lon, 
-                                    capacity_mw=preview_capacity, 
+                                    capacity_mw=fetch_capacity, 
                                     force_tmy=source["force_tmy"], 
-                                    turbine_type=selected_turbine,
-                                    efficiency=0.86, # Standardize to 14% losses to match P50 calc
-                                    hub_name=val_hub,
+                                    turbine_type=selected_turbine, # Ignored if turbines_config is passed? No, check fetch_tmy
+                                    efficiency=0.86, 
+                                    hub_name=calc_hub,
                                     apply_wind_calibration=(preview_tech == "Wind"),
+                                    turbines=turbines_config # Pass mixed fleet config if available
                                 )
                                 
                                 if profile is not None:
+                                    # Apply Scale Factor if needed
+                                    if scale_factor != 1.0:
+                                        profile = profile * scale_factor
+                                    
                                     pc = profile.tz_convert('US/Central')
                                     
                                     # ROBUST ALIGNMENT LOGIC
@@ -3710,6 +3836,7 @@ with tab_performance:
                                     project_name=asset_meta.get('project_name') if asset_meta else None,
                                     resource_id=final_resource_id,
                                     apply_wind_calibration=True,
+                                    turbines=asset_meta.get('turbines') if asset_meta else None,
                                 )
                             else:
                                 m_df = fetch_tmy.get_profile_for_year(

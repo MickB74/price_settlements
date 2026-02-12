@@ -230,6 +230,7 @@ def get_profile_for_year(
     project_name=None,
     resource_id=None,
     apply_wind_calibration=False,
+    turbines=None, # List of turbine dicts for blended profile
 ):
     """
     Generates a full year profile.
@@ -238,6 +239,18 @@ def get_profile_for_year(
     Uses TMY data only when force_tmy=True.
     efficiency: System efficiency (default 0.85 for 15% losses). Pass 0.86 for 14% losses.
     """
+    
+    # Handle Blended Profile
+    if turbines and len(turbines) > 0 and tech == "Wind":
+        return get_blended_profile_for_year(
+            year=year,
+            tech=tech,
+            turbines=turbines,
+            lat=lat,
+            lon=lon,
+            hub_height=hub_height,
+            efficiency=efficiency
+        )
     
     # PRIORITY 1: Check for pregenerated profiles (committed to repo for Streamlit Cloud)
     # This eliminates API dependency issues
@@ -501,6 +514,60 @@ def get_profile_for_year(
         df_merged['mw'] = df_merged['mw'].interpolate(method='linear').ffill().bfill()
         
         return pd.Series(df_merged['mw'].values, index=target_index_utc, name="Gen_MW")
+
+
+def get_blended_profile_for_year(
+    year,
+    tech,
+    turbines, # List of dicts: [{'type': 'NORDEX_N149', 'count': 65, 'capacity_mw': 4.5}, ...]
+    lat=32.4487,
+    lon=-99.7331,
+    hub_height=80, # Default if not specified in turbine dict
+    efficiency=0.85
+):
+    """
+    Generates a blended profile for a project with multiple turbine types.
+    """
+    total_mw = sum(t['count'] * t['capacity_mw'] for t in turbines)
+    if total_mw == 0:
+        return pd.Series()
+        
+    blended_series = None
+    
+    for t in turbines:
+        t_type = t.get('type', "GENERIC")
+        count = t.get('count', 1)
+        cap_per_turbine = t.get('capacity_mw', 2.0)
+        sub_total_cap = count * cap_per_turbine
+        t_height = t.get('hub_height_m', hub_height)
+        
+        # Get profile for this sub-group
+        print(f"Generating sub-profile: {count}x {t_type} ({sub_total_cap:.1f} MW)")
+        s = get_profile_for_year(
+            year=year,
+            tech=tech,
+            capacity_mw=sub_total_cap,
+            lat=lat,
+            lon=lon,
+            hub_height=t_height,
+            turbine_type=t_type,
+            efficiency=efficiency,
+            force_tmy=False 
+        )
+        
+        if s.empty:
+            continue
+            
+        if blended_series is None:
+            blended_series = s
+        else:
+            blended_series = blended_series.add(s, fill_value=0)
+            
+    if blended_series is None:
+        return pd.Series()
+        
+    blended_series.name = "Gen_MW"
+    return blended_series
 
 
 if __name__ == "__main__":

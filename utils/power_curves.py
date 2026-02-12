@@ -20,6 +20,8 @@ def get_normalized_power(wind_speed_series, turbine_type="GENERIC"):
         return _curve_ge_3x(wind_speed_series)
     elif turbine_type == "NORDEX_N163":
         return _curve_nordex_n163(wind_speed_series)
+    elif turbine_type == "NORDEX_N149":
+        return _curve_nordex_n149(wind_speed_series)
     else:
         return _curve_generic_iec2(wind_speed_series)
 
@@ -158,3 +160,25 @@ def _curve_nordex_n163(v):
     power[mask_rated] = 1.0
     
     return power
+
+def _curve_nordex_n149(v):
+    """
+    Nordex N149/4.X-5.X.
+    Standard-to-Low wind machine, slightly higher specific power than N163.
+    Cut-in: 3.0 m/s
+    Rated: ~11.5 m/s
+    Cut-out: 25.0 m/s
+    """
+    power = np.zeros_like(v)
+    
+    # Cubic region
+    # ((v - 3) / (11.5 - 3)) ** 2.8
+    mask_ramp = (v >= 3.0) & (v < 11.5)
+    power[mask_ramp] = ((v[mask_ramp] - 3.0) / 8.5) ** 2.8
+    
+    mask_rated = (v >= 11.5) & (v < 25.0)
+    power[mask_rated] = 1.0
+    
+    return power
+    
+

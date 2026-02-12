@@ -505,7 +505,27 @@
         "lat": 33.1534,
         "lon": -99.2847,
         "county": "Throckmorton",
-        "turbine_model": "Nordex N149/4.X",
-        "hub_height_m": 105.0
+        "turbine_model": "Nordex N149/4.X (Mixed Fleet)",
+        "hub_height_m": 105.0,
+        "turbines": [
+            {
+                "type": "NORDEX_N149",
+                "count": 65,
+                "capacity_mw": 4.5,
+                "hub_height_m": 105.0
+            },
+            {
+                "type": "VESTAS_V163",
+                "count": 7,
+                "capacity_mw": 3.45,
+                "hub_height_m": 82.0
+            },
+            {
+                "type": "GENERIC",
+                "count": 7,
+                "capacity_mw": 2.0,
+                "hub_height_m": 80.0
+            }
+        ]
     }
 }

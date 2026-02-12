@@ -44,7 +44,7 @@ def main():
     # 1. Generate list of dates
     all_dates = []
     latest_disclosure = (datetime.now() - timedelta(days=60)).date()
-    START_DATE_LIMIT = datetime(2024, 10, 1).date()
+    START_DATE_LIMIT = datetime(2024, 1, 1).date()
     
     for year in YEARS:
         start_date = datetime(year, 1, 1).date()
