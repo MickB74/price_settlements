@@ -2403,7 +2403,7 @@ with tab_validation:
                                     
                                     # Scale SCED data to settlement MW
                                     project_total = selected_project_meta.get('capacity_mw', 100.0)
-                                    scale_factor = preview_capacity / project_total if project_total \u003e 0 else 1.0
+                                    scale_factor = preview_capacity / project_total if project_total > 0 else 1.0
                                     
                                     # Create profile from SCED data
                                     df_sced = df_sced.set_index('Time')
