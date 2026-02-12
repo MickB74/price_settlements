@@ -398,19 +398,19 @@
     {
         "Project":"Azure Sky Wind",
         "Model":"Baseline (Curtailed)",
-        "R":0.7235058949,
-        "R_Hourly":0.7366800679,
-        "R_Daily":0.9031533676,
-        "MBE (MW)":-29.2891499386,
-        "RMSE (MW)":87.627477825
+        "R":0.7235952382,
+        "R_Hourly":0.7367661492,
+        "R_Daily":0.903306486,
+        "MBE (MW)":-29.2740101519,
+        "RMSE (MW)":87.5985806167
     },
     {
         "Project":"Azure Sky Wind",
         "Model":"Advanced (Curtailed)",
-        "R":0.7149659837,
-        "R_Hourly":0.7290919286,
-        "R_Daily":0.8940497926,
-        "MBE (MW)":-9.5410655403,
-        "RMSE (MW)":86.9033069168
+        "R":0.7105072368,
+        "R_Hourly":0.7250671201,
+        "R_Daily":0.8879508155,
+        "MBE (MW)":-5.9501948352,
+        "RMSE (MW)":84.9450067543
     }
 ]

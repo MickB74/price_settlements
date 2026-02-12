@@ -127,28 +127,28 @@ def run_benchmark():
         prof_baseline = pd.concat([p24_base, p25_base])
         prof_baseline = prof_baseline[~prof_baseline.index.duplicated(keep='first')]
 
-        # C. Model 2: Advanced (Actual Hub, Actual Curve)
+        # C. Model 2: Advanced (Actual Hub, Actual Curve / Mixed Fleet)
         print(f"  Running Advanced Model ({actual_hub_h}m, {actual_tech_type})...")
-        p24_adv = fetch_tmy.get_profile_for_year(
-            2024,
-            "Wind",
-            capacity,
-            lat=lat,
-            lon=lon,
-            hub_height=actual_hub_h,
-            turbine_type=actual_tech_type,
-            apply_wind_calibration=False,
-        )
-        p25_adv = fetch_tmy.get_profile_for_year(
-            2025,
-            "Wind",
-            capacity,
-            lat=lat,
-            lon=lon,
-            hub_height=actual_hub_h,
-            turbine_type=actual_tech_type,
-            apply_wind_calibration=False,
-        )
+        
+        turbines = meta.get('turbines')
+        if turbines:
+            print(f"  ! Mixed fleet detected for {p_name}. Generating blended profile...")
+            p24_adv = fetch_tmy.get_blended_profile_for_year(
+                2024, "Wind", turbines, lat=lat, lon=lon
+            )
+            p25_adv = fetch_tmy.get_blended_profile_for_year(
+                2025, "Wind", turbines, lat=lat, lon=lon
+            )
+        else:
+            p24_adv = fetch_tmy.get_profile_for_year(
+                2024, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h,
+                turbine_type=actual_tech_type, apply_wind_calibration=False,
+            )
+            p25_adv = fetch_tmy.get_profile_for_year(
+                2025, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h,
+                turbine_type=actual_tech_type, apply_wind_calibration=False,
+            )
+            
         prof_advanced = pd.concat([p24_adv, p25_adv])
         prof_advanced = prof_advanced[~prof_advanced.index.duplicated(keep='first')]
         
