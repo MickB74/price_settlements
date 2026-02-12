@@ -2524,8 +2524,9 @@ with tab_validation:
     
         # Auto-populate defaults when switching to Custom mode
         if val_use_custom_location and not st.session_state.get('prev_use_custom', False):
-            st.session_state.val_custom_lat = 33.1787
-            st.session_state.val_custom_lon = -99.1776
+            # 33° 9' 12.2" N, 99° 17' 4.8" W
+            st.session_state.val_custom_lat = 33.1534
+            st.session_state.val_custom_lon = -99.2847
             st.session_state.prev_use_custom = True
             st.rerun()
     
