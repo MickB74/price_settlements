@@ -2439,8 +2439,18 @@ with tab_validation:
                                         if project_total > 0:
                                             scale_factor = preview_capacity / project_total
                                     
+                                    # Handle turbine type for SCED comparison
+                                    final_turbine = selected_turbine
+                                    if is_sced_comparison and val_source == "Specific Project":
+                                        # For Azure Sky specifically, or if turbine_model is Nordex
+                                        t_model_raw = selected_project_meta.get('turbine_model', '').upper()
+                                        if "NORDEX" in t_model_raw and "149" in t_model_raw:
+                                            final_turbine = "NORDEX_N149"
+                                        elif "AZURE" in selected_project_name.upper():
+                                            final_turbine = "NORDEX_N149"
+                                    
                                     # Show progress for potentially slow operations
-                                    model_desc = "simplified generic" if is_sced_comparison else source['name']
+                                    model_desc = f"Nordex N149" if (is_sced_comparison and final_turbine == "NORDEX_N149") else ("simplified generic" if is_sced_comparison else source['name'])
                                     with st.spinner(f"Generating {model_desc} profile ({fetch_capacity:.0f} MW)..."):
                                         profile = fetch_tmy.get_profile_for_year(
                                             year=target_year, 
@@ -2449,11 +2459,11 @@ with tab_validation:
                                             lon=lon, 
                                             capacity_mw=fetch_capacity, 
                                             force_tmy=source["force_tmy"], 
-                                            turbine_type=selected_turbine,
+                                            turbine_type=final_turbine,
                                             efficiency=0.86, 
                                             hub_name=calc_hub,
                                             apply_wind_calibration=(preview_tech == "Wind"),
-                                            turbines=turbines_config # None for SCED comparison = fast generic model
+                                            turbines=turbines_config # None for SCED comparison = fast single-turbine model
                                         )
                                     
                                 if profile is not None:
