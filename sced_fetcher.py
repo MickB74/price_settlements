@@ -45,6 +45,7 @@ def get_asset_actual_gen(resource_name, date):
     """
     Fetches actual 15-min generation for a specific resource.
     Uses daily disclosure cache for performance.
+    Special handling for AZURE_SKY_WIND_AGG: aggregates all 4 VORTEX units.
     """
     if isinstance(date, str):
         date = pd.Timestamp(date).date()
@@ -58,6 +59,33 @@ def get_asset_actual_gen(resource_name, date):
             return pd.read_parquet(asset_cache)
         except:
             pass
+    
+    # Special handling for Azure Sky Wind aggregation
+    if resource_name == "AZURE_SKY_WIND_AGG":
+        vortex_units = ["VORTEX_WIND1", "VORTEX_WIND2", "VORTEX_WIND3", "VORTEX_WIND4"]
+        unit_dfs = []
+        
+        for unit in vortex_units:
+            df_unit = get_asset_actual_gen(unit, date)
+            if not df_unit.empty:
+                unit_dfs.append(df_unit.set_index('Time'))
+        
+        if not unit_dfs:
+            return pd.DataFrame()
+        
+        # Combine all units and sum their generation
+        df_combined = pd.concat(unit_dfs, axis=1)
+        
+        # Sum Actual_MW columns (there will be multiple with same name)
+        actual_cols = [col for col in df_combined.columns if 'Actual_MW' in str(col)]
+        df_result = pd.DataFrame({
+            'Time': df_combined.index,
+            'Actual_MW': df_combined[actual_cols].sum(axis=1)
+        }).reset_index(drop=True)
+        
+        # Save aggregated cache
+        df_result.to_parquet(asset_cache)
+        return df_result
         
     # Otherwise, get the full daily disclosure (potentially from cache)
     df_full = get_daily_disclosure(date)
