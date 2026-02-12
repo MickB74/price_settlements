@@ -22,6 +22,9 @@ def load_data(year):
     
     # 1. Load Actuals (TWA)
     actual_file = os.path.join(CACHE_DIR, f"AZURE_SKY_WIND_AGG_{year}_full.parquet")
+    st.write(f"Debug: Looking for actual file at {actual_file}") # DEBUG
+    st.write(f"Debug: Exists? {os.path.exists(actual_file)}") # DEBUG
+    
     if not os.path.exists(actual_file):
         # Try to fetch on the fly if missing (e.g. for current year)
         if year == datetime.now().year:
@@ -102,21 +105,6 @@ def load_data(year):
     return df_merged
 
 def render():
-    st.header("Azure Sky Wind: Performance Analysis")
-    
-    year = st.selectbox("Select Year", [2024, 2025], index=0)
-    
-    df = load_data(year)
-    
-    if df.empty:
-        st.warning("No data found for selected year.")
-        return
-
-    # --- Metrics ---
-    col1, col2, col3, col4 = st.columns(4)
-    
-    correlation = df["Actual"].corr(df["Predicted"])
-    rmse = np.sqrt(((df["Predicted"] - df["Actual"]) ** 2).mean())
     mbe = (df["Actual"] - df["Predicted"]).mean()
     total_energy_act = df["Actual"].sum() * 0.25 / 1000 # GWh
     total_energy_pred = df["Predicted"].sum() * 0.25 / 1000 # GWh
@@ -190,3 +178,8 @@ def render():
         st.markdown(f"**Mean Actual:** {df['Actual'].mean():.1f} MW")
         st.markdown(f"**Mean Modeled:** {df['Predicted'].mean():.1f} MW")
         st.markdown(f"**Max Actual:** {df['Actual'].max():.1f} MW")
+    
+    except Exception as e:
+        st.error(f"CRITICAL ERROR in Render: {e}")
+        import traceback
+        st.code(traceback.format_exc())
