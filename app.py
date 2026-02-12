@@ -2420,32 +2420,39 @@ with tab_validation:
                                     
                                 else:
                                     # SCALING LOGIC FOR SPECIFIC PROJECTS
-                                    # If Specific Project has 'turbines' list (Mixed Fleet), we must fetch the FULL profile first
-                                    # then scale it down.
+                                    # For SCED comparison mode, use simplified model (skip complex mixed-fleet)
+                                    # to avoid slow generation times
                                     fetch_capacity = preview_capacity
                                     scale_factor = 1.0
-                                    
                                     turbines_config = None
-                                    if val_source == "Specific Project" and 'turbines' in selected_project_meta:
+                                    
+                                    # Check if this is SCED comparison mode
+                                    is_sced_comparison = preview_weather == "Actual SCED + Model"
+                                    
+                                    if val_source == "Specific Project" and 'turbines' in selected_project_meta and not is_sced_comparison:
+                                        # Use full mixed-fleet model only when NOT in SCED comparison mode
                                         turbines_config = selected_project_meta['turbines']
                                         project_total = selected_project_meta.get('capacity_mw', 100.0)
                                         fetch_capacity = project_total # Fetch full plant
                                         if project_total > 0:
                                             scale_factor = preview_capacity / project_total
                                     
-                                    profile = fetch_tmy.get_profile_for_year(
-                                        year=target_year, 
-                                        tech=preview_tech, 
-                                        lat=lat, 
-                                        lon=lon, 
-                                        capacity_mw=fetch_capacity, 
-                                        force_tmy=source["force_tmy"], 
-                                        turbine_type=selected_turbine, # Ignored if turbines_config is passed? No, check fetch_tmy
-                                        efficiency=0.86, 
-                                        hub_name=calc_hub,
-                                        apply_wind_calibration=(preview_tech == "Wind"),
-                                        turbines=turbines_config # Pass mixed fleet config if available
-                                    )
+                                    # Show progress for potentially slow operations
+                                    model_desc = "simplified generic" if is_sced_comparison else source['name']
+                                    with st.spinner(f"Generating {model_desc} profile ({fetch_capacity:.0f} MW)..."):
+                                        profile = fetch_tmy.get_profile_for_year(
+                                            year=target_year, 
+                                            tech=preview_tech, 
+                                            lat=lat, 
+                                            lon=lon, 
+                                            capacity_mw=fetch_capacity, 
+                                            force_tmy=source["force_tmy"], 
+                                            turbine_type=selected_turbine,
+                                            efficiency=0.86, 
+                                            hub_name=calc_hub,
+                                            apply_wind_calibration=(preview_tech == "Wind"),
+                                            turbines=turbines_config # None for SCED comparison = fast generic model
+                                        )
                                     
                                 if profile is not None:
                                     # Apply Scale Factor if needed
