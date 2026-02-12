@@ -2432,8 +2432,8 @@ with tab_validation:
                                     # Check if this is SCED comparison mode
                                     is_sced_comparison = preview_weather == "Actual SCED + Model"
                                     
-                                    if val_source == "Specific Project" and 'turbines' in selected_project_meta and not is_sced_comparison:
-                                        # Use full mixed-fleet model only when NOT in SCED comparison mode
+                                    if val_source == "Specific Project" and 'turbines' in selected_project_meta:
+                                        # Use full mixed-fleet model (now enabled even for SCED comparison for higher accuracy)
                                         turbines_config = selected_project_meta['turbines']
                                         project_total = selected_project_meta.get('capacity_mw', 100.0)
                                         fetch_capacity = project_total # Fetch full plant
@@ -2451,7 +2451,11 @@ with tab_validation:
                                             final_turbine = "NORDEX_N149"
                                     
                                     # Show progress for potentially slow operations
-                                    model_desc = f"Nordex N149" if (is_sced_comparison and final_turbine == "NORDEX_N149") else ("simplified generic" if is_sced_comparison else source['name'])
+                                    if turbines_config:
+                                        model_desc = "mixed fleet (blended)"
+                                    else:
+                                        model_desc = f"Nordex N149" if (is_sced_comparison and final_turbine == "NORDEX_N149") else ("simplified generic" if is_sced_comparison else source['name'])
+                                    
                                     with st.spinner(f"Generating {model_desc} profile ({fetch_capacity:.0f} MW)..."):
                                         profile = fetch_tmy.get_profile_for_year(
                                             year=target_year, 
@@ -2464,7 +2468,7 @@ with tab_validation:
                                             efficiency=0.86, 
                                             hub_name=calc_hub,
                                             apply_wind_calibration=(preview_tech == "Wind"),
-                                            turbines=turbines_config # None for SCED comparison = fast single-turbine model
+                                            turbines=turbines_config 
                                         )
                                     
                                 if profile is not None:
