@@ -30,6 +30,7 @@ from geopy.exc import GeocoderTimedOut
 import sced_fetcher
 import json
 from utils.wind_calibration import get_offline_threshold_mw
+import tabs.azure_comparison as tab_azure
 
 # --- Constants & Configuration ---
 HUB_LOCATIONS = {
@@ -64,8 +65,8 @@ if 'scenarios' not in st.session_state:
 
 
 # Create Tabs
-tab_guide, tab_validation, tab_scenarios, tab_performance = st.tabs(
-    ["📘 Guide & Business Context", "Bill Validation", "Scenario Analysis", "Model Performance"]
+tab_guide, tab_validation, tab_scenarios, tab_performance, tab_azure_sky = st.tabs(
+    ["📘 Guide & Business Context", "Bill Validation", "Scenario Analysis", "Model Performance", "Azure Sky Analysis"]
 )
 
 # --- Dynamic Sidebar Visibility ---
@@ -634,7 +635,6 @@ def generate_pdf_report(results, df_summary):
     )
     normal_style = styles['Normal']
     
-    # --- Cover Page ---
     elements.append(Spacer(1, 2*inch))
     elements.append(Paragraph("VPPA Settlement Analysis Report", title_style))
     elements.append(Spacer(1, 0.5*inch))
