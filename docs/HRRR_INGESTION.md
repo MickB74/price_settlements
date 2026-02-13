@@ -71,5 +71,8 @@ Advanced options:
 
 ## Notes
 
-- This does not replace Open-Meteo/PVGIS in the current model pipeline.
+- Streamlit now exposes wind dataset selectors with:
+  - `Open-Meteo / PVGIS (Default)`
+  - `NOAA HRRR (Cached)`
+- The HRRR option reads from local cache only and falls back to default weather if cache is missing.
 - Cache files are parquet plus metadata JSON sidecars.

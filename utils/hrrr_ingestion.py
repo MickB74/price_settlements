@@ -12,7 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -292,3 +292,115 @@ def resolve_point_from_selector(
         return float(p_lat), float(p_lon), str(project)
 
     raise ValueError("Provide either hub, project, or lat+lon.")
+
+
+def load_cached_hrrr_10m_wind_point(
+    start_time,
+    end_time,
+    lat: float,
+    lon: float,
+    forecast_hour: int = 0,
+    model: str = "hrrr",
+    product: str = "sfc",
+    repo_root: Optional[Path] = None,
+    max_distance_deg: float = 0.30,
+) -> Tuple[pd.DataFrame, Optional[Path]]:
+    """
+    Load cached HRRR 10m wind for a point/time range without fetching from network.
+
+    Returns:
+    - DataFrame with at least ['valid_time_utc', 'wind_speed_10m_mps'] when found
+    - One representative cache path used (or None)
+    """
+    start_utc = _to_utc_timestamp(start_time)
+    end_utc = _to_utc_timestamp(end_time)
+    if end_utc < start_utc:
+        raise ValueError("end_time must be >= start_time")
+
+    cache_root = _hrrr_cache_root(repo_root=repo_root)
+    if not cache_root.exists():
+        return pd.DataFrame(), None
+
+    lat = float(lat)
+    lon = float(lon)
+    candidates = []
+
+    for meta_path in cache_root.glob("*.json"):
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        cfg = meta.get("config", {})
+        if str(cfg.get("model", "")).lower() != str(model).lower():
+            continue
+        if str(cfg.get("product", "")).lower() != str(product).lower():
+            continue
+        if int(cfg.get("forecast_hour", -1)) != int(forecast_hour):
+            continue
+
+        try:
+            m_lat = float(meta.get("lat"))
+            m_lon = float(meta.get("lon"))
+        except Exception:
+            continue
+        dist = float(((m_lat - lat) ** 2 + (m_lon - lon) ** 2) ** 0.5)
+        if dist > float(max_distance_deg):
+            continue
+
+        try:
+            c_start = _to_utc_timestamp(meta.get("start_utc"))
+            c_end = _to_utc_timestamp(meta.get("end_utc"))
+        except Exception:
+            continue
+        if c_end < start_utc or c_start > end_utc:
+            continue
+
+        parquet_path = meta_path.with_suffix(".parquet")
+        if not parquet_path.exists():
+            continue
+
+        overlap_start = max(start_utc, c_start)
+        overlap_end = min(end_utc, c_end)
+        overlap_hours = max(0.0, (overlap_end - overlap_start).total_seconds() / 3600.0)
+        candidates.append((dist, -overlap_hours, c_start, parquet_path))
+
+    if not candidates:
+        return pd.DataFrame(), None
+
+    candidates.sort()
+    frames = []
+    used_path = None
+    for _, _, _, parquet_path in candidates:
+        try:
+            df = pd.read_parquet(parquet_path)
+        except Exception:
+            continue
+        if df.empty or "valid_time_utc" not in df.columns or "wind_speed_10m_mps" not in df.columns:
+            continue
+
+        local = df.copy()
+        local["valid_time_utc"] = pd.to_datetime(local["valid_time_utc"], utc=True, errors="coerce")
+        local = local.dropna(subset=["valid_time_utc", "wind_speed_10m_mps"])
+        local = local[
+            (local["valid_time_utc"] >= start_utc) &
+            (local["valid_time_utc"] <= end_utc)
+        ].copy()
+        if local.empty:
+            continue
+
+        frames.append(local)
+        if used_path is None:
+            used_path = parquet_path
+
+    if not frames:
+        return pd.DataFrame(), None
+
+    out = pd.concat(frames, ignore_index=True)
+    if "model_cycle_utc" in out.columns:
+        out["model_cycle_utc"] = pd.to_datetime(out["model_cycle_utc"], utc=True, errors="coerce")
+        out = out.sort_values(["valid_time_utc", "model_cycle_utc"])
+    else:
+        out = out.sort_values("valid_time_utc")
+    out = out.drop_duplicates(subset=["valid_time_utc"], keep="last").reset_index(drop=True)
+    return out, used_path

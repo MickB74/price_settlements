@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import numpy as np
 import os
 import json
+from pathlib import Path
 from datetime import datetime, date, timedelta
 import fetch_tmy
 import sced_fetcher
@@ -18,6 +19,10 @@ EXCLUDED_DATES = [
 
 AZURE_PROJECT_NAME = "Azure Sky Wind"
 AZURE_RESOURCE_ID = "AZURE_SKY_WIND_AGG"
+WIND_WEATHER_SOURCE_OPTIONS = {
+    "Open-Meteo / PVGIS (Default)": "AUTO",
+    "NOAA HRRR (Cached)": "NOAA_HRRR_CACHED",
+}
 AZURE_DEFAULT_CONFIG = {
     "lat": 33.1534,
     "lon": -99.2847,
@@ -66,7 +71,7 @@ def _index_diagnostics(idx: pd.Index):
         "duplicates": int(idx.duplicated().sum()),
     }
 
-def load_data(year):
+def load_data(year, wind_weather_source="AUTO", hrrr_forecast_hour=0):
     """
     Loads Actuals (TWA) and Modeled (Mixed Fleet) data for the given year.
     Returns a merged dataframe with 'Actual' and 'Predicted' columns.
@@ -124,6 +129,8 @@ def load_data(year):
                 resource_id=AZURE_RESOURCE_ID,
                 apply_wind_calibration=True,
                 turbines=turbines,
+                wind_weather_source=wind_weather_source,
+                hrrr_forecast_hour=int(hrrr_forecast_hour),
             )
         except Exception as e:
             st.error(f"Error generating modeled profile: {e}")
@@ -181,8 +188,42 @@ def render():
         
         year = st.selectbox("Select Year", [2024, 2025], index=0)
         st.write(f"Debug: Selected year {year}") # DEBUG
+
+        wind_source_label = st.selectbox(
+            "Wind Weather Dataset",
+            list(WIND_WEATHER_SOURCE_OPTIONS.keys()),
+            index=0,
+            key="azure_wind_weather_source_label",
+            help="NOAA HRRR uses cached files under data_cache/hrrr.",
+        )
+        wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(wind_source_label, "AUTO")
+        hrrr_forecast_hour = 0
+        if wind_weather_source == "NOAA_HRRR_CACHED":
+            hrrr_forecast_hour = int(
+                st.number_input(
+                    "HRRR Forecast Hour (fxx)",
+                    min_value=0,
+                    max_value=18,
+                    value=0,
+                    step=1,
+                    key="azure_hrrr_forecast_hour",
+                )
+            )
+            st.caption("Using cached NOAA HRRR from `data_cache/hrrr`.")
+            try:
+                hrrr_count = len(list((Path("data_cache") / "hrrr").glob("*.parquet")))
+            except Exception:
+                hrrr_count = 0
+            if hrrr_count == 0:
+                st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
+            else:
+                st.caption(f"Detected {hrrr_count} cached HRRR files.")
         
-        df, diag = load_data(year)
+        df, diag = load_data(
+            year,
+            wind_weather_source=wind_weather_source,
+            hrrr_forecast_hour=hrrr_forecast_hour,
+        )
         st.write(f"Debug: Data loaded. Rows: {len(df)}") # DEBUG
         if diag:
             st.write(

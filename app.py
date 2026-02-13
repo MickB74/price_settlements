@@ -57,6 +57,18 @@ HUB_LOCATIONS = {
     "HB_PAN": (35.2220, -101.8313),    # Amarillo, TX (Panhandle)
 }
 
+WIND_WEATHER_SOURCE_OPTIONS = {
+    "Open-Meteo / PVGIS (Default)": "AUTO",
+    "NOAA HRRR (Cached)": "NOAA_HRRR_CACHED",
+}
+
+
+def get_hrrr_cache_count():
+    try:
+        return len(list((Path("data_cache") / "hrrr").glob("*.parquet")))
+    except Exception:
+        return 0
+
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
 
@@ -568,6 +580,8 @@ def calculate_scenario(scenario, df_rtm):
                 force_tmy=force_tmy,
                 hub_name=scenario.get('hub'),
                 apply_wind_calibration=(tech == "Wind"),
+                wind_weather_source=scenario.get("wind_weather_source", "AUTO"),
+                hrrr_forecast_hour=int(scenario.get("hrrr_forecast_hour", 0)),
             )
             # Align profile with df_hub timestamps
             profile_central = profile_series.tz_convert('US/Central')
@@ -841,6 +855,8 @@ def reset_defaults():
     st.session_state.sb_vppa_price = 50.0
     st.session_state.sb_no_curtailment = False
     st.session_state.sb_force_tmy = False
+    st.session_state.sb_wind_weather_source_label = "Open-Meteo / PVGIS (Default)"
+    st.session_state.sb_hrrr_forecast_hour = 0
 
 
 # --- Solar/Wind Batch Form ---
@@ -1052,6 +1068,36 @@ with st.sidebar:
 
     # TMY Override
     s_force_tmy = st.checkbox("Force TMY Data (Override Actuals)", value=False, help="Use typical weather data.", key="sb_force_tmy")
+
+    s_wind_weather_source = "AUTO"
+    s_hrrr_forecast_hour = 0
+    if "Wind" in s_techs:
+        source_labels = list(WIND_WEATHER_SOURCE_OPTIONS.keys())
+        selected_label = st.selectbox(
+            "Wind Weather Dataset",
+            source_labels,
+            key="sb_wind_weather_source_label",
+            help="NOAA HRRR uses cached files under data_cache/hrrr (generated separately).",
+        )
+        s_wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(selected_label, "AUTO")
+        if s_wind_weather_source == "NOAA_HRRR_CACHED":
+            s_hrrr_forecast_hour = int(
+                st.number_input(
+                    "HRRR Forecast Hour (fxx)",
+                    min_value=0,
+                    max_value=18,
+                    value=int(st.session_state.get("sb_hrrr_forecast_hour", 0)),
+                    step=1,
+                    key="sb_hrrr_forecast_hour",
+                    help="0 = analysis/nowcast. 1..18 = lead forecast hour.",
+                )
+            )
+            st.caption("Using cached NOAA HRRR from `data_cache/hrrr` when available.")
+            hrrr_count = get_hrrr_cache_count()
+            if hrrr_count == 0:
+                st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
+            else:
+                st.caption(f"Detected {hrrr_count} cached HRRR files.")
     
 
     st.markdown("---")
@@ -1123,6 +1169,8 @@ with st.sidebar:
                             
                             if s_force_tmy:
                                 name += " [TMY]"
+                            if tech == "Wind" and s_wind_weather_source == "NOAA_HRRR_CACHED":
+                                name += f" [HRRR f{int(s_hrrr_forecast_hour):02d}]"
                             
                             if s_use_custom_location and s_custom_lat is not None:
                                 name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
@@ -1144,6 +1192,8 @@ with st.sidebar:
                                     "no_curtailment": s_no_curtailment,
                                     "revenue_share_pct": s_revenue_share_pct,
                                     "force_tmy": s_force_tmy,
+                                    "wind_weather_source": s_wind_weather_source if tech == "Wind" else "AUTO",
+                                    "hrrr_forecast_hour": int(s_hrrr_forecast_hour) if tech == "Wind" else 0,
                                     "custom_lat": s_custom_lat if s_use_custom_location else None,
                                     "custom_lon": s_custom_lon if s_use_custom_location else None,
                                     "custom_profile_path": None
@@ -1196,6 +1246,8 @@ with st.sidebar:
                             
                             if s_force_tmy:
                                 name += " [TMY]"
+                            if tech == "Wind" and s_wind_weather_source == "NOAA_HRRR_CACHED":
+                                name += f" [HRRR f{int(s_hrrr_forecast_hour):02d}]"
                             
                             if s_use_custom_location and s_custom_lat is not None:
                                 name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
@@ -1214,6 +1266,8 @@ with st.sidebar:
                                 "no_curtailment": s_no_curtailment,
                                 "revenue_share_pct": s_revenue_share_pct,
                                 "force_tmy": s_force_tmy,
+                                "wind_weather_source": s_wind_weather_source if tech == "Wind" else "AUTO",
+                                "hrrr_forecast_hour": int(s_hrrr_forecast_hour) if tech == "Wind" else 0,
                                 "custom_lat": s_custom_lat if s_use_custom_location else None,
                                 "custom_lon": s_custom_lon if s_use_custom_location else None,
                                 "custom_profile_path": None
@@ -2294,7 +2348,9 @@ with tab_validation:
             # Historical Weather Logic
             weather_options = ["Actual Weather", "Actual SCED + Model", "Compare All (Act/TMY/P50)", "Typical Year (TMY)", "Calculated P50 (Historical)"]
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
-            
+
+        preview_wind_weather_source = "AUTO"
+        preview_hrrr_forecast_hour = 0
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
         # Only show turbine selector for Generic
@@ -2327,6 +2383,35 @@ with tab_validation:
             # OR fetch_tmy needs to be smart enough. 
             # For now, let's just display it.
             st.caption(f"Turbine: {t_model}")
+
+        if preview_tech == "Wind":
+            w1, w2 = st.columns([2, 1])
+            with w1:
+                preview_wind_label = st.selectbox(
+                    "Wind Weather Dataset",
+                    list(WIND_WEATHER_SOURCE_OPTIONS.keys()),
+                    key="val_wind_weather_source_label",
+                    help="NOAA HRRR uses local cached files under data_cache/hrrr.",
+                )
+                preview_wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(preview_wind_label, "AUTO")
+            with w2:
+                if preview_wind_weather_source == "NOAA_HRRR_CACHED":
+                    preview_hrrr_forecast_hour = int(
+                        st.number_input(
+                            "HRRR fxx",
+                            min_value=0,
+                            max_value=18,
+                            value=0,
+                            step=1,
+                            key="val_hrrr_forecast_hour",
+                        )
+                    )
+                    st.caption("0=analysis")
+                    hrrr_count = get_hrrr_cache_count()
+                    if hrrr_count == 0:
+                        st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
+                    else:
+                        st.caption(f"Detected {hrrr_count} cached HRRR files.")
 
 
         # Row 3: Actions
@@ -2498,7 +2583,9 @@ with tab_validation:
                                             efficiency=0.86, 
                                             hub_name=calc_hub,
                                             apply_wind_calibration=(preview_tech == "Wind"),
-                                            turbines=turbines_config 
+                                            turbines=turbines_config,
+                                            wind_weather_source=preview_wind_weather_source,
+                                            hrrr_forecast_hour=preview_hrrr_forecast_hour,
                                         )
                                     
                                 if profile is not None:
@@ -3844,6 +3931,8 @@ with tab_performance:
 
         
         # --- Advanced Model Parameters ---
+        bench_wind_weather_source = "AUTO"
+        bench_hrrr_forecast_hour = 0
         with st.expander("🛠️ Advanced Model Parameters"):
             c_p1, c_p2, c_p3 = st.columns(3)
             # Losses
@@ -3865,6 +3954,34 @@ with tab_performance:
                 "Nordex N163 (5.X MW)": "NORDEX_N163"
             }
             final_turbine_req = turbine_override_map[selected_turb]
+
+            c_w1, c_w2 = st.columns([2, 1])
+            with c_w1:
+                bench_wind_label = st.selectbox(
+                    "Wind Weather Dataset",
+                    list(WIND_WEATHER_SOURCE_OPTIONS.keys()),
+                    key="bench_wind_weather_source_label",
+                    help="NOAA HRRR uses cached files under data_cache/hrrr.",
+                )
+                bench_wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(bench_wind_label, "AUTO")
+            with c_w2:
+                if bench_wind_weather_source == "NOAA_HRRR_CACHED":
+                    bench_hrrr_forecast_hour = int(
+                        st.number_input(
+                            "HRRR fxx",
+                            min_value=0,
+                            max_value=18,
+                            value=0,
+                            step=1,
+                            key="bench_hrrr_forecast_hour",
+                        )
+                    )
+                    st.caption("0=analysis")
+                    hrrr_count = get_hrrr_cache_count()
+                    if hrrr_count == 0:
+                        st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
+                    else:
+                        st.caption(f"Detected {hrrr_count} cached HRRR files.")
 
         if st.button(f"🚀 Fetch & Benchmark {final_resource_id}"):
             if start_bench > end_bench:
@@ -3953,6 +4070,8 @@ with tab_performance:
                                     resource_id=final_resource_id,
                                     apply_wind_calibration=True,
                                     turbines=asset_meta.get('turbines') if asset_meta else None,
+                                    wind_weather_source=bench_wind_weather_source,
+                                    hrrr_forecast_hour=bench_hrrr_forecast_hour,
                                 )
                             else:
                                 m_df = fetch_tmy.get_profile_for_year(

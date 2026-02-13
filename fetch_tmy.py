@@ -128,6 +128,11 @@ from utils.wind_calibration import (
     get_wind_bias_multiplier,
     load_wind_calibration_table,
 )
+try:
+    from utils.hrrr_ingestion import load_cached_hrrr_10m_wind_point
+except Exception:
+    def load_cached_hrrr_10m_wind_point(*args, **kwargs):
+        return pd.DataFrame(), None
 
 def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85, tracking=True, dc_ac_ratio=1.3):
     """
@@ -291,6 +296,8 @@ def get_profile_for_year(
     resource_id=None,
     apply_wind_calibration=False,
     turbines=None, # List of turbine dicts for blended profile
+    wind_weather_source="AUTO",
+    hrrr_forecast_hour=0,
 ):
     """
     Generates a full year profile.
@@ -313,7 +320,9 @@ def get_profile_for_year(
             lat=lat,
             lon=lon,
             hub_height=hub_height,
-            efficiency=efficiency
+            efficiency=efficiency,
+            wind_weather_source=wind_weather_source,
+            hrrr_forecast_hour=hrrr_forecast_hour,
         )
         if apply_wind_calibration and blended_series is not None and not blended_series.empty:
             blended_series = apply_wind_postprocess(
@@ -382,9 +391,43 @@ def get_profile_for_year(
     # If forced TMY, disable all actuals
     use_pvgis_actual = (2005 <= year <= 2023) and not force_tmy
     use_openmeteo_actual = (year >= 2024) and not force_tmy  # 2024 and all future years
+    wind_weather_source_key = str(wind_weather_source or "AUTO").strip().upper()
     
     df_data = pd.DataFrame()
     source_type = "TMY" # Default
+
+    # 0. Optional HRRR cache path for Wind (separate from default API path).
+    if tech == "Wind" and not force_tmy and wind_weather_source_key == "NOAA_HRRR_CACHED":
+        try:
+            hrrr_df, hrrr_path = load_cached_hrrr_10m_wind_point(
+                start_time=f"{year}-01-01T00:00:00Z",
+                end_time=f"{year}-12-31T23:00:00Z",
+                lat=lat,
+                lon=lon,
+                forecast_hour=int(hrrr_forecast_hour),
+                model="hrrr",
+                product="sfc",
+            )
+            if not hrrr_df.empty:
+                df_data = pd.DataFrame(
+                    {
+                        "datetime": pd.to_datetime(hrrr_df["valid_time_utc"], utc=True, errors="coerce"),
+                        "Wind_Speed_10m_mps": pd.to_numeric(hrrr_df["wind_speed_10m_mps"], errors="coerce"),
+                    }
+                ).dropna(subset=["datetime", "Wind_Speed_10m_mps"])
+                source_type = "HRRR_Cached"
+                print(
+                    f"✓ HRRR cache loaded for {year} "
+                    f"({len(df_data)} rows, f{int(hrrr_forecast_hour):02d}) "
+                    f"from {hrrr_path}"
+                )
+            else:
+                print(
+                    f"HRRR cache not found/empty for {year} at ({lat:.4f}, {lon:.4f}) "
+                    f"f{int(hrrr_forecast_hour):02d}; falling back to default weather source."
+                )
+        except Exception as e:
+            print(f"HRRR cache load failed for {year}: {e}. Falling back to default weather source.")
     
     # 1. Try PVGIS Actuals (2005-2023)
     if use_pvgis_actual:
@@ -468,7 +511,7 @@ def get_profile_for_year(
         mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking, efficiency=efficiency)
         
     elif tech == "Wind":
-        if source_type in ["Actual", "TMY", "OpenMeteo_Actual"]:
+        if source_type in ["Actual", "TMY", "OpenMeteo_Actual", "HRRR_Cached"]:
             if 'WS10m' in df_data.columns or 'Wind_Speed_10m_mps' in df_data.columns:
                 # Use 10m wind speed and apply scaling factor
                 if 'WS10m' in df_data.columns:
@@ -526,10 +569,10 @@ def get_profile_for_year(
         return pd.Series()
 
     # Align with Target Year (Resampling)
-    if source_type in ["Actual", "OpenMeteo_Actual"]:
+    if source_type in ["Actual", "OpenMeteo_Actual", "HRRR_Cached"]:
         # Parse timestamps
-        if source_type == "OpenMeteo_Actual":
-            timestamps = df_data['datetime']
+        if source_type in ["OpenMeteo_Actual", "HRRR_Cached"]:
+            timestamps = pd.to_datetime(df_data['datetime'], utc=True, errors='coerce')
             if timestamps.dt.tz is None:
                 timestamps = timestamps.dt.tz_localize('UTC')
             else:
@@ -564,7 +607,16 @@ def get_profile_for_year(
         )
         target_index = target_index_cst.tz_convert('UTC')
         
-        s_final = s_15min.reindex(target_index).ffill().bfill()
+        aligned = s_15min.reindex(target_index)
+        if source_type == "HRRR_Cached":
+            # Avoid spreading short HRRR windows across a full year.
+            coverage = float(aligned.notna().mean()) if len(aligned) else 0.0
+            if coverage >= 0.95:
+                s_final = aligned.ffill().bfill()
+            else:
+                s_final = aligned.interpolate(method='time', limit=4, limit_direction='both')
+        else:
+            s_final = aligned.ffill().bfill()
         s_final.name = "Gen_MW"
         if tech == "Wind" and apply_wind_calibration:
             s_final = apply_wind_postprocess(
@@ -654,7 +706,9 @@ def get_blended_profile_for_year(
     lat=32.4487,
     lon=-99.7331,
     hub_height=80, # Default if not specified in turbine dict
-    efficiency=0.85
+    efficiency=0.85,
+    wind_weather_source="AUTO",
+    hrrr_forecast_hour=0,
 ):
     """
     Generates a blended profile for a project with multiple turbine types.
@@ -683,7 +737,9 @@ def get_blended_profile_for_year(
             hub_height=t_height,
             turbine_type=t_type,
             efficiency=efficiency,
-            force_tmy=False 
+            force_tmy=False,
+            wind_weather_source=wind_weather_source,
+            hrrr_forecast_hour=hrrr_forecast_hour,
         )
         
         if s.empty:

@@ -60,7 +60,8 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 
 ### Optional HRRR Ingestion (Separate)
 -   A standalone HRRR ingestion path is available for experiments and benchmarking.
--   It does **not** alter the default model weather sources unless you explicitly wire it in.
+-   Streamlit now includes a wind weather selector (`Open-Meteo / PVGIS` vs `NOAA HRRR (Cached)`).
+-   HRRR mode uses local cache files and safely falls back to default weather when cache is missing.
 -   See: [`docs/HRRR_INGESTION.md`](docs/HRRR_INGESTION.md)
 
 ## 📦 Installation & Setup
