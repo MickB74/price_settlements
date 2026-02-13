@@ -152,11 +152,40 @@ def _extract_point_from_dataset(dataset, lat: float, lon: float):
     if not u_name or not v_name:
         raise ValueError("Unable to locate 10m U/V wind variables in HRRR dataset.")
 
-    point = dataset.sel({lat_name: float(lat), lon_name: float(lon)}, method="nearest")
+    lat_vals = np.asarray(dataset[lat_name])
+    lon_vals = np.asarray(dataset[lon_name])
+    if lat_vals.shape != lon_vals.shape:
+        raise ValueError("Latitude/longitude coordinate shapes do not match in HRRR dataset.")
+
+    # HRRR longitudes are commonly 0..360. Map target lon to matching convention.
+    target_lon = float(lon)
+    if np.nanmax(lon_vals) > 180.0 and target_lon < 0.0:
+        target_lon = target_lon + 360.0
+    elif np.nanmax(lon_vals) <= 180.0 and target_lon > 180.0:
+        target_lon = target_lon - 360.0
+
+    # Robust nearest-cell search on 2D HRRR grid.
+    dist2 = (lat_vals - float(lat)) ** 2 + (lon_vals - target_lon) ** 2
+    iy, ix = np.unravel_index(np.nanargmin(dist2), dist2.shape)
+
+    lat_dims = dataset[lat_name].dims
+    if len(lat_dims) >= 2:
+        y_dim, x_dim = lat_dims[-2], lat_dims[-1]
+    else:
+        # Fallback for non-2D coordinate layout.
+        dims = list(dataset[u_name].dims)
+        if len(dims) >= 2:
+            y_dim, x_dim = dims[-2], dims[-1]
+        else:
+            raise ValueError("Unable to infer HRRR horizontal dimensions for point extraction.")
+
+    point = dataset.isel({y_dim: int(iy), x_dim: int(ix)})
     u10 = float(np.asarray(point[u_name]).squeeze())
     v10 = float(np.asarray(point[v_name]).squeeze())
     grid_lat = float(np.asarray(point[lat_name]).squeeze())
     grid_lon = float(np.asarray(point[lon_name]).squeeze())
+    if grid_lon > 180.0:
+        grid_lon -= 360.0
     return u10, v10, grid_lat, grid_lon
 
 
@@ -203,8 +232,10 @@ def fetch_hrrr_10m_wind_point(
 
     for cycle in _iter_cycles(start_utc, end_utc, cfg.cycle_hours):
         try:
+            # Herbie expects tz-naive UTC datetimes.
+            cycle_naive_utc = cycle.tz_convert("UTC").tz_localize(None)
             model_run = Herbie(
-                cycle.to_pydatetime(),
+                cycle_naive_utc.to_pydatetime(),
                 model=cfg.model,
                 product=cfg.product,
                 fxx=int(cfg.forecast_hour),
