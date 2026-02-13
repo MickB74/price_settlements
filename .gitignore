@@ -9,6 +9,9 @@ miso_rtm_*.parquet
 user_uploads/
 data_cache/*
 !data_cache/pregenerated/
+!data_cache/hrrr/
+!data_cache/hrrr/*.parquet
+!data_cache/hrrr/*.json
 sced_cache/
 data_static/uswtdb.csv
 ercot_assets_expanded.json
