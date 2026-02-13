@@ -29,8 +29,24 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
 import sced_fetcher
 import json
-from utils.wind_calibration import apply_congestion_haircut, get_offline_threshold_mw
 import tabs.azure_comparison as tab_azure
+
+try:
+    from utils.wind_calibration import apply_congestion_haircut, get_offline_threshold_mw
+except Exception:
+    # Keep app startup resilient if wind_calibration import breaks in a partial deploy.
+    def get_offline_threshold_mw(capacity_mw=None, pct_of_capacity=0.05, min_mw=2.0, max_mw=20.0):
+        try:
+            cap = float(capacity_mw)
+        except (TypeError, ValueError):
+            cap = None
+        if cap is None or cap <= 0:
+            return 5.0
+        threshold = cap * pct_of_capacity
+        return float(max(min_mw, min(max_mw, threshold)))
+
+    def apply_congestion_haircut(gen_series, spp_series, hub_name=None, resource_id=None, calibration_table=None):
+        return gen_series
 
 # --- Constants & Configuration ---
 HUB_LOCATIONS = {
