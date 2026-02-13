@@ -14,6 +14,24 @@ EXCLUDED_DATES = [
     date(2024, 1, 15), date(2024, 1, 16), # Winter Storm Heather (curtailment/icing)
 ]
 
+def _index_diagnostics(idx: pd.Index):
+    """Lightweight diagnostics for timestamp index alignment checks."""
+    if idx is None or len(idx) == 0:
+        return {
+            "rows": 0,
+            "start": None,
+            "end": None,
+            "tz": None,
+            "duplicates": 0,
+        }
+    return {
+        "rows": int(len(idx)),
+        "start": idx.min(),
+        "end": idx.max(),
+        "tz": str(getattr(idx, "tz", None)),
+        "duplicates": int(idx.duplicated().sum()),
+    }
+
 def load_data(year):
     """
     Loads Actuals (TWA) and Modeled (Mixed Fleet) data for the given year.
@@ -35,7 +53,7 @@ def load_data(year):
         
         if not os.path.exists(actual_file):
             st.error(f"Cache file not found: {actual_file}")
-            return pd.DataFrame()
+            return pd.DataFrame(), {}
             
     df_actual = pd.read_parquet(actual_file)
     
@@ -73,11 +91,11 @@ def load_data(year):
             )
         except Exception as e:
             st.error(f"Error generating modeled profile: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame(), {}
         
     if s_modeled.empty:
         st.warning(f"No modeled data available for {year}.")
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     # Align Modeled
     s_modeled.name = "Predicted"
@@ -97,12 +115,27 @@ def load_data(year):
         right_index=True, 
         how="inner"
     )
+
+    actual_diag = _index_diagnostics(df_actual.index)
+    modeled_diag = _index_diagnostics(s_modeled.index)
+    merged_diag = _index_diagnostics(df_merged.index)
+    overlap_count = int(df_actual.index.intersection(s_modeled.index).size)
+    overlap_vs_actual = (overlap_count / actual_diag["rows"]) if actual_diag["rows"] else np.nan
+    overlap_vs_modeled = (overlap_count / modeled_diag["rows"]) if modeled_diag["rows"] else np.nan
+    debug_info = {
+        "actual": actual_diag,
+        "modeled": modeled_diag,
+        "merged": merged_diag,
+        "overlap_count": overlap_count,
+        "overlap_vs_actual": overlap_vs_actual,
+        "overlap_vs_modeled": overlap_vs_modeled,
+    }
     
     # 4. Calculate Residuals
     df_merged["Residual"] = df_merged["Actual"] - df_merged["Predicted"]
     df_merged["Error_Pct"] = (df_merged["Residual"] / CAPACITY) * 100
     
-    return df_merged
+    return df_merged, debug_info
 
 def render():
     try:
@@ -112,8 +145,29 @@ def render():
         year = st.selectbox("Select Year", [2024, 2025], index=0)
         st.write(f"Debug: Selected year {year}") # DEBUG
         
-        df = load_data(year)
+        df, diag = load_data(year)
         st.write(f"Debug: Data loaded. Rows: {len(df)}") # DEBUG
+        if diag:
+            st.write(
+                "Debug: Merge diagnostics -> "
+                f"Actual rows={diag['actual']['rows']:,}, "
+                f"Modeled rows={diag['modeled']['rows']:,}, "
+                f"Merged rows={diag['merged']['rows']:,}, "
+                f"Overlap={diag['overlap_count']:,} "
+                f"({diag['overlap_vs_actual']:.1%} of actual, {diag['overlap_vs_modeled']:.1%} of modeled)"
+            )
+            st.write(
+                "Debug: Time ranges -> "
+                f"Actual [{diag['actual']['start']} .. {diag['actual']['end']}], "
+                f"Modeled [{diag['modeled']['start']} .. {diag['modeled']['end']}], "
+                f"Merged [{diag['merged']['start']} .. {diag['merged']['end']}]"
+            )
+            st.write(
+                "Debug: Timestamp quality -> "
+                f"Actual tz={diag['actual']['tz']}, dupes={diag['actual']['duplicates']}; "
+                f"Modeled tz={diag['modeled']['tz']}, dupes={diag['modeled']['duplicates']}; "
+                f"Merged dupes={diag['merged']['duplicates']}"
+            )
         
         if df.empty:
             st.warning("No data found for selected year.")
@@ -191,6 +245,8 @@ def render():
         if df_filtered.empty:
             st.warning("No data remains after filtering.")
             return
+
+        st.write(f"Debug: Rows after filters: {len(df_filtered):,}") # DEBUG
 
         # --- Metrics ---
         # Calculate on FILTERED data
