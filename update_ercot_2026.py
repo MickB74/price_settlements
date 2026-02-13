@@ -4,80 +4,63 @@ Update ercot_rtm_2026.parquet with all days in 2026.
 
 This script:
 1. Loads the existing parquet file (if any)
-2. Fetches the complete 2026 data from ERCOT via gridstatus
-3. Saves the updated file with all days in 2026
+2. Fetches current 2026 data from ERCOT via gridstatus
+3. Merges + deduplicates
+4. Guards against accidental rollback (older max timestamp)
 """
 
 import pandas as pd
 import gridstatus
 import patch_gridstatus  # Apply monkey patch for compatibility
 
-def update_ercot_2026():
-    """Fetch and save complete 2026 ERCOT RTM data."""
-    
-    cache_file = "ercot_rtm_2026.parquet"
-    
-    print("=" * 60)
-    print("ERCOT RTM 2026 Data Update Script")
-    print("=" * 60)
-    
-    # Check existing file
+
+def _load_existing(cache_file: str) -> pd.DataFrame:
     try:
-        existing_df = pd.read_parquet(cache_file)
+        df = pd.read_parquet(cache_file)
         print(f"\n✓ Loaded existing file: {cache_file}")
-        print(f"  - Total rows: {len(existing_df):,}")
-        print(f"  - Date range: {existing_df['Time'].min()} to {existing_df['Time'].max()}")
+        print(f"  - Total rows: {len(df):,}")
+        if not df.empty and "Time_Central" in df.columns:
+            print(f"  - Date range: {df['Time_Central'].min()} to {df['Time_Central'].max()}")
+        return df
     except FileNotFoundError:
         print(f"\n! File not found: {cache_file}")
         print("  - Will create new file")
-        existing_df = None
-    
+        return pd.DataFrame()
+
+
+def update_ercot_2026():
+    """Fetch and save complete 2026 ERCOT RTM data."""
+
+    cache_file = "ercot_rtm_2026.parquet"
+
+    print("=" * 60)
+    print("ERCOT RTM 2026 Data Update Script")
+    print("=" * 60)
+
+    existing_df = _load_existing(cache_file)
     today = pd.Timestamp.now(tz='US/Central').date()
-    
-    # Check existing file
+
     start_date = pd.Timestamp("2026-01-01").date()
-    # default behavior
-    existing_df = pd.DataFrame()
+    existing_max = pd.NaT
+    if not existing_df.empty and "Time_Central" in existing_df.columns:
+        existing_max = pd.to_datetime(existing_df["Time_Central"], errors="coerce").max()
+        if pd.notna(existing_max):
+            # Re-fetch one prior day for corrections, but never before Jan 1.
+            start_date = max(pd.Timestamp("2026-01-01").date(), (existing_max - pd.Timedelta(days=1)).date())
 
-    try:
-        existing_df = pd.read_parquet(cache_file)
-        print(f"\n✓ Loaded existing file: {cache_file}")
-        print(f"  - Total rows: {len(existing_df):,}")
-        if not existing_df.empty:
-            max_dt = existing_df['Time_Central'].max()
-            print(f"  - Date range: {existing_df['Time_Central'].min()} to {max_dt}")
-            # Start from the next day after the last data point
-            start_date = max_dt.date()
-        else:
-             print("  - File is empty (will fetch full year)")
-             
-    except FileNotFoundError:
-        print(f"\n! File not found: {cache_file}")
-        print("  - Will fetch starting from Jan 1, 2026")
-        existing_df = pd.DataFrame()
-
-    # Determine fetch range
-    # Ensure we don't fetch future if local file is up to date (though RTM is fast)
-    if start_date >= today:
-        print("  - Data appears up to date. Checking for intraday updates...")
-        start_date = today # Check today just in case
+    if start_date > today:
+        start_date = today
 
     print("\n" + "-" * 60)
     print(f"Fetching data from {start_date} to {today}...")
     print("-" * 60)
-    
+
     iso = gridstatus.Ercot()
-    
+
     try:
-        # Strategy:
-        # 1. If we have a big gap (more than a few days) or no data, maybe fetch full year first if efficient?
-        #    Actually get_rtm_spp(year=2026) is fast for bulk but stale.
-        #    Let's stick to get_spp for the gap if we have existing data.
-        #    If no existing data, maybe get_rtm_spp(2026) first then gap fill?
-        
         new_df = pd.DataFrame()
         fetch_timestamp = pd.Timestamp.now(tz='US/Central')
-        
+
         if existing_df.empty:
             print("Fetching base 2026 data (fast bulk)...")
             try:
@@ -96,7 +79,6 @@ def update_ercot_2026():
             except Exception as e:
                 print(f"Bulk fetch failed/empty: {e}")
 
-
         # Now fetch the gap (or refinement)
         if start_date <= today:
             print(f"Fetching detailed interval data from {start_date} to {today}...")
@@ -112,7 +94,6 @@ def update_ercot_2026():
                 gap_df['fetched_at'] = fetch_timestamp
                 new_df = gap_df
 
-
         # Merge
         if not new_df.empty:
             if not existing_df.empty:
@@ -126,9 +107,7 @@ def update_ercot_2026():
              print("No data found.")
              return None
 
-        # Deduplicate
-        # Sort by time and keep last (assuming newer fetch might correct older?)
-        # Or usually just drop duplicates based on Time + Location
+        # Deduplicate using latest pulled record for each Time+Location pair.
         print("Deduplicating...")
         combined = combined.sort_values('Time')
         combined = combined.drop_duplicates(subset=['Time', 'Location'], keep='last')
@@ -144,7 +123,16 @@ def update_ercot_2026():
         
         # Add date column for easier filtering
         combined['date'] = combined['Time_Central'].dt.date
-        
+
+        combined_max = pd.to_datetime(combined["Time_Central"], errors="coerce").max()
+        if pd.notna(existing_max) and pd.notna(combined_max) and combined_max < existing_max:
+            # Never overwrite newer local data with older API responses.
+            print("\n⚠️  Rollback guard triggered.")
+            print(f"  Existing max timestamp: {existing_max}")
+            print(f"  New combined max timestamp: {combined_max}")
+            print("  Keeping existing local file unchanged.")
+            return existing_df
+
         # Save
         print("\n" + "-" * 60)
         print(f"Saving updated data to {cache_file}...")
@@ -156,9 +144,12 @@ def update_ercot_2026():
         print(f"  - File updated: {cache_file}")
         print(f"  - Total rows: {len(combined):,}")
         print(f"  - Date range: {combined['Time_Central'].min()} to {combined['Time_Central'].max()}")
-        
+        if pd.notna(combined_max):
+            lag_days = (pd.Timestamp.now(tz="US/Central") - combined_max).total_seconds() / 86400.0
+            print(f"  - Market data lag vs now: {lag_days:.1f} days")
+
         return combined
-        
+
     except Exception as e:
         print(f"\n❌ ERROR: Failed to update data")
         print(f"  {str(e)}")

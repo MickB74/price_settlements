@@ -2149,6 +2149,12 @@ with tab_validation:
                     meta_df = pd.read_parquet(fpath, columns=['Time_Central', 'date'])
                     date_range = f"{meta_df['date'].min()} to {meta_df['date'].max()}" if 'date' in meta_df.columns else f"{meta_df['Time_Central'].min().date()} to {meta_df['Time_Central'].max().date()}"
                     st.write(f"**Range:** {date_range} ({len(meta_df):,} rows)")
+                    max_ts = pd.to_datetime(meta_df['Time_Central'], errors='coerce').max()
+                    if pd.notna(max_ts):
+                        lag_days = (pd.Timestamp.now(tz='US/Central') - max_ts).total_seconds() / 86400.0
+                        st.write(f"**Lag vs now:** {lag_days:.1f} days")
+                        if lag_days > 3:
+                            st.caption("Note: ERCOT/public feed can be delayed; this may still be the latest available data.")
                 else:
                     st.error("File not found!")
             except Exception as e:
