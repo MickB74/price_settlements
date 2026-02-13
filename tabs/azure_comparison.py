@@ -4,15 +4,49 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import os
+import json
 from datetime import datetime, date, timedelta
 import fetch_tmy
 import sced_fetcher
+from utils.wind_calibration import get_offline_threshold_mw
 
 # --- Configuration ---
 CACHE_DIR = "sced_cache"
 EXCLUDED_DATES = [
     date(2024, 1, 15), date(2024, 1, 16), # Winter Storm Heather (curtailment/icing)
 ]
+
+AZURE_PROJECT_NAME = "Azure Sky Wind"
+AZURE_RESOURCE_ID = "AZURE_SKY_WIND_AGG"
+AZURE_DEFAULT_CONFIG = {
+    "lat": 33.1534,
+    "lon": -99.2847,
+    "hub": "North",
+    "capacity_mw": 350.0,
+    "turbines": [
+        {"type": "NORDEX_N149", "count": 65, "capacity_mw": 4.5, "hub_height_m": 105.0},
+        {"type": "VESTAS_V163", "count": 7, "capacity_mw": 3.45, "hub_height_m": 82.0},
+        {"type": "GENERIC", "count": 7, "capacity_mw": 2.0, "hub_height_m": 80.0},
+    ],
+}
+
+def _load_azure_config():
+    cfg = dict(AZURE_DEFAULT_CONFIG)
+    try:
+        with open("ercot_assets.json", "r") as f:
+            assets = json.load(f)
+        meta = assets.get(AZURE_PROJECT_NAME, {})
+        if isinstance(meta, dict):
+            cfg["lat"] = float(meta.get("lat", cfg["lat"]))
+            cfg["lon"] = float(meta.get("lon", cfg["lon"]))
+            cfg["hub"] = meta.get("hub", cfg["hub"])
+            cfg["capacity_mw"] = float(meta.get("capacity_mw", cfg["capacity_mw"]))
+            turbines = meta.get("turbines")
+            if isinstance(turbines, list) and turbines:
+                cfg["turbines"] = turbines
+    except Exception:
+        pass
+    return cfg
 
 def _index_diagnostics(idx: pd.Index):
     """Lightweight diagnostics for timestamp index alignment checks."""
@@ -69,25 +103,27 @@ def load_data(year):
         df_actual.index = df_actual.index.tz_convert("US/Central")
 
 
-    # 2. Load Modeled (Mixed Fleet)
-    # Azure Sky Config
-    LAT = 33.1534
-    LON = -99.2847
-    TURBINES = [
-        {'type': 'NORDEX_N149', 'count': 65, 'capacity_mw': 4.5, 'hub_height_m': 105.0},
-        {'type': 'VESTAS_V163', 'count': 7,  'capacity_mw': 3.45, 'hub_height_m': 82.0},
-        {'type': 'GENERIC',     'count': 7,  'capacity_mw': 2.0,  'hub_height_m': 80.0},
-    ]
-    CAPACITY = sum(t['count'] * t['capacity_mw'] for t in TURBINES) # ~330.65 MW
+    # 2. Load Modeled (Mixed Fleet + Calibration)
+    azure_cfg = _load_azure_config()
+    lat = azure_cfg["lat"]
+    lon = azure_cfg["lon"]
+    hub = azure_cfg["hub"]
+    capacity_mw = azure_cfg["capacity_mw"]
+    turbines = azure_cfg["turbines"]
     
     with st.spinner(f"Generating modeled profile for {year}..."):
         try:
-            s_modeled = fetch_tmy.get_blended_profile_for_year(
+            s_modeled = fetch_tmy.get_profile_for_year(
                 year=year,
                 tech="Wind",
-                turbines=TURBINES,
-                lat=LAT,
-                lon=LON
+                capacity_mw=capacity_mw,
+                lat=lat,
+                lon=lon,
+                hub_name=hub,
+                project_name=AZURE_PROJECT_NAME,
+                resource_id=AZURE_RESOURCE_ID,
+                apply_wind_calibration=True,
+                turbines=turbines,
             )
         except Exception as e:
             st.error(f"Error generating modeled profile: {e}")
@@ -129,11 +165,12 @@ def load_data(year):
         "overlap_count": overlap_count,
         "overlap_vs_actual": overlap_vs_actual,
         "overlap_vs_modeled": overlap_vs_modeled,
+        "capacity_mw": capacity_mw,
     }
     
     # 4. Calculate Residuals
     df_merged["Residual"] = df_merged["Actual"] - df_merged["Predicted"]
-    df_merged["Error_Pct"] = (df_merged["Residual"] / CAPACITY) * 100
+    df_merged["Error_Pct"] = (df_merged["Residual"] / capacity_mw) * 100
     
     return df_merged, debug_info
 
@@ -221,23 +258,28 @@ def render():
                     st.warning("Please select at least one month.")
                     return
 
+        capacity_mw = float(diag.get("capacity_mw", AZURE_DEFAULT_CONFIG["capacity_mw"])) if isinstance(diag, dict) else float(AZURE_DEFAULT_CONFIG["capacity_mw"])
+
         # Maintenance Filter
         with st.expander("🛠️ Operational Filters", expanded=False):
             exclude_maintenance = st.checkbox(
-                "Exclude Potential Maintenance / Forced Outages", 
-                value=False,
-                help="Excludes periods where Modeled > 20 MW but Actual < 2 MW (likely downtime)."
+                "Exclude Likely Offline Intervals",
+                value=True,
+                help="Matches benchmark logic: exclude intervals where Actual < 0.5 MW but model expects generation above a capacity-aware threshold."
             )
             
         # Apply Maintenance Filter
         if exclude_maintenance:
-            # Identifies periods where we *should* be generating but aren't
-            maintenance_mask = (df_filtered["Predicted"] > 20) & (df_filtered["Actual"] < 2)
+            offline_threshold = get_offline_threshold_mw(capacity_mw=capacity_mw)
+            maintenance_mask = (df_filtered["Predicted"] > offline_threshold) & (df_filtered["Actual"] < 0.5)
             n_excluded = maintenance_mask.sum()
             hours_excluded = n_excluded * 0.25
             
             if n_excluded > 0:
-                st.info(f"ℹ️ Excluded {n_excluded} intervals ({hours_excluded:.1f} hours) of potential downtime.")
+                st.info(
+                    f"ℹ️ Excluded {n_excluded} intervals ({hours_excluded:.1f} hours) of likely downtime "
+                    f"(threshold {offline_threshold:.1f} MW)."
+                )
                 df_filtered = df_filtered[~maintenance_mask]
             else:
                 st.info("No potential downtime events found in selected period.")
