@@ -2255,6 +2255,7 @@ with tab_validation:
         c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
         
         selected_project_meta = {}
+        selected_project_name = st.session_state.get("val_project_name", "")
         
         with c1:
             if val_source == "Generic / Hub":
@@ -2274,6 +2275,7 @@ with tab_validation:
             else:
                 # Specific Project Selection
                 val_project_name = st.selectbox("Select Project", asset_names, key="val_project_name")
+                selected_project_name = val_project_name
                 if val_project_name in asset_registry:
                     selected_project_meta = asset_registry[val_project_name]
                     # Auto-update location for map
@@ -2503,7 +2505,10 @@ with tab_validation:
                                     # Load actual ERCOT SCED data from cached parquet file
                                     resource_id = selected_project_meta.get('resource_name')
                                     if not resource_id:
-                                        st.error(f"No resource_name found for {selected_project_name}")
+                                        st.warning(
+                                            f"SCED actuals unavailable: no `resource_name` found for "
+                                            f"{selected_project_name or 'selected project'}."
+                                        )
                                         continue
                                     
                                     # Use absolute path to avoid working directory issues
@@ -2511,9 +2516,9 @@ with tab_validation:
                                     cache_file = os.path.join(cache_dir, f"{resource_id}_{val_year}_full.parquet")
                                     
                                     if not os.path.exists(cache_file):
-                                        st.error(f"No cached SCED data found for {resource_id} in {val_year}.")
+                                        st.warning(f"No cached SCED data found for {resource_id} in {val_year}.")
                                         st.info(f"Looking for: {cache_file}")
-                                        st.info("SCED data must be pre-downloaded. Run the download script first.")
+                                        st.info("SCED data must be pre-downloaded. Continuing with model-only output.")
                                         continue
                                     
                                     try:
@@ -2560,9 +2565,12 @@ with tab_validation:
                                     if is_sced_comparison and val_source == "Specific Project":
                                         # For Azure Sky specifically, or if turbine_model is Nordex
                                         t_model_raw = selected_project_meta.get('turbine_model', '').upper()
+                                        selected_project_name_upper = str(
+                                            selected_project_name or selected_project_meta.get("project_name", "")
+                                        ).upper()
                                         if "NORDEX" in t_model_raw and "149" in t_model_raw:
                                             final_turbine = "NORDEX_N149"
-                                        elif "AZURE" in selected_project_name.upper():
+                                        elif "AZURE" in selected_project_name_upper:
                                             final_turbine = "NORDEX_N149"
                                     
                                     # Show progress for potentially slow operations
