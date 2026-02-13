@@ -430,7 +430,7 @@ def get_profile_for_year(
             print(f"HRRR cache load failed for {year}: {e}. Falling back to default weather source.")
     
     # 1. Try PVGIS Actuals (2005-2023)
-    if use_pvgis_actual:
+    if use_pvgis_actual and df_data.empty:
         try:
             cache_file = os.path.join(CACHE_DIR, f"actual_{year}_{lat}_{lon}.parquet")
             if os.path.exists(cache_file):
@@ -478,7 +478,7 @@ def get_profile_for_year(
 
     # 2. Try Open-Meteo (2024+ OR Fallback for PVGIS failure)
     # CRITICAL FIX: If PVGIS failed for 2005-2023, use Open-Meteo as robust fallback
-    if (use_openmeteo_actual or (df_data.empty and not force_tmy)):
+    if df_data.empty and (use_openmeteo_actual or (not force_tmy)):
         print(f"Fetching Open-Meteo data for {year} ({'primary' if use_openmeteo_actual else 'PVGIS fallback'})...")
         df_om = get_openmeteo_data(year, lat, lon)
         if not df_om.empty:
