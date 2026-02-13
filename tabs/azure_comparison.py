@@ -211,7 +211,8 @@ def render():
             )
             st.caption("Using cached NOAA HRRR from `data_cache/hrrr`.")
             try:
-                hrrr_count = len(list((Path("data_cache") / "hrrr").glob("*.parquet")))
+                repo_root = Path(__file__).resolve().parents[1]
+                hrrr_count = len(list((repo_root / "data_cache" / "hrrr").glob("*.parquet")))
             except Exception:
                 hrrr_count = 0
             if hrrr_count == 0:

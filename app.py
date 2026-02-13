@@ -65,7 +65,8 @@ WIND_WEATHER_SOURCE_OPTIONS = {
 
 def get_hrrr_cache_count():
     try:
-        return len(list((Path("data_cache") / "hrrr").glob("*.parquet")))
+        repo_root = Path(__file__).resolve().parent
+        return len(list((repo_root / "data_cache" / "hrrr").glob("*.parquet")))
     except Exception:
         return 0
 
