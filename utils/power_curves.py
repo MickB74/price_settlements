@@ -1,29 +1,65 @@
 import numpy as np
-import pandas as pd
+
+
+def _finalize_power_curve(
+    v,
+    power,
+    rated_speed,
+    cut_out_speed=25.0,
+    rated_blend_width=0.6,
+    cutout_taper_width=1.5,
+):
+    """
+    Applies operational clipping controls:
+    - Smooth approach to rated to avoid sharp stair-step behavior.
+    - Soft taper close to cut-out to reduce unrealistic high-wind spikes.
+    """
+    out = np.clip(power.astype(float), 0.0, 1.0)
+
+    if rated_blend_width > 0:
+        rated_start = rated_speed - rated_blend_width
+        rated_end = rated_speed + rated_blend_width
+        mask_rated_blend = (v >= rated_start) & (v < rated_end)
+        if np.any(mask_rated_blend):
+            x = (v[mask_rated_blend] - rated_start) / (rated_end - rated_start)
+            blend = 1.0 / (1.0 + np.exp(-8.0 * (x - 0.5)))
+            out[mask_rated_blend] = (1.0 - blend) * out[mask_rated_blend] + blend
+
+    taper_start = cut_out_speed - cutout_taper_width
+    mask_taper = (v >= taper_start) & (v < cut_out_speed)
+    if np.any(mask_taper):
+        taper = (cut_out_speed - v[mask_taper]) / cutout_taper_width
+        out[mask_taper] = np.minimum(out[mask_taper], np.clip(taper, 0.0, 1.0))
+
+    out[v >= cut_out_speed] = 0.0
+    return np.clip(out, 0.0, 1.0)
 
 def get_normalized_power(wind_speed_series, turbine_type="GENERIC"):
     """
     Applies a specific power curve to a wind speed series (m/s).
     Returns a normalized series (0.0 to 1.0).
     """
-    if turbine_type == "VESTAS_V163":
-        return _curve_vestas_v163(wind_speed_series)
-    elif "GE" in turbine_type and "2.8" in turbine_type:
-        return _curve_ge_2x(wind_speed_series) # 2.82 is similar to 2.5 curve shape
-    elif "V110" in turbine_type:
-         return _curve_generic_iec2(wind_speed_series) # V110 is standard IEC II
-    elif "V136" in turbine_type:
-         return _curve_vestas_v163(wind_speed_series) # V136 is also low wind/high efficiency, similar to V163 shape
-    elif turbine_type == "GE_2X":
-        return _curve_ge_2x(wind_speed_series)
-    elif turbine_type == "GE_3X":
-        return _curve_ge_3x(wind_speed_series)
-    elif turbine_type == "NORDEX_N163":
-        return _curve_nordex_n163(wind_speed_series)
-    elif turbine_type == "NORDEX_N149":
-        return _curve_nordex_n149(wind_speed_series)
+    v = np.asarray(wind_speed_series, dtype=float)
+    t_type = str(turbine_type or "GENERIC").upper()
+
+    if t_type == "VESTAS_V163":
+        return _curve_vestas_v163(v)
+    elif "GE" in t_type and "2.8" in t_type:
+        return _curve_ge_2x(v) # 2.82 is similar to 2.5 curve shape
+    elif "V110" in t_type:
+         return _curve_generic_iec2(v) # V110 is standard IEC II
+    elif "V136" in t_type:
+         return _curve_vestas_v163(v) # V136 is also low wind/high efficiency, similar to V163 shape
+    elif t_type == "GE_2X":
+        return _curve_ge_2x(v)
+    elif t_type == "GE_3X":
+        return _curve_ge_3x(v)
+    elif t_type == "NORDEX_N163":
+        return _curve_nordex_n163(v)
+    elif t_type == "NORDEX_N149":
+        return _curve_nordex_n149(v)
     else:
-        return _curve_generic_iec2(wind_speed_series)
+        return _curve_generic_iec2(v)
 
 def get_curve_for_specs(manuf, model, rotor_m=None):
     """
@@ -72,7 +108,7 @@ def _curve_generic_iec2(v):
     Cut-out: 25 m/s
     """
     # Vectorized implementation for speed
-    power = np.zeros_like(v)
+    power = np.zeros_like(v, dtype=float)
     
     # Cubic region (3 to 12)
     mask_cubic = (v >= 3.0) & (v < 12.0)
@@ -82,7 +118,7 @@ def _curve_generic_iec2(v):
     mask_rated = (v >= 12.0) & (v < 25.0)
     power[mask_rated] = 1.0
     
-    return power
+    return _finalize_power_curve(v, power, rated_speed=12.0)
 
 def _curve_vestas_v163(v):
     """
@@ -92,7 +128,7 @@ def _curve_vestas_v163(v):
     Rated: ~10.5 m/s (Reaches full power earlier)
     Cut-out: 25.0 m/s
     """
-    power = np.zeros_like(v)
+    power = np.zeros_like(v, dtype=float)
     
     # Cubic region (3 to 10.5) - Steeper ramp
     # ((v - 3) / (10.5 - 3)) ** 2.8 (Slightly less than cubic to match modern control)
@@ -103,7 +139,7 @@ def _curve_vestas_v163(v):
     mask_rated = (v >= 10.5) & (v < 25.0)
     power[mask_rated] = 1.0
     
-    return power
+    return _finalize_power_curve(v, power, rated_speed=10.5)
 
 def _curve_ge_2x(v):
     """
@@ -112,7 +148,7 @@ def _curve_ge_2x(v):
     Rated: 11.0 m/s
     Cut-out: 25.0 m/s
     """
-    power = np.zeros_like(v)
+    power = np.zeros_like(v, dtype=float)
     
     mask_ramp = (v >= 3.0) & (v < 11.0)
     power[mask_ramp] = ((v[mask_ramp] - 3.0) / 8.0) ** 3
@@ -121,7 +157,7 @@ def _curve_ge_2x(v):
     mask_rated = (v >= 11.0) & (v < 25.0)
     power[mask_rated] = 1.0
     
-    return power
+    return _finalize_power_curve(v, power, rated_speed=11.0)
 
 def _curve_ge_3x(v):
     """
@@ -131,7 +167,7 @@ def _curve_ge_3x(v):
     Rated: 10.5 m/s
     Cut-out: 25.0 m/s
     """
-    power = np.zeros_like(v)
+    power = np.zeros_like(v, dtype=float)
     
     # Efficient ramp due to large rotor
     mask_ramp = (v >= 3.0) & (v < 10.5)
@@ -140,7 +176,7 @@ def _curve_ge_3x(v):
     mask_rated = (v >= 10.5) & (v < 25.0)
     power[mask_rated] = 1.0
     
-    return power
+    return _finalize_power_curve(v, power, rated_speed=10.5)
 
 def _curve_nordex_n163(v):
     """
@@ -150,7 +186,7 @@ def _curve_nordex_n163(v):
     Rated: 10.0 m/s (Reaches rated very early)
     Cut-out: 25.0 m/s
     """
-    power = np.zeros_like(v)
+    power = np.zeros_like(v, dtype=float)
     
     # Aggressive ramp
     mask_ramp = (v >= 3.0) & (v < 10.0)
@@ -159,7 +195,7 @@ def _curve_nordex_n163(v):
     mask_rated = (v >= 10.0) & (v < 25.0)
     power[mask_rated] = 1.0
     
-    return power
+    return _finalize_power_curve(v, power, rated_speed=10.0)
 
 def _curve_nordex_n149(v):
     """
@@ -169,7 +205,7 @@ def _curve_nordex_n149(v):
     Rated: ~11.5 m/s
     Cut-out: 25.0 m/s
     """
-    power = np.zeros_like(v)
+    power = np.zeros_like(v, dtype=float)
     
     # Cubic region
     # ((v - 3) / (11.5 - 3)) ** 2.8
@@ -179,6 +215,5 @@ def _curve_nordex_n149(v):
     mask_rated = (v >= 11.5) & (v < 25.0)
     power[mask_rated] = 1.0
     
-    return power
+    return _finalize_power_curve(v, power, rated_speed=11.5)
     
-

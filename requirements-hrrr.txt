@@ -1,0 +1,4 @@
+# Optional dependencies for standalone HRRR ingestion.
+herbie
+cfgrib
+eccodes

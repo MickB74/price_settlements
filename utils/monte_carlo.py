@@ -16,6 +16,7 @@ import os
 # Import required modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import fetch_tmy
+from utils.wind_calibration import apply_congestion_haircut
 
 
 def run_bootstrap_simulation(
@@ -185,6 +186,16 @@ def run_bootstrap_simulation(
             
             if merged.empty:
                 continue
+
+            if tech == "Wind":
+                modeled_mw = apply_congestion_haircut(
+                    gen_series=pd.Series(merged["Gen_MW"].values, index=merged.index),
+                    spp_series=merged["SPP"],
+                    hub_name=hub_name,
+                    resource_id=scenario_config.get("resource_id"),
+                )
+                merged["Gen_MW"] = modeled_mw.values
+                merged["Gen_Energy_MWh"] = merged["Gen_MW"] * 0.25
             
             # 8. Apply curtailment if enabled
             mask_neg_price = merged['SPP'] < 0

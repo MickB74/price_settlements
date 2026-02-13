@@ -2,11 +2,11 @@ import pandas as pd
 import numpy as np
 import json
 import os
+from pathlib import Path
 from datetime import datetime
 import fetch_tmy
-import sced_fetcher
 from utils import power_curves
-from utils.wind_calibration import get_offline_threshold_mw
+from utils.wind_calibration import get_offline_threshold_mw, _load_cached_asset_period_data
 
 def calculate_metrics(actual, modeled, capacity_mw=None):
     """Calculate R, MBE, and RMSE between actual and modeled series."""
@@ -81,6 +81,7 @@ def run_benchmark():
     # Range for benchmark (12 Months: Dec 2024 - Nov 2025)
     start_date = "2024-12-01"
     end_date = "2025-11-30"
+    cache_dir = Path("sced_cache")
     # Actually Jan 2026 - 60 days = Nov 2025. So 2024 is fully available.
     
     results = []
@@ -108,9 +109,9 @@ def run_benchmark():
         
         # A. Fetch Actual Gen
         print(f"  Fetching actual generation for {r_id}...")
-        df_actual_full = sced_fetcher.get_asset_period_data(r_id, start_date, end_date)
+        df_actual_full = _load_cached_asset_period_data(r_id, start_date, end_date, cache_dir)
         if df_actual_full.empty:
-            print(f"  ! No actual data found for {r_id} in period.")
+            print(f"  ! No local cached SCED data for {r_id} in period. Skipping.")
             continue
             
         # Ensure UTC and aligned. sced_fetcher returns UTC.
@@ -131,23 +132,34 @@ def run_benchmark():
         print(f"  Running Advanced Model ({actual_hub_h}m, {actual_tech_type})...")
         
         turbines = meta.get('turbines')
-        if turbines:
-            print(f"  ! Mixed fleet detected for {p_name}. Generating blended profile...")
-            p24_adv = fetch_tmy.get_blended_profile_for_year(
-                2024, "Wind", turbines, lat=lat, lon=lon
-            )
-            p25_adv = fetch_tmy.get_blended_profile_for_year(
-                2025, "Wind", turbines, lat=lat, lon=lon
-            )
-        else:
-            p24_adv = fetch_tmy.get_profile_for_year(
-                2024, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h,
-                turbine_type=actual_tech_type, apply_wind_calibration=False,
-            )
-            p25_adv = fetch_tmy.get_profile_for_year(
-                2025, "Wind", capacity, lat=lat, lon=lon, hub_height=actual_hub_h,
-                turbine_type=actual_tech_type, apply_wind_calibration=False,
-            )
+        p24_adv = fetch_tmy.get_profile_for_year(
+            2024,
+            "Wind",
+            capacity,
+            lat=lat,
+            lon=lon,
+            hub_height=actual_hub_h,
+            turbine_type=actual_tech_type,
+            hub_name=hub,
+            project_name=p_name,
+            resource_id=r_id,
+            apply_wind_calibration=True,
+            turbines=turbines,
+        )
+        p25_adv = fetch_tmy.get_profile_for_year(
+            2025,
+            "Wind",
+            capacity,
+            lat=lat,
+            lon=lon,
+            hub_height=actual_hub_h,
+            turbine_type=actual_tech_type,
+            hub_name=hub,
+            project_name=p_name,
+            resource_id=r_id,
+            apply_wind_calibration=True,
+            turbines=turbines,
+        )
             
         prof_advanced = pd.concat([p24_adv, p25_adv])
         prof_advanced = prof_advanced[~prof_advanced.index.duplicated(keep='first')]

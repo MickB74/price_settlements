@@ -58,6 +58,11 @@ A professional-grade framework for modeling, analyzing, and comparing Virtual Po
 | **Solar/Wind (2024+)** | **Open-Meteo** | ERA5 Reanalysis (GHI, 10m Wind Speed) at 15-min resolution. |
 | **Historical Weather**| **PVGIS** | Long-term satellite and reanalysis averages. |
 
+### Optional HRRR Ingestion (Separate)
+-   A standalone HRRR ingestion path is available for experiments and benchmarking.
+-   It does **not** alter the default model weather sources unless you explicitly wire it in.
+-   See: [`docs/HRRR_INGESTION.md`](docs/HRRR_INGESTION.md)
+
 ## 📦 Installation & Setup
 
 For local development or contributing to the project, see the [Installation Guide on GitHub](https://github.com/MickB74/price_settlements#installation).

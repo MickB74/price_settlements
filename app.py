@@ -29,7 +29,7 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
 import sced_fetcher
 import json
-from utils.wind_calibration import get_offline_threshold_mw
+from utils.wind_calibration import apply_congestion_haircut, get_offline_threshold_mw
 import tabs.azure_comparison as tab_azure
 
 # --- Constants & Configuration ---
@@ -568,6 +568,15 @@ def calculate_scenario(scenario, df_rtm):
         ) from e
 
     df_hub['Potential_Gen_MW'] = potential_gen
+
+    if tech == "Wind" and not df_hub.empty:
+        potential_with_haircut = apply_congestion_haircut(
+            gen_series=pd.Series(df_hub["Potential_Gen_MW"].values, index=df_hub.index),
+            spp_series=df_hub["SPP"],
+            hub_name=scenario.get("hub"),
+            resource_id=scenario.get("resource_id"),
+        )
+        df_hub["Potential_Gen_MW"] = potential_with_haircut.values
     
     # Settlement
     vppa_price = scenario.get('vppa_price', scenario.get('strike_price', 50.0))
@@ -2518,6 +2527,16 @@ with tab_validation:
                                     
                                     if sel_m_nums:
                                         merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
+
+                                    if preview_tech == "Wind" and not use_sced and not merged.empty:
+                                        modeled_mw = apply_congestion_haircut(
+                                            gen_series=pd.Series(merged["Gen_MW"].values, index=merged.index),
+                                            spp_series=merged["SPP"],
+                                            hub_name=calc_hub,
+                                            resource_id=selected_project_meta.get("resource_name") if val_source == "Specific Project" else None,
+                                        )
+                                        merged["Gen_MW"] = modeled_mw.values
+                                        merged["Gen_Energy_MWh"] = merged["Gen_MW"] * 0.25
                                     
                                     # Calculate Potential Curtailment (Always)
                                     merged['Potential_Curtailed_MWh'] = 0.0

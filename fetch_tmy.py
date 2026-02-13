@@ -121,7 +121,13 @@ def get_actual_data(year, lat=32.4487, lon=-99.7331, force_refresh=False):
         return pd.DataFrame()
 
 from utils import power_curves
-from utils.wind_calibration import get_hub_shear_alpha, get_wind_bias_multiplier
+from utils.wind_calibration import (
+    apply_wind_postprocess,
+    get_hub_shear_alpha,
+    get_reanalysis_blend_weights,
+    get_wind_bias_multiplier,
+    load_wind_calibration_table,
+)
 
 def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85, tracking=True, dc_ac_ratio=1.3):
     """
@@ -210,6 +216,60 @@ def get_openmeteo_data(year, lat, lon):
         print(f"Error fetching Open-Meteo data: {e}")
         return pd.DataFrame()
 
+
+def get_merra2_data(year, lat, lon):
+    """
+    Optional local MERRA-2 cache loader.
+    Expected file: data_cache/merra2_{year}_{lat}_{lon}.parquet
+    """
+    candidate_files = [
+        os.path.join(CACHE_DIR, f"merra2_{year}_{lat}_{lon}.parquet"),
+        os.path.join(CACHE_DIR, f"merra2_{year}_{round(float(lat), 4)}_{round(float(lon), 4)}.parquet"),
+    ]
+    cache_file = next((p for p in candidate_files if os.path.exists(p)), None)
+    if not cache_file:
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_parquet(cache_file)
+    except Exception:
+        return pd.DataFrame()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    col_map = {}
+    if "datetime" in df.columns:
+        col_map["datetime"] = "datetime"
+    elif "time" in df.columns:
+        col_map["time"] = "datetime"
+    elif "Time" in df.columns:
+        col_map["Time"] = "datetime"
+    else:
+        return pd.DataFrame()
+
+    if "Wind_Speed_10m_mps" in df.columns:
+        col_map["Wind_Speed_10m_mps"] = "Wind_Speed_10m_mps"
+    elif "wind_speed_10m_mps" in df.columns:
+        col_map["wind_speed_10m_mps"] = "Wind_Speed_10m_mps"
+    elif "ws10m" in df.columns:
+        col_map["ws10m"] = "Wind_Speed_10m_mps"
+    elif "WS10M" in df.columns:
+        col_map["WS10M"] = "Wind_Speed_10m_mps"
+    elif "wind_speed_10m" in df.columns:
+        # Some datasets store km/h. Convert conservatively.
+        col_map["wind_speed_10m"] = "Wind_Speed_10m_mps"
+        df = df.copy()
+        df["wind_speed_10m"] = pd.to_numeric(df["wind_speed_10m"], errors="coerce") / 3.6
+    else:
+        return pd.DataFrame()
+
+    out = df[list(col_map.keys())].rename(columns=col_map).copy()
+    out["datetime"] = pd.to_datetime(out["datetime"], utc=True, errors="coerce")
+    out["Wind_Speed_10m_mps"] = pd.to_numeric(out["Wind_Speed_10m_mps"], errors="coerce")
+    out = out.dropna(subset=["datetime", "Wind_Speed_10m_mps"])
+    return out
+
 # Keep old function name for backward compatibility
 def get_openmeteo_2024_data(lat, lon):
     """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
@@ -240,9 +300,13 @@ def get_profile_for_year(
     efficiency: System efficiency (default 0.85 for 15% losses). Pass 0.86 for 14% losses.
     """
     
+    calibration_table = None
+    if tech == "Wind" and apply_wind_calibration:
+        calibration_table = load_wind_calibration_table()
+
     # Handle Blended Profile
     if turbines and len(turbines) > 0 and tech == "Wind":
-        return get_blended_profile_for_year(
+        blended_series = get_blended_profile_for_year(
             year=year,
             tech=tech,
             turbines=turbines,
@@ -251,6 +315,16 @@ def get_profile_for_year(
             hub_height=hub_height,
             efficiency=efficiency
         )
+        if apply_wind_calibration and blended_series is not None and not blended_series.empty:
+            blended_series = apply_wind_postprocess(
+                blended_series,
+                capacity_mw=capacity_mw,
+                hub_name=hub_name,
+                project_name=project_name,
+                resource_id=resource_id,
+                calibration_table=calibration_table,
+            )
+        return blended_series
     
     # PRIORITY 1: Check for pregenerated profiles (committed to repo for Streamlit Cloud)
     # This eliminates API dependency issues
@@ -286,8 +360,17 @@ def get_profile_for_year(
                                     hub_name=hub_name,
                                     project_name=project_name,
                                     resource_id=resource_id,
+                                    calibration_table=calibration_table,
                                 )
                                 series = (series * bias_mult).clip(lower=0.0, upper=capacity_mw)
+                                series = apply_wind_postprocess(
+                                    series,
+                                    capacity_mw=capacity_mw,
+                                    hub_name=hub_name,
+                                    project_name=project_name,
+                                    resource_id=resource_id,
+                                    calibration_table=calibration_table,
+                                )
                             print(f"✓ Using pregenerated profile: {hub_name}_{tech}_{year}")
                             return series
                     except Exception as e:
@@ -392,9 +475,37 @@ def get_profile_for_year(
                     ws_10m = df_data['WS10m']
                 else:
                     ws_10m = df_data['Wind_Speed_10m_mps']
+
+                if (
+                    source_type == "OpenMeteo_Actual"
+                    and apply_wind_calibration
+                    and calibration_table is not None
+                ):
+                    era5_w, merra2_w = get_reanalysis_blend_weights(calibration_table=calibration_table)
+                    if merra2_w > 0:
+                        df_merra = get_merra2_data(year, lat, lon)
+                        if not df_merra.empty:
+                            era5_df = pd.DataFrame(
+                                {
+                                    "datetime": pd.to_datetime(df_data["datetime"], utc=True),
+                                    "era5_ws10m": pd.to_numeric(ws_10m, errors="coerce"),
+                                }
+                            )
+                            merra_df = df_merra.rename(columns={"Wind_Speed_10m_mps": "merra_ws10m"}).copy()
+                            merged = era5_df.merge(merra_df, on="datetime", how="left")
+                            merged["merra_ws10m"] = merged["merra_ws10m"].interpolate().ffill().bfill()
+                            ws_10m = (
+                                merged["era5_ws10m"] * era5_w
+                                + merged["merra_ws10m"] * merra2_w
+                            )
                 
                 # Hub-aware scaling at hub height (power law: v_h = v_10 * (h/10)^alpha).
-                alpha, _ = get_hub_shear_alpha(lat=lat, lon=lon, hub_name=hub_name)
+                alpha, _ = get_hub_shear_alpha(
+                    lat=lat,
+                    lon=lon,
+                    hub_name=hub_name,
+                    calibration_table=calibration_table,
+                )
                 wind_speed_hub = ws_10m * ((hub_height / 10.0) ** alpha)
                 mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type) * efficiency
                 if apply_wind_calibration:
@@ -404,6 +515,7 @@ def get_profile_for_year(
                         hub_name=hub_name,
                         project_name=project_name,
                         resource_id=resource_id,
+                        calibration_table=calibration_table,
                     )
                     mw_hourly = (mw_hourly * bias_mult).clip(lower=0.0, upper=capacity_mw)
             else:
@@ -454,6 +566,15 @@ def get_profile_for_year(
         
         s_final = s_15min.reindex(target_index).ffill().bfill()
         s_final.name = "Gen_MW"
+        if tech == "Wind" and apply_wind_calibration:
+            s_final = apply_wind_postprocess(
+                s_final,
+                capacity_mw=capacity_mw,
+                hub_name=hub_name,
+                project_name=project_name,
+                resource_id=resource_id,
+                calibration_table=calibration_table,
+            )
         return s_final.fillna(0)
 
         
@@ -513,7 +634,17 @@ def get_profile_for_year(
         # Fill missing (e.g. Leap day diffs, or Feb 29 handling)
         df_merged['mw'] = df_merged['mw'].interpolate(method='linear').ffill().bfill()
         
-        return pd.Series(df_merged['mw'].values, index=target_index_utc, name="Gen_MW")
+        out_series = pd.Series(df_merged['mw'].values, index=target_index_utc, name="Gen_MW")
+        if tech == "Wind" and apply_wind_calibration:
+            out_series = apply_wind_postprocess(
+                out_series,
+                capacity_mw=capacity_mw,
+                hub_name=hub_name,
+                project_name=project_name,
+                resource_id=resource_id,
+                calibration_table=calibration_table,
+            )
+        return out_series
 
 
 def get_blended_profile_for_year(
