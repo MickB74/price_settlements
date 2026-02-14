@@ -1,0 +1,14 @@
+{
+  "lat": 33.1534,
+  "lon": -99.2847,
+  "start_utc": "2025-09-01T00:00:00+00:00",
+  "end_utc": "2025-09-05T23:00:00+00:00",
+  "config": {
+    "model": "hrrr",
+    "product": "sfc",
+    "forecast_hour": 0,
+    "cycle_hours": 1
+  },
+  "rows": 120,
+  "failures": []
+}
