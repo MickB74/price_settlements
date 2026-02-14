@@ -23,6 +23,10 @@ WIND_WEATHER_SOURCE_OPTIONS = {
     "Open-Meteo / PVGIS (Default)": "AUTO",
     "NOAA HRRR (Cached)": "NOAA_HRRR_CACHED",
 }
+WIND_MODEL_ENGINE_OPTIONS = {
+    "Standard (Current)": "STANDARD",
+    "Advanced Calibrated (EIA/CF/SCED/Node)": "ADVANCED_CALIBRATED",
+}
 AZURE_DEFAULT_CONFIG = {
     "lat": 33.1534,
     "lon": -99.2847,
@@ -71,7 +75,7 @@ def _index_diagnostics(idx: pd.Index):
         "duplicates": int(idx.duplicated().sum()),
     }
 
-def load_data(year, wind_weather_source="AUTO", hrrr_forecast_hour=0):
+def load_data(year, wind_weather_source="AUTO", hrrr_forecast_hour=0, wind_model_engine="STANDARD"):
     """
     Loads Actuals (TWA) and Modeled (Mixed Fleet) data for the given year.
     Returns a merged dataframe with 'Actual' and 'Predicted' columns.
@@ -131,6 +135,7 @@ def load_data(year, wind_weather_source="AUTO", hrrr_forecast_hour=0):
                 turbines=turbines,
                 wind_weather_source=wind_weather_source,
                 hrrr_forecast_hour=int(hrrr_forecast_hour),
+                wind_model_engine=wind_model_engine,
             )
         except Exception as e:
             st.error(f"Error generating modeled profile: {e}")
@@ -198,6 +203,16 @@ def render():
         )
         wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(wind_source_label, "AUTO")
         hrrr_forecast_hour = 0
+        wind_model_engine = WIND_MODEL_ENGINE_OPTIONS.get(
+            st.selectbox(
+                "Wind Model Engine",
+                list(WIND_MODEL_ENGINE_OPTIONS.keys()),
+                index=1,
+                key="azure_wind_model_engine_label",
+                help="Advanced mode applies monthly EIA/CF targets, SCED bias correction, node adjustments, and tuned clipping.",
+            ),
+            "STANDARD",
+        )
         if wind_weather_source == "NOAA_HRRR_CACHED":
             hrrr_forecast_hour = int(
                 st.number_input(
@@ -224,6 +239,7 @@ def render():
             year,
             wind_weather_source=wind_weather_source,
             hrrr_forecast_hour=hrrr_forecast_hour,
+            wind_model_engine=wind_model_engine,
         )
         st.write(f"Debug: Data loaded. Rows: {len(df)}") # DEBUG
         if diag:

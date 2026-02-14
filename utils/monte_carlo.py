@@ -68,6 +68,7 @@ def run_bootstrap_simulation(
     revenue_share_pct = scenario_config.get('revenue_share', 100)
     curtail_neg = scenario_config.get('curtail_neg', False)
     turbine_type = scenario_config.get('turbine_type', 'GENERIC')
+    wind_model_engine = scenario_config.get('wind_model_engine', 'STANDARD')
     
     revenue_share = revenue_share_pct / 100.0
     
@@ -109,7 +110,8 @@ def run_bootstrap_simulation(
                     capacity_mw=capacity_mw,
                     force_tmy=False,  # Use actual historical weather
                     turbine_type=turbine_type,
-                    efficiency=0.86  # 14% losses
+                    efficiency=0.86,  # 14% losses
+                    wind_model_engine=wind_model_engine,
                 )
                 
                 # Cache for future iterations

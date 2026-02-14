@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import numpy as np
 import os
+import json
 from datetime import datetime
 
 # Cache directory
@@ -280,6 +281,70 @@ def get_openmeteo_2024_data(lat, lon):
     """Fetch 2024 hourly solar and wind data from Open-Meteo (backward compatibility)."""
     return get_openmeteo_data(2024, lat, lon)
 
+
+WIND_MODEL_ENGINE_STANDARD = "STANDARD"
+WIND_MODEL_ENGINE_ADVANCED = "ADVANCED_CALIBRATED"
+
+
+def _normalize_wind_model_engine(wind_model_engine):
+    key = str(wind_model_engine or WIND_MODEL_ENGINE_STANDARD).strip().upper()
+    if key in {"ADVANCED", "ADVANCED_CALIBRATED", "V2", "CALIBRATED"}:
+        return WIND_MODEL_ENGINE_ADVANCED
+    return WIND_MODEL_ENGINE_STANDARD
+
+
+def _engine_calibration_table(base_table, wind_model_engine):
+    """
+    Return a calibration table tuned for the selected wind engine.
+    Keeps the default behavior for STANDARD and enables all advanced
+    calibrations for the alternate engine.
+    """
+    engine_key = _normalize_wind_model_engine(wind_model_engine)
+    if engine_key != WIND_MODEL_ENGINE_ADVANCED or not isinstance(base_table, dict):
+        return base_table
+
+    table = json.loads(json.dumps(base_table))
+    post_cfg = table.get("postprocess_config", {})
+    if not isinstance(post_cfg, dict):
+        post_cfg = {}
+    post_cfg["apply_monthly_targets"] = True
+    post_cfg["apply_sced_bias"] = True
+    post_cfg["apply_node_adjustment"] = True
+    # Congestion haircut is applied downstream where SPP is available.
+    post_cfg["apply_congestion_haircut"] = False
+    table["postprocess_config"] = post_cfg
+
+    # Explicit reanalysis blending for advanced mode.
+    table["reanalysis_blend"] = {"era5_weight": 0.70, "merra2_weight": 0.30}
+    table["advanced_engine_version"] = "wind_v2_2026_02"
+    return table
+
+
+def _apply_advanced_power_curve_clipping(mw_hourly, wind_speed_hub, capacity_mw):
+    """
+    Operational clipping logic for advanced wind mode:
+    - Slightly stricter cut-in deadband.
+    - Additional high-wind taper near cut-out.
+    - Ramp-rate limiter to mimic fleet dispatch/availability dynamics.
+    """
+    out = pd.Series(pd.to_numeric(mw_hourly, errors="coerce"), index=mw_hourly.index).fillna(0.0)
+    ws = pd.Series(pd.to_numeric(wind_speed_hub, errors="coerce"), index=out.index).fillna(0.0)
+
+    out.loc[ws < 3.2] = 0.0
+
+    mask_hi = (ws >= 22.0) & (ws < 25.0)
+    if mask_hi.any():
+        taper = ((25.0 - ws.loc[mask_hi]) / 3.0).clip(lower=0.0, upper=1.0)
+        out.loc[mask_hi] = np.minimum(out.loc[mask_hi], taper * float(capacity_mw))
+
+    vals = out.to_numpy(dtype=float)
+    max_up = float(capacity_mw) * 0.45
+    max_down = float(capacity_mw) * 0.65
+    for i in range(1, len(vals)):
+        vals[i] = min(vals[i], vals[i - 1] + max_up)
+        vals[i] = max(vals[i], vals[i - 1] - max_down)
+    return pd.Series(vals, index=out.index, name=out.name).clip(lower=0.0, upper=float(capacity_mw))
+
 def get_profile_for_year(
     year,
     tech,
@@ -298,6 +363,7 @@ def get_profile_for_year(
     turbines=None, # List of turbine dicts for blended profile
     wind_weather_source="AUTO",
     hrrr_forecast_hour=0,
+    wind_model_engine=WIND_MODEL_ENGINE_STANDARD,
 ):
     """
     Generates a full year profile.
@@ -307,9 +373,12 @@ def get_profile_for_year(
     efficiency: System efficiency (default 0.85 for 15% losses). Pass 0.86 for 14% losses.
     """
     
+    wind_model_engine_key = _normalize_wind_model_engine(wind_model_engine)
+
     calibration_table = None
     if tech == "Wind" and apply_wind_calibration:
         calibration_table = load_wind_calibration_table()
+        calibration_table = _engine_calibration_table(calibration_table, wind_model_engine_key)
 
     # Handle Blended Profile
     if turbines and len(turbines) > 0 and tech == "Wind":
@@ -323,6 +392,7 @@ def get_profile_for_year(
             efficiency=efficiency,
             wind_weather_source=wind_weather_source,
             hrrr_forecast_hour=hrrr_forecast_hour,
+            wind_model_engine=wind_model_engine_key,
         )
         if apply_wind_calibration and blended_series is not None and not blended_series.empty:
             blended_series = apply_wind_postprocess(
@@ -520,7 +590,7 @@ def get_profile_for_year(
                     ws_10m = df_data['Wind_Speed_10m_mps']
 
                 if (
-                    source_type == "OpenMeteo_Actual"
+                    source_type in ["OpenMeteo_Actual", "HRRR_Cached"]
                     and apply_wind_calibration
                     and calibration_table is not None
                 ):
@@ -561,6 +631,12 @@ def get_profile_for_year(
                         calibration_table=calibration_table,
                     )
                     mw_hourly = (mw_hourly * bias_mult).clip(lower=0.0, upper=capacity_mw)
+                if wind_model_engine_key == WIND_MODEL_ENGINE_ADVANCED:
+                    mw_hourly = _apply_advanced_power_curve_clipping(
+                        mw_hourly=mw_hourly,
+                        wind_speed_hub=wind_speed_hub,
+                        capacity_mw=capacity_mw,
+                    )
             else:
                 return pd.Series()
         else:
@@ -661,6 +737,7 @@ def get_profile_for_year(
                     turbines=None,
                     wind_weather_source="AUTO",
                     hrrr_forecast_hour=hrrr_forecast_hour,
+                    wind_model_engine=wind_model_engine_key,
                 )
                 if not fallback_series.empty:
                     if fallback_series.index.tz is None:
@@ -772,6 +849,7 @@ def get_blended_profile_for_year(
     efficiency=0.85,
     wind_weather_source="AUTO",
     hrrr_forecast_hour=0,
+    wind_model_engine=WIND_MODEL_ENGINE_STANDARD,
 ):
     """
     Generates a blended profile for a project with multiple turbine types.
@@ -803,6 +881,7 @@ def get_blended_profile_for_year(
             force_tmy=False,
             wind_weather_source=wind_weather_source,
             hrrr_forecast_hour=hrrr_forecast_hour,
+            wind_model_engine=wind_model_engine,
         )
         
         if s.empty:

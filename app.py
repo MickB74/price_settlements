@@ -62,6 +62,11 @@ WIND_WEATHER_SOURCE_OPTIONS = {
     "NOAA HRRR (Cached)": "NOAA_HRRR_CACHED",
 }
 
+WIND_MODEL_ENGINE_OPTIONS = {
+    "Standard (Current)": "STANDARD",
+    "Advanced Calibrated (EIA/CF/SCED/Node)": "ADVANCED_CALIBRATED",
+}
+
 
 def get_hrrr_cache_count():
     try:
@@ -589,6 +594,7 @@ def calculate_scenario(scenario, df_rtm):
                 apply_wind_calibration=(tech == "Wind"),
                 wind_weather_source=scenario.get("wind_weather_source", "AUTO"),
                 hrrr_forecast_hour=int(scenario.get("hrrr_forecast_hour", 0)),
+                wind_model_engine=scenario.get("wind_model_engine", "STANDARD"),
             )
             # Align profile with df_hub timestamps
             profile_central = profile_series.tz_convert('US/Central')
@@ -863,6 +869,7 @@ def reset_defaults():
     st.session_state.sb_no_curtailment = False
     st.session_state.sb_force_tmy = False
     st.session_state.sb_wind_weather_source_label = "Open-Meteo / PVGIS (Default)"
+    st.session_state.sb_wind_model_engine_label = "Advanced Calibrated (EIA/CF/SCED/Node)"
     st.session_state.sb_hrrr_forecast_hour = 0
 
 
@@ -1078,33 +1085,47 @@ with st.sidebar:
 
     s_wind_weather_source = "AUTO"
     s_hrrr_forecast_hour = 0
+    s_wind_model_engine = "STANDARD"
     if "Wind" in s_techs:
-        source_labels = list(WIND_WEATHER_SOURCE_OPTIONS.keys())
-        selected_label = st.selectbox(
-            "Wind Weather Dataset",
-            source_labels,
-            key="sb_wind_weather_source_label",
-            help="NOAA HRRR uses cached files under data_cache/hrrr (generated separately).",
-        )
-        s_wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(selected_label, "AUTO")
-        if s_wind_weather_source == "NOAA_HRRR_CACHED":
-            s_hrrr_forecast_hour = int(
-                st.number_input(
-                    "HRRR Forecast Hour (fxx)",
-                    min_value=0,
-                    max_value=18,
-                    value=int(st.session_state.get("sb_hrrr_forecast_hour", 0)),
-                    step=1,
-                    key="sb_hrrr_forecast_hour",
-                    help="0 = analysis/nowcast. 1..18 = lead forecast hour.",
-                )
+        w_col1, w_col2, w_col3 = st.columns([2, 1, 2])
+        with w_col1:
+            source_labels = list(WIND_WEATHER_SOURCE_OPTIONS.keys())
+            selected_label = st.selectbox(
+                "Wind Weather Dataset",
+                source_labels,
+                key="sb_wind_weather_source_label",
+                help="NOAA HRRR uses cached files under data_cache/hrrr (generated separately).",
             )
-            st.caption("Using cached NOAA HRRR from `data_cache/hrrr` when available.")
-            hrrr_count = get_hrrr_cache_count()
-            if hrrr_count == 0:
-                st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
-            else:
-                st.caption(f"Detected {hrrr_count} cached HRRR files.")
+            s_wind_weather_source = WIND_WEATHER_SOURCE_OPTIONS.get(selected_label, "AUTO")
+        with w_col2:
+            if s_wind_weather_source == "NOAA_HRRR_CACHED":
+                s_hrrr_forecast_hour = int(
+                    st.number_input(
+                        "HRRR Forecast Hour (fxx)",
+                        min_value=0,
+                        max_value=18,
+                        value=int(st.session_state.get("sb_hrrr_forecast_hour", 0)),
+                        step=1,
+                        key="sb_hrrr_forecast_hour",
+                        help="0 = analysis/nowcast. 1..18 = lead forecast hour.",
+                    )
+                )
+                st.caption("Using cached NOAA HRRR from `data_cache/hrrr` when available.")
+                hrrr_count = get_hrrr_cache_count()
+                if hrrr_count == 0:
+                    st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
+                else:
+                    st.caption(f"Detected {hrrr_count} cached HRRR files.")
+        with w_col3:
+            model_labels = list(WIND_MODEL_ENGINE_OPTIONS.keys())
+            model_label = st.selectbox(
+                "Wind Model Engine",
+                model_labels,
+                index=1,
+                key="sb_wind_model_engine_label",
+                help="Advanced mode applies monthly EIA/CF targets, SCED bias correction, node adjustments, and tuned clipping.",
+            )
+            s_wind_model_engine = WIND_MODEL_ENGINE_OPTIONS.get(model_label, "STANDARD")
     
 
     st.markdown("---")
@@ -1178,6 +1199,8 @@ with st.sidebar:
                                 name += " [TMY]"
                             if tech == "Wind" and s_wind_weather_source == "NOAA_HRRR_CACHED":
                                 name += f" [HRRR f{int(s_hrrr_forecast_hour):02d}]"
+                            if tech == "Wind" and s_wind_model_engine == "ADVANCED_CALIBRATED":
+                                name += " [Advanced Wind]"
                             
                             if s_use_custom_location and s_custom_lat is not None:
                                 name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
@@ -1201,6 +1224,7 @@ with st.sidebar:
                                     "force_tmy": s_force_tmy,
                                     "wind_weather_source": s_wind_weather_source if tech == "Wind" else "AUTO",
                                     "hrrr_forecast_hour": int(s_hrrr_forecast_hour) if tech == "Wind" else 0,
+                                    "wind_model_engine": s_wind_model_engine if tech == "Wind" else "STANDARD",
                                     "custom_lat": s_custom_lat if s_use_custom_location else None,
                                     "custom_lon": s_custom_lon if s_use_custom_location else None,
                                     "custom_profile_path": None
@@ -1255,6 +1279,8 @@ with st.sidebar:
                                 name += " [TMY]"
                             if tech == "Wind" and s_wind_weather_source == "NOAA_HRRR_CACHED":
                                 name += f" [HRRR f{int(s_hrrr_forecast_hour):02d}]"
+                            if tech == "Wind" and s_wind_model_engine == "ADVANCED_CALIBRATED":
+                                name += " [Advanced Wind]"
                             
                             if s_use_custom_location and s_custom_lat is not None:
                                 name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
@@ -1275,6 +1301,7 @@ with st.sidebar:
                                 "force_tmy": s_force_tmy,
                                 "wind_weather_source": s_wind_weather_source if tech == "Wind" else "AUTO",
                                 "hrrr_forecast_hour": int(s_hrrr_forecast_hour) if tech == "Wind" else 0,
+                                "wind_model_engine": s_wind_model_engine if tech == "Wind" else "STANDARD",
                                 "custom_lat": s_custom_lat if s_use_custom_location else None,
                                 "custom_lon": s_custom_lon if s_use_custom_location else None,
                                 "custom_profile_path": None
@@ -1386,12 +1413,19 @@ with tab_scenarios:
                                 'revenue_share': scenario.get('revenue_share_pct', 100),
                                 'curtail_neg': scenario.get('curtailment', False),
                                 'turbine_type': scenario.get('turbine', 'GENERIC'),
+                                'wind_model_engine': scenario.get('wind_model_engine', 'STANDARD'),
                                 'year': scenario['year']  # For reference
                             }
                             
                             # Create cache key for this scenario's generation config
-                            cache_key = (mc_config['tech'], mc_config['lat'], mc_config['lon'], 
-                                       mc_config['capacity_mw'], mc_config['turbine_type'])
+                            cache_key = (
+                                mc_config['tech'],
+                                mc_config['lat'],
+                                mc_config['lon'],
+                                mc_config['capacity_mw'],
+                                mc_config['turbine_type'],
+                                mc_config.get('wind_model_engine', 'STANDARD'),
+                            )
                             
                             # Check if we already loaded profiles for this config
                             if cache_key not in gen_cache_by_config:
@@ -1414,6 +1448,7 @@ with tab_scenarios:
                                             efficiency=0.86,
                                             hub_name=mc_config.get('hub'),
                                             apply_wind_calibration=(mc_config['tech'] == "Wind"),
+                                            wind_model_engine=mc_config.get('wind_model_engine', 'STANDARD'),
                                         )
                                         
                                         # CRITICAL: Validate the profile is not empty
@@ -2360,6 +2395,7 @@ with tab_validation:
 
         preview_wind_weather_source = "AUTO"
         preview_hrrr_forecast_hour = 0
+        preview_wind_model_engine = "STANDARD"
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
         # Only show turbine selector for Generic
@@ -2394,7 +2430,7 @@ with tab_validation:
             st.caption(f"Turbine: {t_model}")
 
         if preview_tech == "Wind":
-            w1, w2 = st.columns([2, 1])
+            w1, w2, w3 = st.columns([2, 1, 2])
             with w1:
                 preview_wind_label = st.selectbox(
                     "Wind Weather Dataset",
@@ -2421,6 +2457,15 @@ with tab_validation:
                         st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
                     else:
                         st.caption(f"Detected {hrrr_count} cached HRRR files.")
+            with w3:
+                preview_engine_label = st.selectbox(
+                    "Wind Model Engine",
+                    list(WIND_MODEL_ENGINE_OPTIONS.keys()),
+                    index=1,
+                    key="val_wind_model_engine_label",
+                    help="Advanced mode applies monthly EIA/CF targets, SCED bias correction, node adjustments, and tuned clipping.",
+                )
+                preview_wind_model_engine = WIND_MODEL_ENGINE_OPTIONS.get(preview_engine_label, "STANDARD")
 
 
         # Row 3: Actions
@@ -2601,6 +2646,7 @@ with tab_validation:
                                             turbines=turbines_config,
                                             wind_weather_source=preview_wind_weather_source,
                                             hrrr_forecast_hour=preview_hrrr_forecast_hour,
+                                            wind_model_engine=preview_wind_model_engine,
                                         )
                                     
                                 if profile is not None:
@@ -3948,6 +3994,7 @@ with tab_performance:
         # --- Advanced Model Parameters ---
         bench_wind_weather_source = "AUTO"
         bench_hrrr_forecast_hour = 0
+        bench_wind_model_engine = "STANDARD"
         with st.expander("🛠️ Advanced Model Parameters"):
             c_p1, c_p2, c_p3 = st.columns(3)
             # Losses
@@ -3970,7 +4017,7 @@ with tab_performance:
             }
             final_turbine_req = turbine_override_map[selected_turb]
 
-            c_w1, c_w2 = st.columns([2, 1])
+            c_w1, c_w2, c_w3 = st.columns([2, 1, 2])
             with c_w1:
                 bench_wind_label = st.selectbox(
                     "Wind Weather Dataset",
@@ -3997,6 +4044,15 @@ with tab_performance:
                         st.warning("No HRRR cache files found yet. Generate them with `scripts/fetch_hrrr_wind.py`.")
                     else:
                         st.caption(f"Detected {hrrr_count} cached HRRR files.")
+            with c_w3:
+                bench_engine_label = st.selectbox(
+                    "Wind Model Engine",
+                    list(WIND_MODEL_ENGINE_OPTIONS.keys()),
+                    index=1,
+                    key="bench_wind_model_engine_label",
+                    help="Advanced mode applies monthly EIA/CF targets, SCED bias correction, node adjustments, and tuned clipping.",
+                )
+                bench_wind_model_engine = WIND_MODEL_ENGINE_OPTIONS.get(bench_engine_label, "STANDARD")
 
         if st.button(f"🚀 Fetch & Benchmark {final_resource_id}"):
             if start_bench > end_bench:
@@ -4087,6 +4143,7 @@ with tab_performance:
                                     turbines=asset_meta.get('turbines') if asset_meta else None,
                                     wind_weather_source=bench_wind_weather_source,
                                     hrrr_forecast_hour=bench_hrrr_forecast_hour,
+                                    wind_model_engine=bench_wind_model_engine,
                                 )
                             else:
                                 m_df = fetch_tmy.get_profile_for_year(
