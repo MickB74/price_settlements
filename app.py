@@ -538,6 +538,59 @@ def load_market_data(year):
         st.error(str(e))
         return pd.DataFrame()
 
+
+@st.cache_data(show_spinner=False, ttl=900)
+def parse_uploaded_bill_file(file_bytes, file_extension):
+    """
+    Parse an uploaded bill file into a DataFrame.
+    Cached by file contents to avoid reprocessing on each Streamlit rerun.
+    """
+    file_buffer = io.BytesIO(file_bytes)
+
+    if file_extension == "csv":
+        return pd.read_csv(file_buffer)
+
+    if file_extension in {"xlsx", "xls"}:
+        engine = "openpyxl" if file_extension == "xlsx" else None
+        return pd.read_excel(file_buffer, engine=engine)
+
+    if file_extension == "pdf":
+        import pdfplumber
+
+        best_table = None
+        with pdfplumber.open(file_buffer) as pdf:
+            for page in pdf.pages:
+                table = page.extract_table()
+                if table and len(table) > 1:
+                    if best_table is None or len(table) > len(best_table):
+                        best_table = table
+                    # Stop early when we already have a sizable table.
+                    if len(best_table) >= 100:
+                        break
+                    continue
+
+                if best_table is None:
+                    for candidate in page.extract_tables() or []:
+                        if candidate and len(candidate) > 1:
+                            if best_table is None or len(candidate) > len(best_table):
+                                best_table = candidate
+
+        if not best_table:
+            raise ValueError("No tables found in PDF. Ensure the PDF contains tabular data.")
+
+        headers = [
+            (str(h).strip() if h is not None else "")
+            for h in best_table[0]
+        ]
+        if not any(headers):
+            headers = [f"col_{i}" for i in range(len(headers))]
+
+        rows = best_table[1:]
+        return pd.DataFrame(rows, columns=headers)
+
+    raise ValueError(f"Unsupported file type: {file_extension}")
+
+
 @st.cache_data(show_spinner=False)
 def get_cached_asset_data(resource_id, start_date, end_date):
     """Cached wrapper for SCED fetching to prevent re-loading on every interaction."""
@@ -3409,45 +3462,13 @@ with tab_validation:
     if uploaded_bill:
         try:
             # 1. Load User Data based on file type
-            file_extension = uploaded_bill.name.split('.')[-1].lower()
-            
-            if file_extension == 'csv':
-                df_bill = pd.read_csv(uploaded_bill)
-            elif file_extension in ['xlsx', 'xls']:
-                df_bill = pd.read_excel(uploaded_bill, engine='openpyxl' if file_extension == 'xlsx' else None)
-            elif file_extension == 'pdf':
-                # PDF parsing - extract tables using pdfplumber
-                import pdfplumber
-                
-                with pdfplumber.open(uploaded_bill) as pdf:
-                    # Try to extract tables from all pages
-                    tables = []
-                    for page in pdf.pages:
-                        page_tables = page.extract_tables()
-                        if page_tables:
-                            tables.extend(page_tables)
-                    
-                    if not tables:
-                        st.error("❌ No tables found in PDF. Please ensure your PDF contains tabular data.")
-                        st.stop()
-                    
-                    # Use the first table found (or combine if multiple)
-                    # Assume first row is header
-                    if len(tables) == 1:
-                        table_data = tables[0]
-                        headers = table_data[0]
-                        rows = table_data[1:]
-                        df_bill = pd.DataFrame(rows, columns=headers)
-                    else:
-                        # Multiple tables - try to combine or use largest
-                        st.info(f"ℹ️ Found {len(tables)} tables in PDF. Using the largest table.")
-                        largest_table = max(tables, key=len)
-                        headers = largest_table[0]
-                        rows = largest_table[1:]
-                        df_bill = pd.DataFrame(rows, columns=headers)
-            else:
+            file_extension = uploaded_bill.name.rsplit('.', 1)[-1].lower()
+            if file_extension not in {"csv", "xlsx", "xls", "pdf"}:
                 st.error(f"Unsupported file type: {file_extension}")
                 st.stop()
+
+            file_bytes = uploaded_bill.getvalue()
+            df_bill = parse_uploaded_bill_file(file_bytes, file_extension)
             
             # Normalize Columns
             df_bill.columns = [c.lower().strip() if c else f'col_{i}' for i, c in enumerate(df_bill.columns)]
@@ -3461,13 +3482,29 @@ with tab_validation:
                 st.error(f"Could not identify required columns. Found: {list(df_bill.columns)}. Need Time/Date and Gen/MW.")
             else:
                 # 2. Process User Data
-                # Parse Time
-                # Parse Time - Localize to Central if naive
-                df_bill['Time'] = pd.to_datetime(df_bill[time_col])
-                if df_bill['Time'].dt.tz is None:
-                    df_bill['Time'] = df_bill['Time'].dt.tz_localize('US/Central', ambiguous='infer').dt.tz_convert('UTC')
-                else:
-                    df_bill['Time'] = df_bill['Time'].dt.tz_convert('UTC')
+                parsed_time = pd.to_datetime(df_bill[time_col], errors='coerce')
+                invalid_time_rows = int(parsed_time.isna().sum())
+                if invalid_time_rows:
+                    df_bill = df_bill.loc[parsed_time.notna()].copy()
+                    parsed_time = parsed_time.loc[parsed_time.notna()]
+                    st.warning(f"Skipped {invalid_time_rows:,} rows with invalid timestamps.")
+
+                if df_bill.empty:
+                    st.error("No valid timestamps were found in the uploaded bill.")
+                    st.stop()
+
+                if parsed_time.dt.tz is None:
+                    parsed_time = parsed_time.dt.tz_localize('US/Central', ambiguous='NaT', nonexistent='shift_forward')
+                    ambiguous_time_rows = int(parsed_time.isna().sum())
+                    if ambiguous_time_rows:
+                        df_bill = df_bill.loc[parsed_time.notna()].copy()
+                        parsed_time = parsed_time.loc[parsed_time.notna()]
+                        st.warning(f"Skipped {ambiguous_time_rows:,} rows due to ambiguous DST timestamps.")
+                    if df_bill.empty:
+                        st.error("No valid timestamps remained after timezone normalization.")
+                        st.stop()
+
+                df_bill['Time'] = parsed_time.dt.tz_convert('UTC')
                 
                 # Resample/Align if needed? For now assume it matches roughly or we align to Market Data
                 # Rename for clarity
@@ -3487,6 +3524,17 @@ with tab_validation:
                 else:
                     # Ensure column exists for aggregation later, defaulting to 0
                     df_bill['User_Settlement_Amount'] = 0.0
+
+                # Reuse Central-time month keys throughout validation to avoid repeated datetime parsing.
+                df_bill['Time_Central'] = df_bill['Time'].dt.tz_convert('US/Central')
+                df_bill['MonthPeriod'] = df_bill['Time_Central'].dt.to_period('M')
+                df_bill['Month'] = df_bill['MonthPeriod'].dt.strftime('%b %Y')
+
+                if selected_month_numbers:
+                    df_bill = df_bill[df_bill['Time_Central'].dt.month.isin(selected_month_numbers)].copy()
+                    if df_bill.empty:
+                        st.error("No uploaded bill rows fall within the selected validation months.")
+                        st.stop()
                 
                 # Detect if this is monthly summary data vs interval data
                 # Monthly summary typically has <= 12 rows (one per month)
@@ -3516,15 +3564,6 @@ with tab_validation:
                     }).reset_index()
                     model_monthly['Month'] = model_monthly['MonthPeriod'].dt.strftime('%b %Y')
                     
-                    # Process User Bill Data (ensure it has Month Period)
-                    if 'Month' not in df_bill.columns and time_col:
-                        df_bill['MonthPeriod'] = pd.to_datetime(df_bill[time_col]).dt.to_period('M')
-                        df_bill['Month'] = df_bill['MonthPeriod'].dt.strftime('%b %Y')
-                    elif 'Month' not in df_bill.columns:
-                        # Fallback if no time column (unlikely given previous checks)
-                        st.error("Cannot align data: Missing time column in bill.")
-                        st.stop()
-                        
                     # Aggregate User Bill to Monthly (handling if it's already monthly or interval)
                     user_monthly = df_bill.groupby('Month').agg({
                         'User_Gen_MW': 'sum', # If interval, this needs freq adjustment!
@@ -3537,7 +3576,7 @@ with tab_validation:
                     # Heuristic: Check number of rows.
                     if len(df_bill) > 100: # detailed interval data
                         # Estimate frequency
-                        time_diff = pd.to_datetime(df_bill[time_col]).diff().median()
+                        time_diff = df_bill['Time'].diff().median()
                         freq_hours = time_diff.total_seconds() / 3600.0 if pd.notnull(time_diff) else 0.25
                         user_monthly['User_Gen_MW'] = user_monthly['User_Gen_MW'] * freq_hours
                         
@@ -3603,66 +3642,64 @@ with tab_validation:
                         st.error(f"Could not find market data for {val_year}.")
                     else:
                         # Filter for selected Hub
-                        df_market_hub = df_market[df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH')].copy()
-                        
-                        # Parse user's time column to get months
-                        df_bill['Month'] = pd.to_datetime(df_bill[time_col]).dt.to_period('M')
-                        
-                        # Calculate expected settlement for the entire year using market data
-                        # We'll need generation profile - use user's total gen and distribute it
-                        # Actually, we just need total MWh per month from user, then calc settlement
-                        
+                        df_market_hub = df_market.loc[
+                            df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH'),
+                            ['Time_Central', 'SPP']
+                        ].copy()
+
+                        if selected_month_numbers:
+                            df_market_hub = df_market_hub[df_market_hub['Time_Central'].dt.month.isin(selected_month_numbers)]
+
+                        # Aggregate market SPP once per month (vectorized) instead of row-wise month slicing.
+                        df_market_hub['MonthPeriod'] = df_market_hub['Time_Central'].dt.to_period('M')
+                        market_monthly = (
+                            df_market_hub.groupby('MonthPeriod', as_index=False)['SPP']
+                            .mean()
+                            .rename(columns={'SPP': 'Avg_Market_Price'})
+                        )
+
+                        bill_monthly = (
+                            df_bill.groupby('MonthPeriod', as_index=False)
+                            .agg({
+                                'User_Gen_MW': 'sum',
+                                'User_Settlement_Amount': 'sum'
+                            })
+                        )
+
+                        df_comparison = pd.merge(bill_monthly, market_monthly, on='MonthPeriod', how='left')
+                        df_comparison = df_comparison.dropna(subset=['Avg_Market_Price']).copy()
+
+                        if df_comparison.empty:
+                            st.error("No market price data matched the uploaded bill months.")
+                            st.stop()
+
+                        revenue_share_pct = val_revenue_share / 100.0
+                        if revenue_share_pct < 1.0:
+                            upside = np.maximum(df_comparison['Avg_Market_Price'] - val_vppa_price, 0)
+                            downside = np.minimum(df_comparison['Avg_Market_Price'] - val_vppa_price, 0)
+                            settlement_per_mwh = (upside * revenue_share_pct) + downside
+                        else:
+                            settlement_per_mwh = df_comparison['Avg_Market_Price'] - val_vppa_price
+
+                        df_comparison['Calculated Settlement'] = df_comparison['User_Gen_MW'] * settlement_per_mwh
+                        df_comparison['Difference'] = df_comparison['Calculated Settlement'] - df_comparison['User_Settlement_Amount']
+                        df_comparison['Month'] = df_comparison['MonthPeriod'].dt.strftime('%b %Y')
+                        df_comparison['Generation (MWh)'] = df_comparison['User_Gen_MW']
+                        df_comparison['Avg Market Price'] = df_comparison['Avg_Market_Price'].map(lambda x: f"${x:.2f}")
+                        df_comparison['Strike Price'] = f"${val_vppa_price:.2f}"
+                        df_comparison['User Reported'] = df_comparison['User_Settlement_Amount']
+
+                        df_comparison = df_comparison[[
+                            'Month',
+                            'Generation (MWh)',
+                            'Avg Market Price',
+                            'Strike Price',
+                            'Calculated Settlement',
+                            'User Reported',
+                            'Difference',
+                        ]].copy()
+
                         st.subheader("Monthly Breakdown")
-                        
-                        comparison_data = []
-                        
-                        for _, row in df_bill.iterrows():
-                            month_period = row['Month']
-                            
-                            # Skip months not selected by the user
-                            if selected_month_numbers and month_period.month not in selected_month_numbers:
-                                continue
-                                
-                            user_gen_mwh = row['User_Gen_MW']  # Assuming this is MWh total for the month
-                            user_settlement = row.get('User_Settlement_Amount', 0)
-                            
-                            # Filter market data for this month
-                            month_start = month_period.to_timestamp().tz_localize('US/Central')
-                            month_end = (month_period + 1).to_timestamp().tz_localize('US/Central')
-                            
-                            df_month = df_market_hub[
-                                (df_market_hub['Time_Central'] >= month_start) & 
-                                (df_market_hub['Time_Central'] < month_end)
-                            ].copy()
-                            
-                            if not df_month.empty:
-                                # Calculate expected settlement with revenue sharing
-                                avg_market_price = df_month['SPP'].mean()
-                                
-                                # Apply revenue share logic
-                                revenue_share_pct = val_revenue_share / 100.0
-                                if revenue_share_pct < 1.0:
-                                    # When SPP > VPPA: Settlement = (SPP - VPPA) * share_pct (buyer gets only their share of upside)
-                                    # When SPP <= VPPA: Settlement = SPP - VPPA (full downside, no sharing)
-                                    upside = max(avg_market_price - val_vppa_price, 0)
-                                    downside = min(avg_market_price - val_vppa_price, 0)
-                                    settlement_per_mwh = (upside * revenue_share_pct) + downside
-                                else:
-                                    settlement_per_mwh = avg_market_price - val_vppa_price
-                                
-                                expected_settlement = user_gen_mwh * settlement_per_mwh
-                                
-                                comparison_data.append({
-                                    'Month': month_period.strftime('%b %Y'),
-                                    'Generation (MWh)': user_gen_mwh,
-                                    'Avg Market Price': f"${avg_market_price:.2f}",
-                                    'Strike Price': f"${val_vppa_price:.2f}",
-                                    'Calculated Settlement': expected_settlement,
-                                    'User Reported': user_settlement,
-                                    'Difference': expected_settlement - user_settlement
-                                })
-                        
-                        df_comparison = pd.DataFrame(comparison_data)
                         
                         # Display summary
                         total_calc = df_comparison['Calculated Settlement'].sum()
@@ -3741,18 +3778,21 @@ with tab_validation:
                         st.error(f"Could not find market data for {val_year}.")
                     else:
                         # Filter for selected Hub
-                        df_market_hub = df_market[df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH')].copy()
-                        
-                        # 4. Merge Data
-                        # Ensure timezone alignment - Market data is in UTC (Time) and Central (Time_Central)
-                        # We'll match on UTC 'Time' for safety if user provided UTC, or convert user to UTC if naive
-                        
-                        # Handle User Timezone
-                        if df_bill['Time'].dt.tz is None:
-                            st.warning("⚠️ User timestamp is timezone-naive. Assuming US/Central.")
-                            df_bill['Time'] = df_bill['Time'].dt.tz_localize('US/Central', ambiguous='infer').dt.tz_convert('UTC')
-                        else:
-                            df_bill['Time'] = df_bill['Time'].dt.tz_convert('UTC')
+                        df_market_hub = df_market.loc[
+                            df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH'),
+                            ['Time', 'SPP', 'Time_Central']
+                        ].copy()
+
+                        if selected_month_numbers:
+                            df_market_hub = df_market_hub[df_market_hub['Time_Central'].dt.month.isin(selected_month_numbers)]
+
+                        # Narrow the market slice to uploaded timestamps before merging.
+                        min_user_time = df_bill['Time'].min()
+                        max_user_time = df_bill['Time'].max()
+                        df_market_hub = df_market_hub[
+                            (df_market_hub['Time'] >= min_user_time) &
+                            (df_market_hub['Time'] <= max_user_time)
+                        ]
                         
                         # Merge on Time (tolerance?)
                         # Let's use merge_asof if indices are sorted, or simple merge
