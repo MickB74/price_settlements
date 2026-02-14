@@ -87,6 +87,12 @@ st.markdown("""
 st.title("VPPA Settlement Estimator")
 st.markdown("Compare multiple Virtual Power Purchase Agreement (VPPA) scenarios in ERCOT.")
 
+if st.button("Hard Refresh App Cache", key="hard_refresh_app_cache"):
+    st.cache_data.clear()
+    st.session_state.pop("val_preview_results", None)
+    st.session_state.pop("results", None)
+    st.rerun()
+
 # --- State Management ---
 if 'scenarios' not in st.session_state:
     st.session_state.scenarios = []
