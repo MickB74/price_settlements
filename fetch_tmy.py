@@ -596,7 +596,12 @@ def get_profile_for_year(
         
         # Handle duplicates/Resample
         s_hourly = s_hourly[~s_hourly.index.duplicated(keep='first')]
-        s_15min = s_hourly.resample('15min').interpolate(method='linear')
+        if source_type == "HRRR_Cached":
+            # Keep HRRR gaps explicit so sparse cache windows do not linearly smear across months.
+            s_15min = s_hourly.resample('15min').asfreq()
+            s_15min = s_15min.interpolate(method='time', limit=4, limit_direction='both')
+        else:
+            s_15min = s_hourly.resample('15min').interpolate(method='linear')
         
         # Reindex to full year (aligned to US/Central)
         target_index_cst = pd.date_range(
@@ -608,13 +613,18 @@ def get_profile_for_year(
         target_index = target_index_cst.tz_convert('UTC')
         
         aligned = s_15min.reindex(target_index)
+        hrrr_coverage = None
         if source_type == "HRRR_Cached":
             # Avoid spreading short HRRR windows across a full year.
-            coverage = float(aligned.notna().mean()) if len(aligned) else 0.0
-            if coverage >= 0.95:
+            hrrr_coverage = float(aligned.notna().mean()) if len(aligned) else 0.0
+            if hrrr_coverage >= 0.95:
                 s_final = aligned.ffill().bfill()
             else:
                 s_final = aligned.interpolate(method='time', limit=4, limit_direction='both')
+                print(
+                    f"HRRR cache coverage for {year} is {hrrr_coverage:.1%}; "
+                    "missing intervals will be backfilled from default weather."
+                )
         else:
             s_final = aligned.ffill().bfill()
         s_final.name = "Gen_MW"
@@ -627,6 +637,46 @@ def get_profile_for_year(
                 resource_id=resource_id,
                 calibration_table=calibration_table,
             )
+        if (
+            source_type == "HRRR_Cached"
+            and hrrr_coverage is not None
+            and hrrr_coverage < 0.95
+        ):
+            try:
+                fallback_series = get_profile_for_year(
+                    year=year,
+                    tech=tech,
+                    capacity_mw=capacity_mw,
+                    lat=lat,
+                    lon=lon,
+                    force_tmy=force_tmy,
+                    turbine_type=turbine_type,
+                    hub_height=hub_height,
+                    tracking=tracking,
+                    efficiency=efficiency,
+                    hub_name=hub_name,
+                    project_name=project_name,
+                    resource_id=resource_id,
+                    apply_wind_calibration=apply_wind_calibration,
+                    turbines=None,
+                    wind_weather_source="AUTO",
+                    hrrr_forecast_hour=hrrr_forecast_hour,
+                )
+                if not fallback_series.empty:
+                    if fallback_series.index.tz is None:
+                        fallback_series.index = fallback_series.index.tz_localize("UTC")
+                    else:
+                        fallback_series.index = fallback_series.index.tz_convert("UTC")
+                    fallback_series = fallback_series.reindex(s_final.index)
+                    missing_before = int(s_final.isna().sum())
+                    s_final = s_final.combine_first(fallback_series)
+                    missing_after = int(s_final.isna().sum())
+                    print(
+                        f"HRRR backfill applied for {year}: "
+                        f"{missing_before - missing_after:,} intervals filled."
+                    )
+            except Exception as e:
+                print(f"HRRR backfill fallback failed for {year}: {e}")
         return s_final.fillna(0)
 
         
