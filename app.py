@@ -67,6 +67,9 @@ WIND_MODEL_ENGINE_OPTIONS = {
     "Advanced Calibrated (EIA/CF/SCED/Node)": "ADVANCED_CALIBRATED",
 }
 
+# Soft dispatch cap strength: 0.0 = ignore BP, 1.0 = hard cap at BP.
+DEFAULT_BASE_POINT_CAP_STRENGTH = 0.30
+
 
 def get_hrrr_cache_count():
     try:
@@ -74,6 +77,76 @@ def get_hrrr_cache_count():
         return len(list((repo_root / "data_cache" / "hrrr").glob("*.parquet")))
     except Exception:
         return 0
+
+
+def estimate_base_point_headroom_factor(
+    df,
+    capacity_mw=None,
+    quantile=0.90,
+    min_factor=1.00,
+    max_factor=1.35,
+):
+    """
+    Estimate a transparent dispatch headroom multiplier from historical SCED:
+    factor ~= quantile(Actual_MW / Base_Point_MW), clipped to sane bounds.
+    """
+    if df is None or len(df) == 0:
+        return 1.0
+
+    if "Actual_MW" not in df.columns or "Base_Point_MW" not in df.columns:
+        return 1.0
+
+    actual = pd.to_numeric(df["Actual_MW"], errors="coerce")
+    bp = pd.to_numeric(df["Base_Point_MW"], errors="coerce")
+
+    try:
+        cap = float(capacity_mw)
+    except Exception:
+        cap = np.nan
+    bp_floor = max(1.0, (cap * 0.02) if pd.notna(cap) and cap > 0 else 2.0)
+
+    mask = bp > bp_floor
+    if mask.sum() < 200:
+        return 1.0
+
+    ratio = (actual[mask] / bp[mask]).replace([np.inf, -np.inf], np.nan).dropna()
+    if ratio.empty:
+        return 1.0
+
+    ratio = ratio.clip(lower=0.40, upper=2.00)
+    factor = float(ratio.quantile(float(quantile)))
+    factor = float(np.clip(factor, float(min_factor), float(max_factor)))
+    return factor
+
+
+def apply_base_point_cap(
+    modeled_mw,
+    base_point_mw,
+    headroom_factor=1.0,
+    capacity_mw=None,
+    cap_strength=1.0,
+):
+    """
+    Apply a soft Base Point cap to modeled MW.
+    cap_strength=1.0 => hard cap at effective base point.
+    cap_strength=0.0 => no cap.
+    """
+    modeled = pd.to_numeric(modeled_mw, errors="coerce").fillna(0.0)
+    bp = pd.to_numeric(base_point_mw, errors="coerce")
+    eff = bp * float(headroom_factor)
+    if capacity_mw is not None:
+        try:
+            cap = float(capacity_mw)
+            if cap > 0:
+                eff = eff.clip(lower=0.0, upper=cap)
+        except Exception:
+            eff = eff.clip(lower=0.0)
+    else:
+        eff = eff.clip(lower=0.0)
+    eff = eff.fillna(np.inf)
+    capped = np.minimum(modeled, eff)
+    w = float(np.clip(cap_strength, 0.0, 1.0))
+    return (modeled * (1.0 - w)) + (capped * w)
 
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
@@ -101,6 +174,14 @@ if st.button("Hard Refresh App Cache", key="hard_refresh_app_cache"):
 # --- State Management ---
 if 'scenarios' not in st.session_state:
     st.session_state.scenarios = []
+
+# Wind defaults
+st.session_state.setdefault("sb_wind_weather_source_label", "Open-Meteo / PVGIS (Default)")
+st.session_state.setdefault("sb_wind_model_engine_label", "Standard (Current)")
+st.session_state.setdefault("val_wind_weather_source_label", "Open-Meteo / PVGIS (Default)")
+st.session_state.setdefault("val_wind_model_engine_label", "Standard (Current)")
+st.session_state.setdefault("bench_wind_weather_source_label", "Open-Meteo / PVGIS (Default)")
+st.session_state.setdefault("bench_wind_model_engine_label", "Standard (Current)")
 
 
 
@@ -460,6 +541,23 @@ def load_market_data(year):
 @st.cache_data(show_spinner=False)
 def get_cached_asset_data(resource_id, start_date, end_date):
     """Cached wrapper for SCED fetching to prevent re-loading on every interaction."""
+    return sced_fetcher.get_asset_period_data(resource_id, start_date, end_date)
+
+
+@st.cache_data(show_spinner=False)
+def get_cached_asset_data_with_base_point(resource_id, start_date, end_date):
+    """
+    Cached SCED loader that prefers Base Point-enriched data but degrades safely
+    to regular cached SCED when Base Point is unavailable.
+    """
+    df_bp = sced_fetcher.get_asset_period_data(
+        resource_id,
+        start_date,
+        end_date,
+        require_base_point=True,
+    )
+    if not df_bp.empty:
+        return df_bp
     return sced_fetcher.get_asset_period_data(resource_id, start_date, end_date)
 
 # --- Helper Functions ---
@@ -869,7 +967,7 @@ def reset_defaults():
     st.session_state.sb_no_curtailment = False
     st.session_state.sb_force_tmy = False
     st.session_state.sb_wind_weather_source_label = "Open-Meteo / PVGIS (Default)"
-    st.session_state.sb_wind_model_engine_label = "Advanced Calibrated (EIA/CF/SCED/Node)"
+    st.session_state.sb_wind_model_engine_label = "Standard (Current)"
     st.session_state.sb_hrrr_forecast_hour = 0
 
 
@@ -2543,7 +2641,57 @@ with tab_validation:
                                 ]
                             elif preview_weather == "Calculated P50 (Historical)":
                                 weather_opts = [{"name": f"P50_Hist_{median_year}", "force_tmy": False, "year_override": median_year}]
-                            
+
+                            sced_basepoint = pd.DataFrame(columns=["Time_Central", "Base_Point_MW"])
+                            bp_headroom_factor = 1.0
+                            if (
+                                val_source == "Specific Project"
+                                and selected_project_meta
+                                and preview_tech == "Wind"
+                            ):
+                                resource_id_ctx = selected_project_meta.get("resource_name")
+                                if resource_id_ctx:
+                                    try:
+                                        df_sced_ctx = get_cached_asset_data_with_base_point(
+                                            resource_id_ctx,
+                                            f"{val_year}-01-01",
+                                            f"{val_year}-12-31",
+                                        )
+                                        if (
+                                            (not df_sced_ctx.empty)
+                                            and ("Time" in df_sced_ctx.columns)
+                                            and ("Base_Point_MW" in df_sced_ctx.columns)
+                                        ):
+                                            project_total = float(selected_project_meta.get("capacity_mw", preview_capacity) or preview_capacity)
+                                            bp_headroom_factor = 1.0
+                                            bp_scale = (preview_capacity / project_total) if project_total > 0 else 1.0
+                                            sced_basepoint = df_sced_ctx[["Time", "Base_Point_MW"]].copy()
+                                            sced_basepoint["Time"] = pd.to_datetime(
+                                                sced_basepoint["Time"],
+                                                utc=True,
+                                                errors="coerce",
+                                            )
+                                            sced_basepoint["Base_Point_MW"] = (
+                                                pd.to_numeric(sced_basepoint["Base_Point_MW"], errors="coerce") * float(bp_scale)
+                                            )
+                                            sced_basepoint = sced_basepoint.dropna(subset=["Time"])
+                                            sced_basepoint["Time_Central"] = sced_basepoint["Time"].dt.tz_convert("US/Central")
+                                            sced_basepoint = sced_basepoint[
+                                                ["Time_Central", "Base_Point_MW"]
+                                            ].drop_duplicates(subset=["Time_Central"])
+                                            sced_basepoint["Base_Point_Effective_MW"] = (
+                                                pd.to_numeric(sced_basepoint["Base_Point_MW"], errors="coerce")
+                                                * float(bp_headroom_factor)
+                                            )
+                                            sced_basepoint["Base_Point_Effective_MW"] = sced_basepoint["Base_Point_Effective_MW"].clip(
+                                                lower=0.0,
+                                                upper=float(preview_capacity),
+                                            )
+                                    except Exception:
+                                        # Keep valuation flow resilient even if SCED base point load fails.
+                                        sced_basepoint = pd.DataFrame(columns=["Time_Central", "Base_Point_MW"])
+                                        bp_headroom_factor = 1.0
+
                             preview_results = {}
                             for source in weather_opts:
                                 target_year = source.get("year_override")
@@ -2562,25 +2710,20 @@ with tab_validation:
                                             f"{selected_project_name or 'selected project'}."
                                         )
                                         continue
-                                    
-                                    # Use absolute path to avoid working directory issues
-                                    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sced_cache")
-                                    cache_file = os.path.join(cache_dir, f"{resource_id}_{val_year}_full.parquet")
-                                    
-                                    if not os.path.exists(cache_file):
-                                        st.warning(f"No cached SCED data found for {resource_id} in {val_year}.")
-                                        st.info(f"Looking for: {cache_file}")
-                                        st.info("SCED data must be pre-downloaded. Continuing with model-only output.")
-                                        continue
-                                    
+
                                     try:
-                                        df_sced = pd.read_parquet(cache_file)
+                                        df_sced = get_cached_asset_data_with_base_point(
+                                            resource_id,
+                                            f"{val_year}-01-01",
+                                            f"{val_year}-12-31",
+                                        )
                                     except Exception as e:
                                         st.error(f"Error loading SCED data: {e}")
                                         continue
-                                    
+
                                     if df_sced.empty:
-                                        st.error(f"SCED data file is empty for {resource_id} in {val_year}")
+                                        st.warning(f"No cached SCED data found for {resource_id} in {val_year}.")
+                                        st.info("SCED data must be pre-downloaded. Continuing with model-only output.")
                                         continue
                                     
                                     # Prepare SCED data for scaling
@@ -2707,6 +2850,31 @@ with tab_validation:
                                         )
                                         merged["Gen_MW"] = modeled_mw.values
                                         merged["Gen_Energy_MWh"] = merged["Gen_MW"] * 0.25
+
+                                    if (
+                                        preview_tech == "Wind"
+                                        and not use_sced
+                                        and not merged.empty
+                                        and not sced_basepoint.empty
+                                    ):
+                                        merged = pd.merge(
+                                            merged,
+                                            sced_basepoint,
+                                            on="Time_Central",
+                                            how="left",
+                                        )
+                                        if "Base_Point_MW" in merged.columns:
+                                            merged["Gen_MW_Raw"] = merged["Gen_MW"]
+                                            merged["Gen_MW"] = apply_base_point_cap(
+                                                modeled_mw=merged["Gen_MW"],
+                                                base_point_mw=merged["Base_Point_MW"],
+                                                headroom_factor=bp_headroom_factor,
+                                                capacity_mw=preview_capacity,
+                                                cap_strength=DEFAULT_BASE_POINT_CAP_STRENGTH,
+                                            )
+                                            merged["Base_Point_Headroom_Factor"] = float(bp_headroom_factor)
+                                            merged["Base_Point_Cap_Strength"] = float(DEFAULT_BASE_POINT_CAP_STRENGTH)
+                                            merged["Gen_Energy_MWh"] = merged["Gen_MW"] * 0.25
                                     
                                     # Calculate Potential Curtailment (Always)
                                     merged['Potential_Curtailed_MWh'] = 0.0
@@ -4095,7 +4263,7 @@ with tab_performance:
                             df_actual = pd.DataFrame()
                     else:
                         # Public SCED
-                        df_actual = get_cached_asset_data(final_resource_id, start_bench, end_bench)
+                        df_actual = get_cached_asset_data_with_base_point(final_resource_id, start_bench, end_bench)
                     
                     if not df_actual.empty:
                         # 2. Run Model for comparison
@@ -4220,6 +4388,40 @@ with tab_performance:
                 help="Limit Modeled Generation to Base Point (Grid Limit) to simulate curtailment. Enabled by default to match leaderboard methodology.",
                 key=f"chk_disp_{res['resource_id']}"
             )
+            dispatch_headroom_factor = 1.0
+            dispatch_cap_strength = DEFAULT_BASE_POINT_CAP_STRENGTH
+            if 'Base_Point_MW' in df_comp.columns:
+                auto_headroom = estimate_base_point_headroom_factor(
+                    df_comp,
+                    capacity_mw=res.get('capacity_mw'),
+                )
+                dispatch_headroom_pct = st.slider(
+                    "Base Point Headroom (%)",
+                    min_value=100,
+                    max_value=135,
+                    value=100,
+                    step=1,
+                    help=(
+                        "Effective cap = Base Point × headroom. "
+                        "Default is 100%; auto suggestion from historical Actual/Base Point is shown below."
+                    ),
+                    key=f"bp_headroom_{res['resource_id']}",
+                )
+                dispatch_headroom_factor = float(dispatch_headroom_pct) / 100.0
+                st.caption(f"Auto headroom suggestion: {auto_headroom:.2f}x")
+                dispatch_cap_strength_pct = st.slider(
+                    "Dispatch Cap Strength (%)",
+                    min_value=0,
+                    max_value=100,
+                    value=int(round(DEFAULT_BASE_POINT_CAP_STRENGTH * 100)),
+                    step=5,
+                    help=(
+                        "0% leaves model uncapped. 100% is a hard Base Point cap. "
+                        "Use 20-40% for a softer cap that reduces over-curtailment bias."
+                    ),
+                    key=f"bp_cap_strength_{res['resource_id']}",
+                )
+                dispatch_cap_strength = float(dispatch_cap_strength_pct) / 100.0
             exclude_offline = st.checkbox(
                 "🛠️ Exclude Likely Offline Intervals",
                 value=True,
@@ -4234,8 +4436,20 @@ with tab_performance:
                 # Actually, SCED usually has values. If NaN, it might mean data missing.
                 # Logic: Modeled_Curtailed = min(Modeled, Base_Point)
                 df_comp['Modeled_MW_Raw'] = df_comp['Modeled_MW'] # Keep raw for reference
-                df_comp['Modeled_MW'] = df_comp[['Modeled_MW', 'Base_Point_MW']].min(axis=1)
-                st.caption("⚠️ **Economic Dispatch Applied:** Modeled generation is capped at the Grid Limit (Base Point).")
+                df_comp['Modeled_MW'] = apply_base_point_cap(
+                    modeled_mw=df_comp['Modeled_MW'],
+                    base_point_mw=df_comp['Base_Point_MW'],
+                    headroom_factor=dispatch_headroom_factor,
+                    capacity_mw=res.get('capacity_mw'),
+                    cap_strength=dispatch_cap_strength,
+                )
+                bp_cov = float(pd.to_numeric(df_comp['Base_Point_MW'], errors='coerce').notna().mean()) if len(df_comp) else 0.0
+                st.caption(
+                    "⚠️ **Economic Dispatch Applied:** Modeled generation is capped at "
+                    f"Base Point × {dispatch_headroom_factor:.2f} "
+                    f"with cap strength {dispatch_cap_strength:.2f} "
+                    f"(Base Point coverage {bp_cov:.1%})."
+                )
             elif apply_dispatch:
                 st.warning("⚠️ Base Point data missing for this period. Cannot apply economic dispatch.")
 

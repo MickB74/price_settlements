@@ -7,6 +7,55 @@ CACHE_DIR = "sced_cache"
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)
 
+
+def _find_base_point_column(df):
+    """Return the first plausible Base Point column name, if present."""
+    candidates = [
+        "Base Point",
+        "Base Point MW",
+        "Base_Point_MW",
+        "BasePoint",
+    ]
+    existing = {str(c).strip().lower(): c for c in df.columns}
+    for cand in candidates:
+        key = str(cand).strip().lower()
+        if key in existing:
+            return existing[key]
+    return None
+
+
+def _normalize_asset_cache_df(df):
+    """Normalize cached asset frames to the expected schema."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    out = df.copy()
+    if "Time" in out.columns:
+        out["Time"] = pd.to_datetime(out["Time"], utc=True, errors="coerce")
+        out = out.dropna(subset=["Time"])
+
+    if "Actual_MW" not in out.columns:
+        return pd.DataFrame()
+
+    out["Actual_MW"] = pd.to_numeric(out["Actual_MW"], errors="coerce")
+    if "MWh_interval" not in out.columns:
+        out["MWh_interval"] = out["Actual_MW"] * 0.25
+    else:
+        out["MWh_interval"] = pd.to_numeric(out["MWh_interval"], errors="coerce")
+
+    if "coverage" not in out.columns:
+        out["coverage"] = 1.0
+    else:
+        out["coverage"] = pd.to_numeric(out["coverage"], errors="coerce").fillna(1.0)
+
+    if "Base_Point_MW" not in out.columns:
+        out["Base_Point_MW"] = pd.NA
+    else:
+        out["Base_Point_MW"] = pd.to_numeric(out["Base_Point_MW"], errors="coerce")
+
+    out = out[["Time", "Actual_MW", "MWh_interval", "coverage", "Base_Point_MW"]].copy()
+    return out.sort_values("Time").drop_duplicates("Time")
+
 def get_daily_disclosure(date):
     """
     Fetches and caches the FULL daily SCED disclosure dataframe.
@@ -56,8 +105,13 @@ def get_asset_actual_gen(resource_name, date):
     asset_cache = os.path.join(CACHE_DIR, f"{date}_{resource_name}.parquet")
     if os.path.exists(asset_cache):
         try:
-            return pd.read_parquet(asset_cache)
-        except:
+            cached_df = pd.read_parquet(asset_cache)
+            # Older cache files did not carry Base Point. Rebuild those files.
+            if (not cached_df.empty) and ("Base_Point_MW" in cached_df.columns):
+                normalized = _normalize_asset_cache_df(cached_df)
+                if not normalized.empty:
+                    return normalized
+        except Exception:
             pass
     
     # Special handling for Azure Sky Wind aggregation
@@ -86,11 +140,28 @@ def get_asset_actual_gen(resource_name, date):
         df_result = pd.DataFrame({
             'Time': df_combined.index,
             'Actual_MW': df_combined.iloc[:, actual_mw_cols].sum(axis=1),
-            'MWh_interval': df_combined.iloc[:, energy_cols].sum(axis=1),
-            'coverage': df_combined.iloc[:, coverage_cols].mean(axis=1) # Average coverage across units
+            'MWh_interval': (
+                df_combined.iloc[:, energy_cols].sum(axis=1)
+                if energy_cols
+                else (df_combined.iloc[:, actual_mw_cols].sum(axis=1) * 0.25)
+            ),
+            'coverage': (
+                df_combined.iloc[:, coverage_cols].mean(axis=1)
+                if coverage_cols
+                else 1.0
+            ), # Average coverage across units
         }).reset_index(drop=True)
+
+        base_point_cols = [i for i, col in enumerate(df_combined.columns) if col == 'Base_Point_MW']
+        if base_point_cols:
+            # Sum base points across units where available.
+            bp = df_combined.iloc[:, base_point_cols].apply(pd.to_numeric, errors='coerce')
+            df_result['Base_Point_MW'] = bp.sum(axis=1, min_count=1).values
+        else:
+            df_result['Base_Point_MW'] = pd.NA
         
         # Save aggregated cache
+        df_result = _normalize_asset_cache_df(df_result)
         df_result.to_parquet(asset_cache)
         return df_result
         
@@ -122,10 +193,17 @@ def get_asset_actual_gen(resource_name, date):
     all_ts = sorted(list(set(df_asset['Time'].tolist() + boundaries.tolist())))
     
     # 4. Reindex using forward-fill (stepwise constant assumption)
-    # This ensures we have a MW value at every 15-minute boundary
-    df_step = df_asset.set_index('Time')[['Telemetered Net Output']].reindex(all_ts).ffill()
+    # This ensures we have a MW and (if present) Base Point value at every 15-minute boundary.
+    base_point_col = _find_base_point_column(df_asset)
+    step_cols = ['Telemetered Net Output']
+    if base_point_col:
+        step_cols.append(base_point_col)
+    df_step = df_asset.set_index('Time')[step_cols].reindex(all_ts).ffill()
     df_step.index.name = 'Time'
     df_step = df_step.reset_index()
+
+    if base_point_col and base_point_col != "Base_Point_MW":
+        df_step = df_step.rename(columns={base_point_col: "Base_Point_MW"})
     
     # 5. Calculate durations and energy per segment
     df_step['next_time'] = df_step['Time'].shift(-1)
@@ -140,6 +218,10 @@ def get_asset_actual_gen(resource_name, date):
     
     # Calculate Segment Energy (MWh)
     df_step['energy_mwh'] = df_step['Telemetered Net Output'] * (df_step['duration_sec'] / 3600.0)
+    if 'Base_Point_MW' in df_step.columns:
+        df_step['bp_energy_mwh'] = pd.to_numeric(df_step['Base_Point_MW'], errors='coerce') * (
+            df_step['duration_sec'] / 3600.0
+        )
     
     # 6. Aggregate to 15-minute Intervals
     # Assign each segment to its 15-min bucket start
@@ -149,12 +231,8 @@ def get_asset_actual_gen(resource_name, date):
         'energy_mwh': 'sum',
         'duration_sec': 'sum'
     }
-    
-    # If we want to keep Base Point, handle it too (simple mean usually okay for BP BP is a target)
-    if 'Base Point' in df_asset.columns:
-        # We'd need to re-step Base Point too if we wanted it perfect. 
-        # For now, let's just focus on Actuals.
-        pass
+    if 'bp_energy_mwh' in df_step.columns:
+        agg_funcs['bp_energy_mwh'] = 'sum'
 
     results = df_step.groupby('Interval_Start').agg(agg_funcs).reset_index()
     
@@ -163,16 +241,21 @@ def get_asset_actual_gen(resource_name, date):
     
     # Actual_MW (TWA) = Total Energy / (Total Time in hours)
     results['Actual_MW'] = results['energy_mwh'] / (results['duration_sec'] / 3600.0)
+    if 'bp_energy_mwh' in results.columns:
+        results['Base_Point_MW'] = results['bp_energy_mwh'] / (results['duration_sec'] / 3600.0)
+    else:
+        results['Base_Point_MW'] = pd.NA
     results = results.rename(columns={'Interval_Start': 'Time', 'energy_mwh': 'MWh_interval'})
     
     # Ensure columns match expectations
-    df_resampled = results[['Time', 'Actual_MW', 'MWh_interval', 'coverage']].copy()
+    df_resampled = results[['Time', 'Actual_MW', 'MWh_interval', 'coverage', 'Base_Point_MW']].copy()
+    df_resampled = _normalize_asset_cache_df(df_resampled)
     
     # Save asset-specific cache
     df_resampled.to_parquet(asset_cache)
     return df_resampled
 
-def get_asset_period_data(resource_name, start_date, end_date):
+def get_asset_period_data(resource_name, start_date, end_date, require_base_point=False):
     """
     Fetches actual generation for a date range.
     Optimized to check for consolidated yearly cache first.
@@ -190,11 +273,18 @@ def get_asset_period_data(resource_name, start_date, end_date):
         if os.path.exists(year_cache):
             try:
                 df_year = pd.read_parquet(year_cache)
+                if 'Time' in df_year.columns:
+                    df_year = df_year.copy()
+                    df_year['Time'] = pd.to_datetime(df_year['Time'], utc=True, errors='coerce')
+                    df_year = df_year.dropna(subset=['Time'])
+                if require_base_point and ('Base_Point_MW' not in df_year.columns):
+                    # Fall back to daily files so we can rebuild/enrich with Base Point.
+                    raise ValueError("Year cache missing Base_Point_MW")
                 # Filter to requested range within this year
                 mask = (df_year['Time'].dt.date >= start_date) & (df_year['Time'].dt.date <= end_date)
                 all_dfs.append(df_year.loc[mask])
                 continue
-            except:
+            except Exception:
                 pass # Fallback if corrupt
         
         # 2. Fallback to Daily files for this year part
