@@ -668,6 +668,19 @@ def get_profile_for_year(
                     else:
                         fallback_series.index = fallback_series.index.tz_convert("UTC")
                     fallback_series = fallback_series.reindex(s_final.index)
+                    # Blend HRRR with default source where both exist to avoid severe
+                    # downward shifts from source-specific low wind bias.
+                    overlap_mask = s_final.notna() & fallback_series.notna()
+                    if overlap_mask.any():
+                        hrrr_weight = 0.70
+                        s_final.loc[overlap_mask] = (
+                            s_final.loc[overlap_mask] * hrrr_weight
+                            + fallback_series.loc[overlap_mask] * (1.0 - hrrr_weight)
+                        )
+                        print(
+                            f"HRRR/default blend applied for {year} on "
+                            f"{int(overlap_mask.sum()):,} intervals (HRRR weight={hrrr_weight:.2f})."
+                        )
                     missing_before = int(s_final.isna().sum())
                     s_final = s_final.combine_first(fallback_series)
                     missing_after = int(s_final.isna().sum())
