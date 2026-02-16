@@ -75,6 +75,7 @@ def _index_diagnostics(idx: pd.Index):
         "duplicates": int(idx.duplicated().sum()),
     }
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_data(year, wind_weather_source="AUTO", hrrr_forecast_hour=0, wind_model_engine="STANDARD"):
     """
     Loads Actuals (TWA) and Modeled (Mixed Fleet) data for the given year.

@@ -122,13 +122,7 @@ def get_actual_data(year, lat=32.4487, lon=-99.7331, force_refresh=False):
         return pd.DataFrame()
 
 from utils import power_curves
-from utils.wind_calibration import (
-    apply_wind_postprocess,
-    get_hub_shear_alpha,
-    get_reanalysis_blend_weights,
-    get_wind_bias_multiplier,
-    load_wind_calibration_table,
-)
+
 try:
     from utils.hrrr_ingestion import load_cached_hrrr_10m_wind_point
 except Exception:
@@ -377,6 +371,14 @@ def get_profile_for_year(
 
     calibration_table = None
     if tech == "Wind" and apply_wind_calibration:
+        # Lazy import to avoid circular dependency
+        from utils.wind_calibration import (
+            apply_wind_postprocess,
+            get_hub_shear_alpha,
+            get_reanalysis_blend_weights,
+            get_wind_bias_multiplier,
+            load_wind_calibration_table,
+        )
         calibration_table = load_wind_calibration_table()
         calibration_table = _engine_calibration_table(calibration_table, wind_model_engine_key)
 

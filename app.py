@@ -4727,4 +4727,8 @@ with tab_performance:
 
 # --- Azure Sky Analysis Tab ---
 with tab_azure_sky:
-    tab_azure.render()
+    try:
+        tab_azure.render()
+    except Exception as e:
+        st.error(f"Error loading Azure Sky Analysis: {e}")
+        st.code(str(e))
