@@ -644,6 +644,23 @@ def get_cached_asset_data_with_base_point(resource_id, start_date, end_date):
         return df_bp
     return sced_fetcher.get_asset_period_data(resource_id, start_date, end_date)
 
+
+@st.cache_data(show_spinner=False)
+def get_cached_asset_data_with_base_point_local(resource_id, start_date, end_date):
+    """
+    Cache-only SCED loader for interactive validation flows.
+    Avoids live ERCOT pulls that can stall the UI for long periods.
+    """
+    df_bp = sced_fetcher.get_asset_period_data_cache_only(
+        resource_id,
+        start_date,
+        end_date,
+        require_base_point=True,
+    )
+    if not df_bp.empty:
+        return df_bp
+    return sced_fetcher.get_asset_period_data_cache_only(resource_id, start_date, end_date)
+
 # --- Helper Functions ---
 def calculate_scenario(scenario, df_rtm):
     """Calculates settlement for a single scenario."""
@@ -2649,6 +2666,50 @@ with tab_validation:
                 )
                 preview_wind_model_engine = WIND_MODEL_ENGINE_OPTIONS.get(preview_engine_label, "STANDARD")
 
+        # On-demand SCED cache refresh for Azure Sky Wind so preview can stay cache-only and fast.
+        if (
+            val_source == "Specific Project"
+            and selected_project_name == "Azure Sky Wind"
+            and preview_weather == "Actual SCED + Model"
+        ):
+            azure_resource_id = selected_project_meta.get("resource_name")
+            b1, b2 = st.columns([1, 2.5])
+            with b1:
+                if st.button(
+                    "⬇️ Cache SCED Data (Azure)",
+                    key=f"cache_azure_sced_{val_year}",
+                    use_container_width=True,
+                    help="Fetch/refresh Azure Sky SCED cache for the selected year. This can take several minutes.",
+                ):
+                    if not azure_resource_id:
+                        st.error("Missing resource ID for Azure Sky Wind.")
+                    else:
+                        with st.spinner(f"Caching SCED data for {selected_project_name} ({val_year})..."):
+                            df_cached = get_cached_asset_data_with_base_point(
+                                azure_resource_id,
+                                f"{val_year}-01-01",
+                                f"{val_year}-12-31",
+                            )
+                            try:
+                                sced_fetcher.consolidate_year(azure_resource_id, val_year)
+                            except Exception:
+                                pass
+                            # Preview path uses local cache-only loader; clear cached results so new files are picked up.
+                            get_cached_asset_data_with_base_point_local.clear()
+
+                        if df_cached.empty:
+                            st.warning("No SCED rows were cached for this year.")
+                        else:
+                            bp_rows = int(df_cached["Base_Point_MW"].notna().sum()) if "Base_Point_MW" in df_cached.columns else 0
+                            st.success(
+                                f"Cached {len(df_cached):,} SCED intervals for {val_year}. "
+                                f"Base Point available on {bp_rows:,} intervals."
+                            )
+            with b2:
+                st.caption(
+                    "Use this once per year before `Generate Preview` when running `Actual SCED + Model`."
+                )
+
 
         # Row 3: Actions
         c8, c9 = st.columns([3, 1])
@@ -2728,7 +2789,7 @@ with tab_validation:
                                 resource_id_ctx = selected_project_meta.get("resource_name")
                                 if resource_id_ctx:
                                     try:
-                                        df_sced_ctx = get_cached_asset_data_with_base_point(
+                                        df_sced_ctx = get_cached_asset_data_with_base_point_local(
                                             resource_id_ctx,
                                             f"{val_year}-01-01",
                                             f"{val_year}-12-31",
@@ -2788,7 +2849,7 @@ with tab_validation:
                                         continue
 
                                     try:
-                                        df_sced = get_cached_asset_data_with_base_point(
+                                        df_sced = get_cached_asset_data_with_base_point_local(
                                             resource_id,
                                             f"{val_year}-01-01",
                                             f"{val_year}-12-31",

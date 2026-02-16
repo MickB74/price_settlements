@@ -302,6 +302,57 @@ def get_asset_period_data(resource_name, start_date, end_date, require_base_poin
         
     return pd.concat(all_dfs).drop_duplicates('Time').sort_values('Time')
 
+
+def get_asset_period_data_cache_only(resource_name, start_date, end_date, require_base_point=False):
+    """
+    Load asset data for a date range from local cache files only (no network calls).
+    Useful for UI flows where responsiveness is more important than backfilling gaps.
+    """
+    if isinstance(start_date, str):
+        start_date = pd.Timestamp(start_date).date()
+    if isinstance(end_date, str):
+        end_date = pd.Timestamp(end_date).date()
+
+    years = range(start_date.year, end_date.year + 1)
+    all_dfs = []
+
+    for y in years:
+        year_cache = os.path.join(CACHE_DIR, f"{resource_name}_{y}_full.parquet")
+        if os.path.exists(year_cache):
+            try:
+                df_year = pd.read_parquet(year_cache)
+                df_year = _normalize_asset_cache_df(df_year)
+                if df_year.empty:
+                    raise ValueError("Empty or invalid year cache")
+                if require_base_point and ("Base_Point_MW" not in df_year.columns):
+                    raise ValueError("Year cache missing Base_Point_MW")
+                mask = (df_year["Time"].dt.date >= start_date) & (df_year["Time"].dt.date <= end_date)
+                all_dfs.append(df_year.loc[mask])
+                continue
+            except Exception:
+                # Fall through to daily local cache files only.
+                pass
+
+        y_start = max(start_date, datetime(y, 1, 1).date())
+        y_end = min(end_date, datetime(y, 12, 31).date())
+        dates = pd.date_range(start=y_start, end=y_end, freq="D")
+        for d in dates:
+            asset_cache = os.path.join(CACHE_DIR, f"{d.date()}_{resource_name}.parquet")
+            if not os.path.exists(asset_cache):
+                continue
+            try:
+                df_day = pd.read_parquet(asset_cache)
+                df_day = _normalize_asset_cache_df(df_day)
+                if not df_day.empty:
+                    all_dfs.append(df_day)
+            except Exception:
+                continue
+
+    if not all_dfs:
+        return pd.DataFrame()
+
+    return pd.concat(all_dfs).drop_duplicates("Time").sort_values("Time")
+
 def consolidate_year(resource_name, year):
     """Helper to merge daily files into one fast year file."""
     start = datetime(year, 1, 1).date()
