@@ -539,6 +539,37 @@ def load_market_data(year):
         return pd.DataFrame()
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_market_hub_data(year, hub):
+    """
+    Return a minimal, hub-filtered market frame for fast bill validation and preview joins.
+    """
+    df_market = load_market_data(year)
+    if df_market.empty:
+        return pd.DataFrame(columns=["Time", "Time_Central", "SPP"])
+
+    df_market_hub = df_market.loc[
+        df_market["Location"] == hub,
+        ["Time", "Time_Central", "SPP"],
+    ].copy()
+
+    if df_market_hub.empty:
+        return df_market_hub
+
+    # Normalize timezone once so downstream logic doesn't repeat conversion work.
+    if df_market_hub["Time"].dt.tz is None:
+        df_market_hub["Time"] = df_market_hub["Time"].dt.tz_localize("UTC")
+    else:
+        df_market_hub["Time"] = df_market_hub["Time"].dt.tz_convert("UTC")
+
+    if df_market_hub["Time_Central"].dt.tz is None:
+        df_market_hub["Time_Central"] = df_market_hub["Time_Central"].dt.tz_localize("US/Central")
+    else:
+        df_market_hub["Time_Central"] = df_market_hub["Time_Central"].dt.tz_convert("US/Central")
+
+    return df_market_hub.sort_values("Time").reset_index(drop=True)
+
+
 @st.cache_data(show_spinner=False, ttl=900)
 def parse_uploaded_bill_file(file_bytes, file_extension):
     """
@@ -2636,13 +2667,11 @@ with tab_validation:
                             hub_map_rev = {"North": "HB_NORTH", "South": "HB_SOUTH", "West": "HB_WEST", "Houston": "HB_HOUSTON", "Pan": "HB_PAN"}
                             calc_hub = hub_map_rev.get(proj_hub_name, "HB_NORTH")
                         
-                        # Market Data
-                        df_market = load_market_data(val_year)
-                        if df_market.empty:
+                        # Market Data (hub-filtered cache to reduce validation latency)
+                        df_market_hub = load_market_hub_data(val_year, calc_hub)
+                        if df_market_hub.empty:
                             st.error(f"No market data for {val_year}")
                         else:
-                            df_market_hub = df_market[df_market['Location'] == calc_hub].copy()
-                            
                             # Location handling
                             if val_source == "Specific Project":
                                 lat = selected_project_meta.get('lat', 32.0)
@@ -2650,12 +2679,6 @@ with tab_validation:
                             else:
                                 # Generic/Custom
                                 lat, lon = st.session_state.val_custom_lat, st.session_state.val_custom_lon
-                            
-                            # Ensure Market Time is strictly UTC for merging
-                            if df_market_hub['Time'].dt.tz is not None:
-                                df_market_hub['Time'] = df_market_hub['Time'].dt.tz_convert('UTC')
-                            else:
-                                df_market_hub['Time'] = df_market_hub['Time'].dt.tz_localize('UTC')
 
                             weather_opts = []
                             median_year = None
@@ -3635,18 +3658,15 @@ with tab_validation:
                     st.warning("⚠️ No recent model run found. Calculating expected settlement from scratch based on current settings.")
                     st.info("📊 Detected monthly summary data. Calculating expected totals from interval-level market data...")
                     
-                    # 3. Fetch Market Data for the entire year
-                    df_market = load_market_data(val_year)
-                    
-                    if df_market.empty:
+                    # 3. Fetch market data already filtered to the selected hub
+                    df_market_hub = load_market_hub_data(
+                        val_year,
+                        st.session_state.get('val_hub', 'HB_NORTH')
+                    )
+
+                    if df_market_hub.empty:
                         st.error(f"Could not find market data for {val_year}.")
                     else:
-                        # Filter for selected Hub
-                        df_market_hub = df_market.loc[
-                            df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH'),
-                            ['Time_Central', 'SPP']
-                        ].copy()
-
                         if selected_month_numbers:
                             df_market_hub = df_market_hub[df_market_hub['Time_Central'].dt.month.isin(selected_month_numbers)]
 
@@ -3771,18 +3791,15 @@ with tab_validation:
                 
                 else:
                     # Original interval-level validation logic
-                    # 3. Fetch Market Data
-                    df_market = load_market_data(val_year)
-                
-                    if df_market.empty:
+                    # 3. Fetch market data already filtered to the selected hub
+                    df_market_hub = load_market_hub_data(
+                        val_year,
+                        st.session_state.get('val_hub', 'HB_NORTH')
+                    )
+
+                    if df_market_hub.empty:
                         st.error(f"Could not find market data for {val_year}.")
                     else:
-                        # Filter for selected Hub
-                        df_market_hub = df_market.loc[
-                            df_market['Location'] == st.session_state.get('val_hub', 'HB_NORTH'),
-                            ['Time', 'SPP', 'Time_Central']
-                        ].copy()
-
                         if selected_month_numbers:
                             df_market_hub = df_market_hub[df_market_hub['Time_Central'].dt.month.isin(selected_month_numbers)]
 
