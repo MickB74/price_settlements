@@ -766,9 +766,56 @@ def calculate_scenario(scenario, df_rtm):
 
             else:
                 raise FileNotFoundError(
-                    f"Custom profile not found for scenario '{scenario.get('name', 'Unnamed')}'. "
-                    "Re-upload the profile CSV and re-run."
+                "Re-upload the profile CSV and re-run."
                 )
+
+        elif scenario.get('source_type') == 'SCED':
+            # --- SCED Asset Data Logic ---
+            resource_name = scenario.get('resource_id')
+            year = scenario['year']
+            
+            # Fetch Data via sced_fetcher
+            start_date = date(year, 1, 1)
+            end_date = date(year, 12, 31)
+            
+            try:
+                # Fetch full year actuals
+                # sced_fetcher.get_asset_period_data handles checking for annual cache, etc.
+                df_sced = sced_fetcher.get_asset_period_data(resource_name, start_date, end_date)
+            except Exception as e:
+                # If fetch fails (e.g. current year not complete or data missing), ensure it doesn't crash
+                 st.warning(f"Could not fetch full SCED data for {resource_name} in {year}: {e}")
+                 df_sced = pd.DataFrame()
+
+            if not df_sced.empty:
+                # Align timestamps to Central Time
+                if 'Time' in df_sced.columns:
+                     df_sced = df_sced.set_index('Time')
+                
+                # Ensure UTC awareness
+                if df_sced.index.tz is None:
+                    df_sced.index = df_sced.index.tz_localize('UTC')
+                else:
+                    df_sced.index = df_sced.index.tz_convert('UTC')
+                
+                # Convert to Central for alignment
+                profile_central = df_sced['Actual_MW'].tz_convert('US/Central')
+                
+                # Reindex to match df_hub['Time_Central']
+                potential_gen = profile_central.reindex(df_hub['Time_Central'], method='nearest', fill_value=0.0).values
+                
+                # Scaling Logic
+                # If the user requested a different capacity than the asset's actual capacity, we scale the profile.
+                requested_cap = float(capacity_mw)
+                asset_cap = float(scenario.get('asset_capacity_mw') or requested_cap)
+                
+                if asset_cap > 0 and abs(requested_cap - asset_cap) > 0.1:
+                    scale_factor = requested_cap / asset_cap
+                    potential_gen = potential_gen * scale_factor
+                    
+            else:
+                 st.warning(f"No SCED data available for {resource_name} in {year}. Using zero generation.")
+                 potential_gen = np.zeros(len(df_hub))
 
         else:
             # Standard TMY/Actual Logic
@@ -1079,12 +1126,70 @@ with st.sidebar:
     st.header("Scenario Builder")
     
     # --- Generation Source ---
+    # --- Generation Source ---
     sb_gen_source = st.selectbox(
         "Generation Source",
-        ["Solar", "Wind", "Load (Future)", "Custom Upload"],
+        ["Solar", "Wind", "ERCOT Asset (SCED)", "Load (Future)", "Custom Upload"],
         key="sb_gen_source",
         help="Choose the type of generation profile."
     )
+
+    # Load ERCOT Assets if needed
+    ercot_assets = {}
+    if sb_gen_source == "ERCOT Asset (SCED)":
+        try:
+            with open("ercot_assets.json", "r") as f:
+                ercot_assets = json.load(f)
+        except Exception as e:
+            st.error(f"Could not load ercot_assets.json: {e}")
+    
+    # Selected Asset Logic
+    selected_asset_info = None
+    if sb_gen_source == "ERCOT Asset (SCED)" and ercot_assets:
+        asset_names = sorted(list(ercot_assets.keys()))
+        # Default to Azure Sky Wind if available
+        default_idx = asset_names.index("Azure Sky Wind") if "Azure Sky Wind" in asset_names else 0
+        
+        sb_selected_asset = st.selectbox(
+            "Select Asset",
+            asset_names,
+            index=default_idx,
+            key="sb_selected_asset"
+        )
+        
+        if sb_selected_asset:
+            selected_asset_info = ercot_assets[sb_selected_asset]
+            # Auto-set Tech
+            tech = selected_asset_info.get("tech", "Wind")
+            st.session_state.sb_techs = [tech]
+            
+            # Auto-set Hub if known
+            hub_val = selected_asset_info.get("hub")
+            if hub_val:
+                hub_map_rev = {"North": "HB_NORTH", "South": "HB_SOUTH", "West": "HB_WEST", "Houston": "HB_HOUSTON", "Pan": "HB_PAN"}
+                mapped_hub = hub_map_rev.get(hub_val)
+                if mapped_hub:
+                    st.session_state.sb_hubs = [mapped_hub]
+
+            # Auto-Set Defaults for specific assets
+            if sb_selected_asset == "Azure Sky Wind":
+                 # Only set if not already manually modified in this session (optional, but good UX. verify later)
+                 # For now, we enforce defaults as requested when this asset is selected
+                 if 'sb_vppa_price' not in st.session_state or st.session_state.sb_vppa_price != 17.34:
+                     st.session_state.sb_vppa_price = 17.34
+                     # Using st.rerun() if we want to force update the UI immediately might be jarring, 
+                     # but st.number_input uses session state key. 
+                     # We can't update session_state.sb_vppa_price directly here if the widget is defined later with that key?
+                     # Actually, the widget is defined later (line 1266). So updating session state here works perfectly!
+                 
+                 cap = selected_asset_info.get("capacity_mw", 350.0)
+                 st.session_state.sb_capacity = float(cap)
+            else:
+                 # Generic Asset Defaults
+                 cap = selected_asset_info.get("capacity_mw", 100.0)
+                 st.session_state.sb_capacity = float(cap)
+
+    
     
     # --- Years/Hubs Selection ---
     available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
@@ -1426,6 +1531,12 @@ with st.sidebar:
                                     "wind_model_engine": s_wind_model_engine if tech == "Wind" else "STANDARD",
                                     "custom_lat": s_custom_lat if s_use_custom_location else None,
                                     "custom_lon": s_custom_lon if s_use_custom_location else None,
+                                    "custom_lat": s_custom_lat if s_use_custom_location else None,
+                                    "custom_lon": s_custom_lon if s_use_custom_location else None,
+                                    "source_type": "SCED" if sb_gen_source == "ERCOT Asset (SCED)" else "MODEL",
+                                    "resource_id": selected_asset_info.get("resource_name") if selected_asset_info else None,
+                                    "asset_name": sb_selected_asset if sb_gen_source == "ERCOT Asset (SCED)" else None,
+                                    "asset_capacity_mw": selected_asset_info.get("capacity_mw") if selected_asset_info else None,
                                     "custom_profile_path": None
                             }
                             st.session_state.scenarios.append(new_scenario)
