@@ -2903,6 +2903,7 @@ with tab_validation:
             # --- CUSTOM: Add Settlement Invoice if Azure Sky ---
             if val_source == "Specific Project" and "Azure Sky" in selected_project_name:
                  weather_options.insert(1, "Settlement Invoice (Actuals)")
+                 weather_options.insert(3, "Actual SCED + Model + Settlement Invoice")
             
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
 
@@ -3120,6 +3121,12 @@ with tab_validation:
                                 weather_opts = [
                                     {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
                                     {"name": "Model", "force_tmy": False, "year_override": None, "use_sced": False}
+                                ]
+                            elif preview_weather == "Actual SCED + Model + Settlement Invoice":
+                                weather_opts = [
+                                    {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
+                                    {"name": "Model", "force_tmy": False, "year_override": None, "use_sced": False},
+                                    {"name": "Invoice", "source": "BILL"},
                                 ]
                             elif preview_weather == "Typical Year (TMY)": 
                                 weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
@@ -3681,6 +3688,8 @@ with tab_validation:
             # Dynamic title based on weather source
             if preview_weather == "Actual SCED + Model":
                 comparison_title = "### 📊 Contrast: Actual SCED vs Model"
+            elif preview_weather == "Actual SCED + Model + Settlement Invoice":
+                comparison_title = "### 📊 Contrast: SCED vs Model vs Settlement Invoice"
             elif preview_weather == "Compare All (Act/TMY/P50)":
                 comparison_title = "### 📊 Contrast: Actual vs TMY vs P50"
             else:
