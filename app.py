@@ -3688,8 +3688,7 @@ with tab_validation:
             
             st.markdown(comparison_title)
             comp_summary = []
-            comp_monthly_summary = []
-            source_order = {name: idx for idx, name in enumerate(preview_results.keys())}
+            comp_monthly_metrics = []
             for name, df in preview_results.items():
                 t_gen = df['Gen_Energy_MWh'].sum()
                 t_settle = df['Settlement_$'].sum()
@@ -3722,24 +3721,114 @@ with tab_validation:
                             m_rev = float(r['Market_Revenue_$'])
                             m_capture = (m_rev / m_gen) if m_gen > 0 else 0.0
                             m_rec_cost = -(m_settle / m_gen) if m_gen > 0 else 0.0
-                            comp_monthly_summary.append({
-                                "_source_rank": source_order.get(name, 999),
-                                "_month_period": str(r['MonthPeriod']),
+                            comp_monthly_metrics.append({
+                                "MonthPeriod": pd.Period(str(r['MonthPeriod']), freq='M'),
                                 "Month": pd.Period(str(r['MonthPeriod']), freq='M').strftime('%b %Y'),
                                 "Source": name,
-                                "Generation (MWh)": f"{m_gen:,.0f}",
-                                "Capture Price ($/MWh)": f"${m_capture:.2f}",
-                                "Implied REC Cost ($/MWh)": f"${m_rec_cost:.2f}",
-                                "Net Settlement ($)": f"${m_settle:,.0f}",
+                                "Generation (MWh)": m_gen,
+                                "Capture Price ($/MWh)": m_capture,
+                                "Implied REC Cost ($/MWh)": m_rec_cost,
+                                "Net Settlement ($)": m_settle,
                             })
             st.table(pd.DataFrame(comp_summary))
-            if comp_monthly_summary:
+            if comp_monthly_metrics:
                 st.markdown("#### By Month")
-                df_comp_monthly = pd.DataFrame(comp_monthly_summary).sort_values(
-                    by=["_month_period", "_source_rank"]
+                df_comp_monthly = pd.DataFrame(comp_monthly_metrics).sort_values(
+                    by=["MonthPeriod", "Source"]
                 )
-                df_comp_monthly = df_comp_monthly.drop(columns=["_month_period", "_source_rank"])
-                st.table(df_comp_monthly)
+
+                if {"SCED_Actual", "Model"}.issubset(set(df_comp_monthly["Source"].unique())):
+                    df_sced = (
+                        df_comp_monthly[df_comp_monthly["Source"] == "SCED_Actual"]
+                        .set_index("MonthPeriod")
+                        [["Month", "Generation (MWh)", "Capture Price ($/MWh)", "Implied REC Cost ($/MWh)", "Net Settlement ($)"]]
+                    )
+                    df_model = (
+                        df_comp_monthly[df_comp_monthly["Source"] == "Model"]
+                        .set_index("MonthPeriod")
+                        [["Generation (MWh)", "Capture Price ($/MWh)", "Implied REC Cost ($/MWh)", "Net Settlement ($)"]]
+                    )
+                    df_month_cmp = df_sced.join(
+                        df_model,
+                        how="inner",
+                        lsuffix=" SCED",
+                        rsuffix=" Model",
+                    ).reset_index(drop=True)
+
+                    df_month_cmp["Generation Δ (MWh)"] = (
+                        df_month_cmp["Generation (MWh) Model"] - df_month_cmp["Generation (MWh) SCED"]
+                    )
+                    df_month_cmp["Generation Δ (%)"] = np.where(
+                        df_month_cmp["Generation (MWh) SCED"] != 0,
+                        (df_month_cmp["Generation Δ (MWh)"] / df_month_cmp["Generation (MWh) SCED"]) * 100.0,
+                        np.nan,
+                    )
+                    df_month_cmp["Capture Δ ($/MWh)"] = (
+                        df_month_cmp["Capture Price ($/MWh) Model"] - df_month_cmp["Capture Price ($/MWh) SCED"]
+                    )
+                    df_month_cmp["REC Δ ($/MWh)"] = (
+                        df_month_cmp["Implied REC Cost ($/MWh) Model"] - df_month_cmp["Implied REC Cost ($/MWh) SCED"]
+                    )
+                    df_month_cmp["Net Settlement Δ ($)"] = (
+                        df_month_cmp["Net Settlement ($) Model"] - df_month_cmp["Net Settlement ($) SCED"]
+                    )
+                    df_month_cmp["Net Settlement Δ (%)"] = np.where(
+                        df_month_cmp["Net Settlement ($) SCED"] != 0,
+                        (df_month_cmp["Net Settlement Δ ($)"] / df_month_cmp["Net Settlement ($) SCED"]) * 100.0,
+                        np.nan,
+                    )
+
+                    display_cols = [
+                        "Month",
+                        "Generation (MWh) SCED",
+                        "Generation (MWh) Model",
+                        "Generation Δ (MWh)",
+                        "Generation Δ (%)",
+                        "Capture Price ($/MWh) SCED",
+                        "Capture Price ($/MWh) Model",
+                        "Capture Δ ($/MWh)",
+                        "Implied REC Cost ($/MWh) SCED",
+                        "Implied REC Cost ($/MWh) Model",
+                        "REC Δ ($/MWh)",
+                        "Net Settlement ($) SCED",
+                        "Net Settlement ($) Model",
+                        "Net Settlement Δ ($)",
+                        "Net Settlement Δ (%)",
+                    ]
+
+                    st.dataframe(
+                        df_month_cmp[display_cols].style.format(
+                            {
+                                "Generation (MWh) SCED": "{:,.0f}",
+                                "Generation (MWh) Model": "{:,.0f}",
+                                "Generation Δ (MWh)": "{:+,.0f}",
+                                "Generation Δ (%)": "{:+.2f}%",
+                                "Capture Price ($/MWh) SCED": "${:.2f}",
+                                "Capture Price ($/MWh) Model": "${:.2f}",
+                                "Capture Δ ($/MWh)": "{:+.2f}",
+                                "Implied REC Cost ($/MWh) SCED": "${:.2f}",
+                                "Implied REC Cost ($/MWh) Model": "${:.2f}",
+                                "REC Δ ($/MWh)": "{:+.2f}",
+                                "Net Settlement ($) SCED": "${:,.0f}",
+                                "Net Settlement ($) Model": "${:,.0f}",
+                                "Net Settlement Δ ($)": "{:+,.0f}",
+                                "Net Settlement Δ (%)": "{:+.2f}%",
+                            }
+                        ),
+                        use_container_width=True,
+                    )
+                else:
+                    st.dataframe(
+                        df_comp_monthly.drop(columns=["MonthPeriod"]).style.format(
+                            {
+                                "Generation (MWh)": "{:,.0f}",
+                                "Capture Price ($/MWh)": "${:.2f}",
+                                "Implied REC Cost ($/MWh)": "${:.2f}",
+                                "Net Settlement ($)": "${:,.0f}",
+                            }
+                        ),
+                        use_container_width=True,
+                    )
             st.markdown("---")
         
         # 2. Main Metrics (show either first one or Actual if available)
