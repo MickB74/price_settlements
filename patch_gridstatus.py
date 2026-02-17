@@ -39,7 +39,12 @@ def parse_doc_patched(
 
     ambiguous = dst_ambiguous_default
     if "DSTFlag" in doc.columns:
-        ambiguous = self.ambiguous_based_on_dstflag(doc)
+        if hasattr(self, "ambiguous_based_on_dstflag"):
+            ambiguous = self.ambiguous_based_on_dstflag(doc)
+        else:
+            # Older gridstatus builds don't expose this helper.
+            # "infer" is the safest fallback and keeps parsing forward-compatible.
+            ambiguous = "infer"
 
     # i think DeliveryInterval only shows up
     # in 15 minute data along with DeliveryHour

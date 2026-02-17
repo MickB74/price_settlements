@@ -9,6 +9,7 @@ This script:
 4. Guards against accidental rollback (older max timestamp)
 """
 
+import sys
 import pandas as pd
 import gridstatus
 import patch_gridstatus  # Apply monkey patch for compatibility
@@ -29,7 +30,7 @@ def _load_existing(cache_file: str) -> pd.DataFrame:
 
 
 def update_ercot_2026():
-    """Fetch and save complete 2026 ERCOT RTM data."""
+    """Fetch and save complete 2026 ERCOT RTM data in one deterministic pass."""
 
     cache_file = "ercot_rtm_2026.parquet"
 
@@ -38,148 +39,61 @@ def update_ercot_2026():
     print("=" * 60)
 
     existing_df = _load_existing(cache_file)
-    today = pd.Timestamp.now(tz='US/Central').date()
-
-    start_date = pd.Timestamp("2026-01-01").date()
     existing_max = pd.NaT
     if not existing_df.empty and "Time_Central" in existing_df.columns:
         existing_max = pd.to_datetime(existing_df["Time_Central"], errors="coerce").max()
-        if pd.notna(existing_max):
-            # Re-fetch one prior day for corrections, but never before Jan 1.
-            start_date = max(pd.Timestamp("2026-01-01").date(), (existing_max - pd.Timedelta(days=1)).date())
-
-    if start_date > today:
-        start_date = today
 
     print("\n" + "-" * 60)
-    print(f"Fetching data from {start_date} to {today}...")
+    print("Fetching full 2026 ERCOT RTM dataset...")
     print("-" * 60)
 
     iso = gridstatus.Ercot()
+    fetch_timestamp = pd.Timestamp.now(tz="US/Central")
+    fresh_df = iso.get_rtm_spp(year=2026)
+    if fresh_df is None or fresh_df.empty:
+        raise RuntimeError("ERCOT returned no rows for 2026.")
 
-    try:
-        new_df = pd.DataFrame()
-        fetch_timestamp = pd.Timestamp.now(tz='US/Central')
+    if not pd.api.types.is_datetime64_any_dtype(fresh_df["Time"]):
+        fresh_df["Time"] = pd.to_datetime(fresh_df["Time"], utc=True, errors="coerce")
+    fresh_df = fresh_df.dropna(subset=["Time"]).copy()
+    fresh_df["Time_Central"] = fresh_df["Time"].dt.tz_convert("US/Central")
+    fresh_df["fetched_at"] = fetch_timestamp
+    fresh_df["date"] = fresh_df["Time_Central"].dt.date
 
-        if existing_df.empty:
-            print("Fetching base 2026 data (fast bulk)...")
-            try:
-                base_df = iso.get_rtm_spp(year=2026)
-                if not base_df.empty:
-                    # process base
-                    if not pd.api.types.is_datetime64_any_dtype(base_df['Time']):
-                        base_df['Time'] = pd.to_datetime(base_df['Time'], utc=True)
-                    base_df['Time_Central'] = base_df['Time'].dt.tz_convert('US/Central')
-                    base_df['fetched_at'] = fetch_timestamp
-                    
-                    existing_df = base_df
-                    # Update start_date based on what we just got
-                    start_date = existing_df['Time_Central'].max().date()
-                    print(f"Fetched base data up to {start_date}")
-            except Exception as e:
-                print(f"Bulk fetch failed/empty: {e}")
+    float_cols = fresh_df.select_dtypes(include=["float64"]).columns
+    for col in float_cols:
+        fresh_df[col] = pd.to_numeric(fresh_df[col], downcast="float")
 
-        # Now fetch the gap (or refinement)
-        if start_date <= today:
-            print(f"Fetching detailed interval data from {start_date} to {today}...")
-            
-            # New Strategy: Fetch ALL recent documents for Report 12301 and filter locally
-            # This avoids potential API filtering issues with friendly_name_timestamp
-            # Fetch only as far back as needed for the gap (plus a small safety buffer),
-            # capped to keep document scans bounded.
-            gap_days = max((today - start_date).days + 1, 1)
-            lookback_days = min(max(gap_days + 2, 3), 21)
-            print(f"  Fetching list of recent documents (last {lookback_days} days)...")
+    if existing_df.empty:
+        combined = fresh_df
+    else:
+        combined = pd.concat([existing_df, fresh_df], ignore_index=True)
+        combined = combined.sort_values("Time")
+        combined = combined.drop_duplicates(subset=["Time", "Location"], keep="last")
 
-            start_search = pd.Timestamp.now(tz="US/Central") - pd.Timedelta(days=lookback_days)
-            
-            all_docs = iso._get_documents(
-                report_type_id=12301,
-                published_after=start_search
-            )
-            
-            print(f"  Found {len(all_docs)} total documents.")
-            
-            # Sort docs by timestamp
-            # gridstatus Documents have a 'friendly_name_timestamp' attribute
-            all_docs.sort(key=lambda x: x.friendly_name_timestamp if x.friendly_name_timestamp else pd.Timestamp.min)
-            
-            # Filter for gap period
-            target_docs = []
-            for doc in all_docs:
-                if doc.friendly_name_timestamp:
-                    # doc ts is usually beginning of interval?
-                    doc_date = doc.friendly_name_timestamp.date()
-                    if doc_date >= start_date and doc_date <= today:
-                        target_docs.append(doc)
-                        
-            print(f"  Identified {len(target_docs)} documents covering gap {start_date} to {today}.")
-            
-            # Process in small batches (e.g., by day or 100 docs) to save incrementally
-            # Group by date
-            from collections import defaultdict
-            docs_by_date = defaultdict(list)
-            for doc in target_docs:
-                d = doc.friendly_name_timestamp.date()
-                docs_by_date[d].append(doc)
-                
-            sorted_dates = sorted(docs_by_date.keys())
-            
-            for d in sorted_dates:
-                print(f"  Processing {d} ({len(docs_by_date[d])} docs)...")
-                try:
-                    day_df = iso.read_docs(docs_by_date[d])
-                    
-                    if not day_df.empty:
-                        # Process
-                        if not pd.api.types.is_datetime64_any_dtype(day_df['Time']):
-                            day_df['Time'] = pd.to_datetime(day_df['Time'], utc=True)
-                        day_df['Time_Central'] = day_df['Time'].dt.tz_convert('US/Central')
-                        day_df['fetched_at'] = fetch_timestamp
-                        day_df['date'] = day_df['Time_Central'].dt.date
-                        
-                        # Memory Opt
-                        float_cols = day_df.select_dtypes(include=['float64']).columns
-                        for col in float_cols:
-                            day_df[col] = pd.to_numeric(day_df[col], downcast='float')
+    new_max = pd.to_datetime(combined["Time_Central"], errors="coerce").max()
+    if pd.notna(existing_max) and pd.notna(new_max) and new_max < existing_max:
+        raise RuntimeError(
+            f"Rollback guard triggered. Existing max={existing_max}, new max={new_max}."
+        )
 
-                        # Merge with existing immediately
-                        if not existing_df.empty:
-                            existing_df = pd.concat([existing_df, day_df])
-                        else:
-                            existing_df = day_df
-                        
-                        # Deduplicate
-                        existing_df = existing_df.sort_values('Time')
-                        existing_df = existing_df.drop_duplicates(subset=['Time', 'Location'], keep='last')
-                        
-                        # SAVE IMMEDIATELY
-                        existing_df.to_parquet(cache_file)
-                        print(f"    Saved data for {d}. Total rows: {len(existing_df):,}")
-                except Exception as e:
-                        print(f"    Error processing {d}: {e}")
-                        if 'day_df' in locals() and not day_df.empty:
-                            print(f"    Columns: {day_df.columns.tolist()}")
-                        
-                        
-            # Finished processing all docs for the gap
+    combined.to_parquet(cache_file)
 
-        return existing_df
-
-    except Exception as e:
-        print(f"\n❌ ERROR: Failed to update data")
-        print(f"  {str(e)}")
-        # If we have existing data, we survived but didn't update
-        return existing_df
+    lag_days = (pd.Timestamp.now(tz="US/Central") - new_max).total_seconds() / 86400.0 if pd.notna(new_max) else float("nan")
+    print(f"Saved {len(combined):,} rows to {cache_file}")
+    print(f"Range: {combined['Time_Central'].min()} to {combined['Time_Central'].max()}")
+    print(f"Lag vs now: {lag_days:.1f} days")
+    return combined
 
 if __name__ == "__main__":
-    result = update_ercot_2026()
-    
-    if result is not None:
+    try:
+        result = update_ercot_2026()
         print("\n" + "=" * 60)
         print("Update completed successfully! 🎉")
         print("=" * 60)
-    else:
+    except Exception as e:
         print("\n" + "=" * 60)
-        print("Update failed. Please check error messages above.")
+        print("Update failed.")
+        print(str(e))
         print("=" * 60)
+        sys.exit(1)
