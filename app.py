@@ -2833,6 +2833,14 @@ with tab_validation:
                         # Just display it for now.
                         pass
 
+        # Azure Sky default year in Specific Project mode.
+        prev_project = st.session_state.get("val_prev_specific_project_name")
+        if val_source == "Specific Project":
+            if selected_project_name == "Azure Sky Wind":
+                if prev_source != "Specific Project" or prev_project != "Azure Sky Wind":
+                    st.session_state["val_year"] = 2025
+            st.session_state["val_prev_specific_project_name"] = selected_project_name
+
         with c2:
             val_year = st.selectbox("Year", [2026, 2025, 2024, 2023, 2022, 2021, 2020], key="val_year")
         with c3:
