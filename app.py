@@ -53,6 +53,7 @@ except Exception:
 REPO_ROOT = Path(__file__).resolve().parent
 SETTLEMENT_INVOICE_XLSX = REPO_ROOT / "AzureSkyActuals.xlsx"
 SETTLEMENT_INVOICE_PARQUET = REPO_ROOT / "data_static" / "Settlement_Invoice_Actuals.parquet"
+SETTLEMENT_INVOICE_PARQUET_LEGACY = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
 
 HUB_LOCATIONS = {
     "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
@@ -3027,11 +3028,10 @@ with tab_validation:
                      with st.spinner("Updating Settlement Invoice data from Excel..."):
                         try:
                             import subprocess
-                            repo_dir = Path(__file__).resolve().parent
                             subprocess.run(
                                 [sys.executable, "scripts/convert_bill_to_parquet.py"],
                                 check=True,
-                                cwd=str(repo_dir),
+                                cwd=str(REPO_ROOT),
                             )
                             st.success("Settlement Invoice data updated!")
                         except Exception as e:
@@ -3173,21 +3173,23 @@ with tab_validation:
                                 is_bill = source.get("source") == "BILL"
 
                                 if is_bill:
-                                    repo_dir = Path(__file__).resolve().parent
-                                    # Check for staleness and auto-refresh
-                                    bill_xlsx = repo_dir / "AzureSkyActuals.xlsx"
-                                    bill_parquet = repo_dir / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
+                                    bill_xlsx = SETTLEMENT_INVOICE_XLSX
+                                    bill_parquet_primary = SETTLEMENT_INVOICE_PARQUET
+                                    bill_parquet_legacy = SETTLEMENT_INVOICE_PARQUET_LEGACY
+                                    bill_parquet = (
+                                        bill_parquet_primary
+                                        if bill_parquet_primary.exists()
+                                        else bill_parquet_legacy
+                                    )
                                     
                                     if bill_xlsx.exists():
                                         stale = False
-                                        if not bill_parquet.exists():
-                                            stale = True
-                                        else:
-                                            # Check timestamps
+                                        if bill_parquet.exists():
                                             xlsx_mtime = bill_xlsx.stat().st_mtime
                                             parquet_mtime = bill_parquet.stat().st_mtime
-                                            if xlsx_mtime > parquet_mtime:
-                                                stale = True
+                                            stale = xlsx_mtime > parquet_mtime
+                                        else:
+                                            stale = True
                                         
                                         if stale:
                                             with st.spinner("Updating Settlement Invoice data from Excel..."):
@@ -3196,15 +3198,23 @@ with tab_validation:
                                                     subprocess.run(
                                                         [sys.executable, "scripts/convert_bill_to_parquet.py"],
                                                         check=True,
-                                                        cwd=str(repo_dir),
+                                                        cwd=str(REPO_ROOT),
                                                     )
                                                     st.toast("Settlement Invoice data updated!")
                                                 except Exception as e:
                                                     st.error(f"Failed to update bill data: {e}")
+                                            bill_parquet = (
+                                                bill_parquet_primary
+                                                if bill_parquet_primary.exists()
+                                                else bill_parquet_legacy
+                                            )
                                     
                                     # Load Settlement Invoice Parquet
                                     if not bill_parquet.exists():
-                                        st.error(f"Settlement Invoice data not found at {bill_parquet}. Please run conversion script.")
+                                        st.error(
+                                            f"Settlement Invoice data not found at {bill_parquet_primary} "
+                                            f"(legacy fallback: {bill_parquet_legacy}). Please run conversion script."
+                                        )
                                         continue
                                     
                                     try:

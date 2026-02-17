@@ -4,7 +4,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INPUT_FILE = REPO_ROOT / "AzureSkyActuals.xlsx"
-OUTPUT_FILE = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
+OUTPUT_FILE = REPO_ROOT / "data_static" / "Settlement_Invoice_Actuals.parquet"
+LEGACY_OUTPUT_FILE = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
 
 def convert_bill():
     if not INPUT_FILE.exists():
@@ -85,10 +86,14 @@ def convert_bill():
     # Sort
     final_df = final_df.sort_values('Time').reset_index(drop=True)
     
-    # Save
+    # Save canonical cloud-safe output path.
     print(f"Saving to {OUTPUT_FILE}...")
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     final_df.to_parquet(OUTPUT_FILE)
+
+    # Also write legacy path for local compatibility.
+    LEGACY_OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    final_df.to_parquet(LEGACY_OUTPUT_FILE)
     print(f"Done! Saved {len(final_df)} rows. Range: {final_df['Time'].min()} to {final_df['Time'].max()}")
 
 if __name__ == "__main__":
