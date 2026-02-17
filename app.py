@@ -2755,6 +2755,19 @@ with tab_validation:
         with col_src:
             val_source = st.radio("Project Source", ["Generic / Hub", "Specific Project"], horizontal=True, key="val_source")
 
+        # Apply Specific Project defaults when user switches modes.
+        prev_source = st.session_state.get("val_prev_project_source", val_source)
+        if val_source == "Specific Project":
+            default_project = "Azure Sky Wind"
+            if prev_source != "Specific Project" or st.session_state.get("val_project_name") not in asset_names:
+                if default_project in asset_registry:
+                    st.session_state["val_project_name"] = default_project
+                elif asset_names:
+                    st.session_state["val_project_name"] = asset_names[0]
+            if prev_source != "Specific Project":
+                st.session_state["val_price"] = 17.34
+        st.session_state["val_prev_project_source"] = val_source
+
         # Row 1: Hub/Project & Year & Price
         c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
         
