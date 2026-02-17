@@ -3688,6 +3688,8 @@ with tab_validation:
             
             st.markdown(comparison_title)
             comp_summary = []
+            comp_monthly_summary = []
+            source_order = {name: idx for idx, name in enumerate(preview_results.keys())}
             for name, df in preview_results.items():
                 t_gen = df['Gen_Energy_MWh'].sum()
                 t_settle = df['Settlement_$'].sum()
@@ -3703,7 +3705,41 @@ with tab_validation:
                     "Implied REC Cost ($/MWh)": f"${rec_cost:.2f}",
                     "Net Settlement ($)": f"${t_settle:,.0f}"
                 })
+                
+                # Monthly breakout for the same summary metrics.
+                if not df.empty and 'Time_Central' in df.columns:
+                    df_month = df.copy()
+                    df_month['MonthPeriod'] = pd.to_datetime(df_month['Time_Central'], errors='coerce').dt.to_period('M')
+                    df_month = df_month.dropna(subset=['MonthPeriod'])
+                    if not df_month.empty:
+                        month_agg = (
+                            df_month.groupby('MonthPeriod', as_index=False)[['Gen_Energy_MWh', 'Settlement_$', 'Market_Revenue_$']]
+                            .sum()
+                        )
+                        for _, r in month_agg.iterrows():
+                            m_gen = float(r['Gen_Energy_MWh'])
+                            m_settle = float(r['Settlement_$'])
+                            m_rev = float(r['Market_Revenue_$'])
+                            m_capture = (m_rev / m_gen) if m_gen > 0 else 0.0
+                            m_rec_cost = -(m_settle / m_gen) if m_gen > 0 else 0.0
+                            comp_monthly_summary.append({
+                                "_source_rank": source_order.get(name, 999),
+                                "_month_period": str(r['MonthPeriod']),
+                                "Month": pd.Period(str(r['MonthPeriod']), freq='M').strftime('%b %Y'),
+                                "Source": name,
+                                "Generation (MWh)": f"{m_gen:,.0f}",
+                                "Capture Price ($/MWh)": f"${m_capture:.2f}",
+                                "Implied REC Cost ($/MWh)": f"${m_rec_cost:.2f}",
+                                "Net Settlement ($)": f"${m_settle:,.0f}",
+                            })
             st.table(pd.DataFrame(comp_summary))
+            if comp_monthly_summary:
+                st.markdown("#### By Month")
+                df_comp_monthly = pd.DataFrame(comp_monthly_summary).sort_values(
+                    by=["_month_period", "_source_rank"]
+                )
+                df_comp_monthly = df_comp_monthly.drop(columns=["_month_period", "_source_rank"])
+                st.table(df_comp_monthly)
             st.markdown("---")
         
         # 2. Main Metrics (show either first one or Actual if available)
