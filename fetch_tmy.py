@@ -370,7 +370,7 @@ def get_profile_for_year(
     wind_model_engine_key = _normalize_wind_model_engine(wind_model_engine)
 
     calibration_table = None
-    if tech == "Wind" and apply_wind_calibration:
+    if tech == "Wind":
         # Lazy import to avoid circular dependency
         from utils.wind_calibration import (
             apply_wind_postprocess,
