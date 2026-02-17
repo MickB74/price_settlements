@@ -1,11 +1,13 @@
 import pandas as pd
 import os
+from pathlib import Path
 
-INPUT_FILE = "AzureSkyActuals.xlsx"
-OUTPUT_FILE = "sced_cache/Settlement_Invoice_Actuals.parquet"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+INPUT_FILE = REPO_ROOT / "AzureSkyActuals.xlsx"
+OUTPUT_FILE = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
 
 def convert_bill():
-    if not os.path.exists(INPUT_FILE):
+    if not INPUT_FILE.exists():
         print(f"Error: {INPUT_FILE} not found.")
         return
 
@@ -85,7 +87,7 @@ def convert_bill():
     
     # Save
     print(f"Saving to {OUTPUT_FILE}...")
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     final_df.to_parquet(OUTPUT_FILE)
     print(f"Done! Saved {len(final_df)} rows. Range: {final_df['Time'].min()} to {final_df['Time'].max()}")
 

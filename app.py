@@ -3008,7 +3008,12 @@ with tab_validation:
                      with st.spinner("Updating Settlement Invoice data from Excel..."):
                         try:
                             import subprocess
-                            subprocess.run(["python", "scripts/convert_bill_to_parquet.py"], check=True)
+                            repo_dir = Path(__file__).resolve().parent
+                            subprocess.run(
+                                [sys.executable, "scripts/convert_bill_to_parquet.py"],
+                                check=True,
+                                cwd=str(repo_dir),
+                            )
                             st.success("Settlement Invoice data updated!")
                         except Exception as e:
                             st.error(f"Failed to update bill data: {e}")
@@ -3149,18 +3154,19 @@ with tab_validation:
                                 is_bill = source.get("source") == "BILL"
 
                                 if is_bill:
+                                    repo_dir = Path(__file__).resolve().parent
                                     # Check for staleness and auto-refresh
-                                    bill_xlsx = "AzureSkyActuals.xlsx"
-                                    bill_parquet = "sced_cache/Settlement_Invoice_Actuals.parquet"
+                                    bill_xlsx = repo_dir / "AzureSkyActuals.xlsx"
+                                    bill_parquet = repo_dir / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
                                     
-                                    if os.path.exists(bill_xlsx):
+                                    if bill_xlsx.exists():
                                         stale = False
-                                        if not os.path.exists(bill_parquet):
+                                        if not bill_parquet.exists():
                                             stale = True
                                         else:
                                             # Check timestamps
-                                            xlsx_mtime = os.path.getmtime(bill_xlsx)
-                                            parquet_mtime = os.path.getmtime(bill_parquet)
+                                            xlsx_mtime = bill_xlsx.stat().st_mtime
+                                            parquet_mtime = bill_parquet.stat().st_mtime
                                             if xlsx_mtime > parquet_mtime:
                                                 stale = True
                                         
@@ -3168,13 +3174,17 @@ with tab_validation:
                                             with st.spinner("Updating Settlement Invoice data from Excel..."):
                                                 try:
                                                     import subprocess
-                                                    subprocess.run(["python", "scripts/convert_bill_to_parquet.py"], check=True)
+                                                    subprocess.run(
+                                                        [sys.executable, "scripts/convert_bill_to_parquet.py"],
+                                                        check=True,
+                                                        cwd=str(repo_dir),
+                                                    )
                                                     st.toast("Settlement Invoice data updated!")
                                                 except Exception as e:
                                                     st.error(f"Failed to update bill data: {e}")
                                     
                                     # Load Settlement Invoice Parquet
-                                    if not os.path.exists(bill_parquet):
+                                    if not bill_parquet.exists():
                                         st.error(f"Settlement Invoice data not found at {bill_parquet}. Please run conversion script.")
                                         continue
                                     
