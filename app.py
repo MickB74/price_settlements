@@ -2778,7 +2778,7 @@ with tab_validation:
         if val_source == "Specific Project" and selected_project_meta:
             default_tech = selected_project_meta.get('tech', 'Solar')
             default_cap = selected_project_meta.get('capacity_mw', 100.0)
-        elif val_project_name == "Settlement Invoice":
+        elif val_source == "Specific Project" and selected_project_name == "Settlement Invoice":
             default_tech = "Wind"
             default_cap = 350.0
 
@@ -2984,7 +2984,7 @@ with tab_validation:
 
                             if preview_weather == "Actual Weather": 
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
-                                if val_project_name == "Settlement Invoice":
+                                if val_source == "Specific Project" and selected_project_name == "Settlement Invoice":
                                      weather_opts = [{"name": "Invoice", "source": "BILL"}]
                             elif preview_weather == "Actual SCED + Model":
                                 # NEW: Fetch actual SCED data + generate model for comparison
