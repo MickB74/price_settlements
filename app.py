@@ -243,6 +243,7 @@ st.session_state.setdefault("sb_wind_weather_source_label", "Open-Meteo / PVGIS 
 st.session_state.setdefault("sb_wind_model_engine_label", "Standard (Current)")
 st.session_state.setdefault("val_wind_weather_source_label", "Open-Meteo / PVGIS (Default)")
 st.session_state.setdefault("val_wind_model_engine_label", "Standard (Current)")
+st.session_state.setdefault("val_apply_bp_cap", True)
 st.session_state.setdefault("bench_wind_weather_source_label", "Open-Meteo / PVGIS (Default)")
 st.session_state.setdefault("bench_wind_model_engine_label", "Standard (Current)")
 
@@ -2908,6 +2909,7 @@ with tab_validation:
         preview_wind_weather_source = "AUTO"
         preview_hrrr_forecast_hour = 0
         preview_wind_model_engine = "STANDARD"
+        preview_apply_bp_cap = bool(st.session_state.get("val_apply_bp_cap", True))
         # Optional Turbine Selector (if Wind)
         selected_turbine = "GENERIC"
         # Only show turbine selector for Generic
@@ -2978,6 +2980,16 @@ with tab_validation:
                     help="Advanced mode applies monthly EIA/CF targets, SCED bias correction, node adjustments, and tuned clipping.",
                 )
                 preview_wind_model_engine = WIND_MODEL_ENGINE_OPTIONS.get(preview_engine_label, "STANDARD")
+            if val_source == "Specific Project":
+                preview_apply_bp_cap = st.toggle(
+                    "Apply SCED Base Point Cap",
+                    value=bool(st.session_state.get("val_apply_bp_cap", True)),
+                    key="val_apply_bp_cap",
+                    help=(
+                        "Toggle modeled wind between capped and uncapped output when "
+                        "SCED Base Point data is available."
+                    ),
+                )
 
         # On-demand SCED cache refresh for Azure Sky Wind so preview can stay cache-only and fast.
         if (
@@ -3425,15 +3437,19 @@ with tab_validation:
                                         )
                                         if "Base_Point_MW" in merged.columns:
                                             merged["Gen_MW_Raw"] = merged["Gen_MW"]
-                                            merged["Gen_MW"] = apply_base_point_cap(
-                                                modeled_mw=merged["Gen_MW"],
-                                                base_point_mw=merged["Base_Point_MW"],
-                                                headroom_factor=bp_headroom_factor,
-                                                capacity_mw=preview_capacity,
-                                                cap_strength=DEFAULT_BASE_POINT_CAP_STRENGTH,
-                                            )
+                                            if preview_apply_bp_cap:
+                                                merged["Gen_MW"] = apply_base_point_cap(
+                                                    modeled_mw=merged["Gen_MW"],
+                                                    base_point_mw=merged["Base_Point_MW"],
+                                                    headroom_factor=bp_headroom_factor,
+                                                    capacity_mw=preview_capacity,
+                                                    cap_strength=DEFAULT_BASE_POINT_CAP_STRENGTH,
+                                                )
                                             merged["Base_Point_Headroom_Factor"] = float(bp_headroom_factor)
-                                            merged["Base_Point_Cap_Strength"] = float(DEFAULT_BASE_POINT_CAP_STRENGTH)
+                                            merged["Base_Point_Cap_Strength"] = (
+                                                float(DEFAULT_BASE_POINT_CAP_STRENGTH) if preview_apply_bp_cap else 0.0
+                                            )
+                                            merged["Base_Point_Cap_Applied"] = bool(preview_apply_bp_cap)
                                             merged["Gen_Energy_MWh"] = merged["Gen_MW"] * 0.25
                                     
                                     # Calculate Potential Curtailment (Always)
