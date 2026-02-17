@@ -2938,6 +2938,26 @@ with tab_validation:
                     "Use this once per year before `Generate Preview` when running `Actual SCED + Model`."
                 )
 
+        # On-demand Bill Data refresh
+        is_invoice_selected = (
+            (val_source == "Specific Project" and selected_project_name == "Settlement Invoice") or
+            (preview_weather == "Settlement Invoice (Actuals)")
+        )
+        
+        if is_invoice_selected:
+             b1, b2 = st.columns([1, 2.5])
+             with b1:
+                 if st.button("🔄 Refresh Invoice Data", key="refresh_bill_data", use_container_width=True):
+                     with st.spinner("Updating Settlement Invoice data from Excel..."):
+                        try:
+                            import subprocess
+                            subprocess.run(["python", "scripts/convert_bill_to_parquet.py"], check=True)
+                            st.success("Settlement Invoice data updated!")
+                        except Exception as e:
+                            st.error(f"Failed to update bill data: {e}")
+             with b2:
+                 st.caption("Reloads data from `AzureSkyActuals.xlsx`.")
+
 
         # Row 3: Actions
         c8, c9 = st.columns([3, 1])
@@ -3072,8 +3092,31 @@ with tab_validation:
                                 is_bill = source.get("source") == "BILL"
 
                                 if is_bill:
-                                    # Load Settlement Invoice Parquet
+                                    # Check for staleness and auto-refresh
+                                    bill_xlsx = "AzureSkyActuals.xlsx"
                                     bill_parquet = "sced_cache/Settlement_Invoice_Actuals.parquet"
+                                    
+                                    if os.path.exists(bill_xlsx):
+                                        stale = False
+                                        if not os.path.exists(bill_parquet):
+                                            stale = True
+                                        else:
+                                            # Check timestamps
+                                            xlsx_mtime = os.path.getmtime(bill_xlsx)
+                                            parquet_mtime = os.path.getmtime(bill_parquet)
+                                            if xlsx_mtime > parquet_mtime:
+                                                stale = True
+                                        
+                                        if stale:
+                                            with st.spinner("Updating Settlement Invoice data from Excel..."):
+                                                try:
+                                                    import subprocess
+                                                    subprocess.run(["python", "scripts/convert_bill_to_parquet.py"], check=True)
+                                                    st.toast("Settlement Invoice data updated!")
+                                                except Exception as e:
+                                                    st.error(f"Failed to update bill data: {e}")
+                                    
+                                    # Load Settlement Invoice Parquet
                                     if not os.path.exists(bill_parquet):
                                         st.error(f"Settlement Invoice data not found at {bill_parquet}. Please run conversion script.")
                                         continue
