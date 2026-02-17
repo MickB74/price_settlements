@@ -119,6 +119,48 @@ def estimate_base_point_headroom_factor(
     return factor
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_bill_data(file_path):
+    """
+    Loads generation data from the Azure Sky bill Excel file.
+    Expects 'Date' column (datetime) and 'Plant Generation (MWh)' column.
+    Returns a DataFrame with a timezone-aware DatetimeIndex (Central) and 'Actual_MW'.
+    """
+    try:
+        if not os.path.exists(file_path):
+            return pd.DataFrame()
+            
+        df = pd.read_excel(file_path)
+        
+        # Validate columns
+        req_cols = ['Date', 'Plant Generation (MWh)']
+        if not all(col in df.columns for col in req_cols):
+            st.error(f"Bill file missing columns. Found: {df.columns.tolist()}")
+            return pd.DataFrame()
+            
+        # Parse Date/Time
+        df['Time'] = pd.to_datetime(df['Date'])
+        
+        # Localize/Convert to Central
+        if df['Time'].dt.tz is None:
+             df['Time'] = df['Time'].dt.tz_localize('US/Central', ambiguous='infer', nonexistent='shift_forward')
+        else:
+             df['Time'] = df['Time'].dt.tz_convert('US/Central')
+             
+        # Convert MWh to MW (15-min intervals => MW = MWh * 4)
+        df['Actual_MW'] = pd.to_numeric(df['Plant Generation (MWh)'], errors='coerce') * 4.0
+        
+        # Set index
+        df = df.set_index('Time').sort_index()
+        
+        # Extract just what we need
+        return df[['Actual_MW']]
+        
+    except Exception as e:
+        st.error(f"Error loading bill data: {e}")
+        return pd.DataFrame()
+
+
 def apply_base_point_cap(
     modeled_mw,
     base_point_mw,
@@ -723,46 +765,111 @@ def calculate_scenario(scenario, df_rtm):
         lat, lon = HUB_LOCATIONS.get(scenario['hub'], default_loc)
 
     try:
-        if tech == "Custom Upload":
-            # Load Custom CSV
-            csv_path = scenario.get('custom_profile_path')
-            if csv_path and pd.io.common.file_exists(csv_path):
-                df_custom = pd.read_csv(csv_path)
-                
-                # Normalize columns
-                df_custom.columns = [c.lower().strip() for c in df_custom.columns]
-                
-                # Identify MW column
-                mw_col = next((c for c in df_custom.columns if any(x in c for x in ['mw', 'gen', 'load', 'power'])), None)
-                if not mw_col:
-                    raise ValueError("Could not identify Generation/MW column in CSV.")
-                
-                # Identify Time column
-                time_col = next((c for c in df_custom.columns if any(x in c for x in ['time', 'date', 'hour'])), None)
-                
-                if time_col:
-                    # Parse Time
-                    df_custom['Time'] = pd.to_datetime(df_custom[time_col], utc=True) # Assume UTC if not specified? 
-                    # If naive, assume UTC or Central? Let's assume input matches expected years or generic.
-                    # Best effort: convert to Central if possible, or just naive.
-                    if df_custom['Time'].dt.tz is None:
-                        df_custom['Time'] = df_custom['Time'].dt.tz_localize('UTC') # Assume UTC
-                    
-                    profile_series = df_custom.set_index('Time')[mw_col]
-                    profile_central = profile_series.tz_convert('US/Central')
+        # --- Handle Special Sources (BILL / SCED) ---
+        source_type = scenario.get('source_type', 'MODEL')
+        
+        if source_type == 'BILL':
+            bill_path = scenario.get('bill_file_path')
+            if bill_path:
+                df_bill = load_bill_data(bill_path)
+                if not df_bill.empty:
+                    # Align to Central Time and Hub Timestamps
+                    # Assuming bill data is already Central (handled in loader)
+                    profile_central = df_bill['Actual_MW']
                 else:
-                    # Infer Time Index based on length
-                    year = scenario['year']
-                    start_date = f"{year}-01-01"
+                    raise ValueError(f"Bill data empty or not found: {bill_path}")
+            else:
+                 raise ValueError("Scenario marked as BILL source but no file path provided.")
+                 
+        elif source_type == 'SCED':
+            res_id = scenario.get('resource_id')
+            if not res_id:
+                # Fallback mapping if not explicit (e.g. from older scenario)
+                if scenario['tech'] == 'Wind' and 'Azure' in scenario['name']:
+                    res_id = "AZURE_SKY_WIND_AGG"
+                else:
+                    # Try to find a default or error?
+                    # For now, if no resource ID, fall back to MODEL
+                    pass
+            
+            if res_id:
+                # Fetch SCED Data
+                # Function signature: get_asset_period_data(resource_name, start_date, end_date)
+                # We need whole year for the scenario
+                year = scenario['year']
+                start_date = datetime(year, 1, 1).date()
+                end_date = datetime(year, 12, 31).date()
+                
+                # Fetch (this uses cache)
+                df_sced = sced_fetcher.get_asset_period_data(res_id, start_date, end_date)
+                
+                if not df_sced.empty:
+                     # Ensure Time index
+                     if 'Time' in df_sced.columns:
+                         df_sced['Time'] = pd.to_datetime(df_sced['Time'])
+                         if df_sced['Time'].dt.tz is None:
+                             df_sced = df_sced.set_index(df_sced['Time'].dt.tz_localize('UTC').dt.tz_convert('US/Central'))
+                         else:
+                             df_sced = df_sced.set_index(df_sced['Time'].dt.tz_convert('US/Central'))
+                     
+                     # Extract Actual_MW
+                     # Handle scaling if capacity differs?
+                     # SCED is actual MW. If user changed capacity in UI, do we scale?
+                     # Ideally yes: (User Cap / Asset Cap) * Actual MW
+                     # Only if asset capacity is known.
+                     asset_cap = scenario.get('asset_capacity_mw', 350.0)
+                     user_cap = scenario.get('capacity_mw', 350.0)
+                     
+                     scale_factor = 1.0
+                     if asset_cap and asset_cap > 0:
+                         scale_factor = user_cap / asset_cap
+                         
+                     profile_central = df_sced['Actual_MW'] * scale_factor
+                else:
+                    st.warning(f"No SCED data found for {res_id} in {year}. Falling back to Model.")
+                    source_type = 'MODEL' # Fallback
+
+        if source_type == 'MODEL' or 'profile_central' not in locals():
+            if tech == "Custom Upload":
+                # Load Custom CSV
+                csv_path = scenario.get('custom_profile_path')
+                if csv_path and pd.io.common.file_exists(csv_path):
+                    df_custom = pd.read_csv(csv_path)
                     
-                    if len(df_custom) >= 35000: # Approx 15-min (35040)
-                        freq = '15min'
-                    else: # Assume Hourly (8760/8784)
-                        freq = 'h'
+                    # Normalize columns
+                    df_custom.columns = [c.lower().strip() for c in df_custom.columns]
                     
-                    # Create index
-                    idx = pd.date_range(start=start_date, periods=len(df_custom), freq=freq, tz='US/Central')
-                    profile_central = pd.Series(df_custom[mw_col].values, index=idx)
+                    # Identify MW column
+                    mw_col = next((c for c in df_custom.columns if any(x in c for x in ['mw', 'gen', 'load', 'power'])), None)
+                    if not mw_col:
+                        raise ValueError("Could not identify Generation/MW column in CSV.")
+                    
+                    # Identify Time column
+                    time_col = next((c for c in df_custom.columns if any(x in c for x in ['time', 'date', 'hour'])), None)
+                    
+                    if time_col:
+                        # Parse Time
+                        df_custom['Time'] = pd.to_datetime(df_custom[time_col], utc=True) # Assume UTC if not specified? 
+                        # If naive, assume UTC or Central? Let's assume input matches expected years or generic.
+                        # Best effort: convert to Central if possible, or just naive.
+                        if df_custom['Time'].dt.tz is None:
+                            df_custom['Time'] = df_custom['Time'].dt.tz_localize('UTC') # Assume UTC
+                        
+                        profile_series = df_custom.set_index('Time')[mw_col]
+                        profile_central = profile_series.tz_convert('US/Central')
+                    else:
+                        # Infer Time Index based on length
+                        year = scenario['year']
+                        start_date = f"{year}-01-01"
+                        
+                        if len(df_custom) >= 35000: # Approx 15-min (35040)
+                            freq = '15min'
+                        else: # Assume Hourly (8760/8784)
+                            freq = 'h'
+                        
+                        # Create index
+                        idx = pd.date_range(start=start_date, periods=len(df_custom), freq=freq, tz='US/Central')
+                        profile_central = pd.Series(df_custom[mw_col].values, index=idx)
 
             else:
                 raise FileNotFoundError(
@@ -1079,12 +1186,67 @@ with st.sidebar:
     st.header("Scenario Builder")
     
     # --- Generation Source ---
+    # --- Generation Source ---
     sb_gen_source = st.selectbox(
         "Generation Source",
-        ["Solar", "Wind", "Load (Future)", "Custom Upload"],
+        ["Solar", "Wind", "ERCOT Asset", "Load (Future)", "Custom Upload"],
         key="sb_gen_source",
         help="Choose the type of generation profile."
     )
+    
+    # --- ERCOT Asset Logic ---
+    selected_asset_info = None
+    if sb_gen_source == "ERCOT Asset":
+        assets_file = "ercot_assets.json"
+        
+        # Load Assets
+        if os.path.exists(assets_file):
+            with open(assets_file, "r") as f:
+                ercot_assets = json.load(f)
+            
+            asset_names = sorted(list(ercot_assets.keys()))
+            try:
+                def_idx = asset_names.index("Azure Sky Wind")
+            except ValueError:
+                def_idx = 0
+                
+            sb_selected_asset = st.selectbox(
+                "Select Asset",
+                asset_names,
+                index=def_idx,
+                key="sb_selected_asset"
+            )
+            
+            if sb_selected_asset:
+                selected_asset_info = ercot_assets[sb_selected_asset]
+                
+                # Auto-set Tech (Update session state for multiselect)
+                tech = selected_asset_info.get("tech", "Wind")
+                st.session_state.sb_techs = [tech]
+                
+                # Azure Sky Specifics
+                if sb_selected_asset == "Azure Sky Wind":
+                    st.markdown("### Azure Sky Data Source")
+                    sb_az_source = st.radio(
+                        "Source Type",
+                        ["Bill (Actuals)", "SCED (ERCOT)", "Modeled"],
+                        horizontal=True,
+                        key="sb_az_source"
+                    )
+                    
+                    # Defaults
+                    if 'sb_vppa_price' not in st.session_state or st.session_state.sb_vppa_price != 17.34:
+                         st.session_state.sb_vppa_price = 17.34
+                    
+                    cap = selected_asset_info.get("capacity_mw", 350.0)
+                    st.session_state.sb_capacity = float(cap)
+                else:
+                    # Generic
+                    cap = selected_asset_info.get("capacity_mw", 100.0)
+                    st.session_state.sb_capacity = float(cap)
+                    
+        else:
+            st.error("ercot_assets.json not found!")
     
     # --- Years/Hubs Selection ---
     available_years = [2026, 2025, 2024, 2023, 2022, 2021, 2020]
@@ -1408,6 +1570,29 @@ with st.sidebar:
                             if any(s['name'] == name for s in st.session_state.scenarios):
                                 continue 
                             else:
+                                # Determine Source Type and Metadata
+                                src_type = "MODEL"
+                                res_id = None
+                                ast_name = None
+                                ast_cap = None
+                                bill_path = None
+                                
+                                if sb_gen_source == "ERCOT Asset":
+                                    src_type = "SCED" # Default
+                                    ast_name = sb_selected_asset
+                                    if selected_asset_info:
+                                        res_id = selected_asset_info.get("resource_name")
+                                        ast_cap = selected_asset_info.get("capacity_mw")
+                                    
+                                    if sb_selected_asset == "Azure Sky Wind":
+                                        if sb_az_source == "Bill (Actuals)":
+                                            src_type = "BILL"
+                                            bill_path = "AzureSkyActuals.xlsx"
+                                        elif sb_az_source == "Modeled":
+                                            src_type = "MODEL"
+                                        else:
+                                            src_type = "SCED"
+
                                 new_scenario = {
                                     "id": datetime.now().isoformat() + f"_{added_count}",
                                     "name": name,
@@ -1426,7 +1611,12 @@ with st.sidebar:
                                     "wind_model_engine": s_wind_model_engine if tech == "Wind" else "STANDARD",
                                     "custom_lat": s_custom_lat if s_use_custom_location else None,
                                     "custom_lon": s_custom_lon if s_use_custom_location else None,
-                                    "custom_profile_path": None
+                                    "custom_profile_path": None,
+                                    "source_type": src_type,
+                                    "resource_id": res_id,
+                                    "asset_name": ast_name,
+                                    "asset_capacity_mw": ast_cap,
+                                    "bill_file_path": bill_path,
                             }
                             st.session_state.scenarios.append(new_scenario)
                             added_count += 1
@@ -1484,6 +1674,29 @@ with st.sidebar:
                             if s_use_custom_location and s_custom_lat is not None:
                                 name += f" [Custom: {s_custom_lat:.2f}, {s_custom_lon:.2f}]"
                                 
+                            # Determine Source Type and Metadata
+                            src_type = "MODEL"
+                            res_id = None
+                            ast_name = None
+                            ast_cap = None
+                            bill_path = None
+                            
+                            if sb_gen_source == "ERCOT Asset":
+                                src_type = "SCED" # Default
+                                ast_name = sb_selected_asset
+                                if selected_asset_info:
+                                    res_id = selected_asset_info.get("resource_name")
+                                    ast_cap = selected_asset_info.get("capacity_mw")
+                                
+                                if sb_selected_asset == "Azure Sky Wind":
+                                    if sb_az_source == "Bill (Actuals)":
+                                        src_type = "BILL"
+                                        bill_path = "AzureSkyActuals.xlsx"
+                                    elif sb_az_source == "Modeled":
+                                        src_type = "MODEL"
+                                    else:
+                                        src_type = "SCED"
+
                             # No need to check duplicates since we cleared the list
                             new_scenario = {
                                 "id": datetime.now().isoformat() + f"_{added_count}",
@@ -1503,7 +1716,12 @@ with st.sidebar:
                                 "wind_model_engine": s_wind_model_engine if tech == "Wind" else "STANDARD",
                                 "custom_lat": s_custom_lat if s_use_custom_location else None,
                                 "custom_lon": s_custom_lon if s_use_custom_location else None,
-                                "custom_profile_path": None
+                                "custom_profile_path": None,
+                                "source_type": src_type,
+                                "resource_id": res_id,
+                                "asset_name": ast_name,
+                                "asset_capacity_mw": ast_cap,
+                                "bill_file_path": bill_path,
                         }
                         st.session_state.scenarios.append(new_scenario)
                         added_count += 1
@@ -2477,6 +2695,7 @@ with tab_validation:
         asset_registry = load_asset_registry()
         # sort by name
         asset_names = sorted(list(asset_registry.keys()))
+        asset_names.append("Settlement Invoice")
 
         def update_loc_from_hub():
             # Only update if custom location is NOT checked (acting as a lock)
@@ -2559,6 +2778,9 @@ with tab_validation:
         if val_source == "Specific Project" and selected_project_meta:
             default_tech = selected_project_meta.get('tech', 'Solar')
             default_cap = selected_project_meta.get('capacity_mw', 100.0)
+        elif val_project_name == "Settlement Invoice":
+            default_tech = "Wind"
+            default_cap = 350.0
 
         with c5:
             if val_source == "Generic / Hub":
@@ -2762,6 +2984,8 @@ with tab_validation:
 
                             if preview_weather == "Actual Weather": 
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
+                                if val_project_name == "Settlement Invoice":
+                                     weather_opts = [{"name": "Invoice", "source": "BILL"}]
                             elif preview_weather == "Actual SCED + Model":
                                 # NEW: Fetch actual SCED data + generate model for comparison
                                 weather_opts = [
@@ -2837,8 +3061,52 @@ with tab_validation:
                                 
                                 # CHECK IF WE SHOULD USE ACTUAL SCED DATA
                                 use_sced = source.get("use_sced", False)
-                                
-                                if use_sced and val_source == "Specific Project":
+                                is_bill = source.get("source") == "BILL"
+
+                                if is_bill:
+                                    # Load Settlement Invoice Parquet
+                                    bill_parquet = "sced_cache/Settlement_Invoice_Actuals.parquet"
+                                    if not os.path.exists(bill_parquet):
+                                        st.error(f"Settlement Invoice data not found at {bill_parquet}. Please run conversion script.")
+                                        continue
+                                    
+                                    try:
+                                        df_bill = pd.read_parquet(bill_parquet)
+                                        # Filter by year
+                                        df_bill = df_bill[df_bill['Time'].dt.year == val_year].copy()
+                                        
+                                        if df_bill.empty:
+                                            st.warning(f"No Settlement Invoice data found for {val_year}.")
+                                            continue
+                                            
+                                        # Set index and profile
+                                        df_bill = df_bill.set_index('Time')
+                                        
+                                        # Resample/Fill if needed? Assuming 15-min.
+                                        # Just take Actual_MW
+                                        profile = df_bill['Actual_MW']
+                                        profile.name = 'Gen_MW'
+                                        
+                                        # Scale?
+                                        # If user entered Settlement MW, we might want to scale the bill data?
+                                        # Usually bill data IS the settlement MW.
+                                        # But if the bill is for 350MW and user wants to see 100MW share?
+                                        # The UI has "Settlement Capacity".
+                                        # Let's assume bill data is 100% of project.
+                                        # Scale = (User_Settlement_MW / 350.0)?
+                                        # Use the default cap we set (350.0).
+                                        
+                                        project_total = 350.0 
+                                        scale_factor = preview_capacity / project_total if project_total > 0 else 1.0
+                                        
+                                        # Apply scale
+                                        profile = profile * scale_factor
+                                        
+                                    except Exception as e:
+                                        st.error(f"Error loading bill data: {e}")
+                                        continue
+
+                                elif use_sced and val_source == "Specific Project":
                                     # Load actual ERCOT SCED data from cached parquet file
                                     resource_id = selected_project_meta.get('resource_name')
                                     if not resource_id:
