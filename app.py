@@ -50,6 +50,10 @@ except Exception:
         return gen_series
 
 # --- Constants & Configuration ---
+REPO_ROOT = Path(__file__).resolve().parent
+SETTLEMENT_INVOICE_XLSX = REPO_ROOT / "AzureSkyActuals.xlsx"
+SETTLEMENT_INVOICE_PARQUET = REPO_ROOT / "data_static" / "Settlement_Invoice_Actuals.parquet"
+
 HUB_LOCATIONS = {
     "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
     "HB_SOUTH": (26.9070, -99.2715),   # Zapata, TX (South Texas inland wind belt - where projects actually are)
@@ -128,28 +132,43 @@ def load_bill_data(file_path):
     Returns a DataFrame with a timezone-aware DatetimeIndex (Central) and 'Actual_MW'.
     """
     try:
-        if not os.path.exists(file_path):
+        path = Path(file_path)
+        if not path.exists():
             return pd.DataFrame()
-            
-        df = pd.read_excel(file_path)
-        
-        # Validate columns
-        req_cols = ['Date', 'Plant Generation (MWh)']
-        if not all(col in df.columns for col in req_cols):
-            st.error(f"Bill file missing columns. Found: {df.columns.tolist()}")
-            return pd.DataFrame()
-            
-        # Parse Date/Time
-        df['Time'] = pd.to_datetime(df['Date'])
+
+        if path.suffix.lower() == ".parquet":
+            df = pd.read_parquet(path)
+            if "Time" not in df.columns:
+                st.error(f"Bill parquet missing `Time`. Found: {df.columns.tolist()}")
+                return pd.DataFrame()
+            if "Actual_MW" not in df.columns:
+                if "Plant Generation (MWh)" in df.columns:
+                    df["Actual_MW"] = pd.to_numeric(df["Plant Generation (MWh)"], errors="coerce") * 4.0
+                else:
+                    st.error(f"Bill parquet missing `Actual_MW`. Found: {df.columns.tolist()}")
+                    return pd.DataFrame()
+            df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
+        else:
+            df = pd.read_excel(path)
+
+            # Validate columns
+            req_cols = ['Date', 'Plant Generation (MWh)']
+            if not all(col in df.columns for col in req_cols):
+                st.error(f"Bill file missing columns. Found: {df.columns.tolist()}")
+                return pd.DataFrame()
+
+            # Parse Date/Time
+            df['Time'] = pd.to_datetime(df['Date'])
+            # Convert MWh to MW (15-min intervals => MW = MWh * 4)
+            df['Actual_MW'] = pd.to_numeric(df['Plant Generation (MWh)'], errors='coerce') * 4.0
         
         # Localize/Convert to Central
         if df['Time'].dt.tz is None:
              df['Time'] = df['Time'].dt.tz_localize('US/Central', ambiguous='infer', nonexistent='shift_forward')
         else:
              df['Time'] = df['Time'].dt.tz_convert('US/Central')
-             
-        # Convert MWh to MW (15-min intervals => MW = MWh * 4)
-        df['Actual_MW'] = pd.to_numeric(df['Plant Generation (MWh)'], errors='coerce') * 4.0
+
+        df['Actual_MW'] = pd.to_numeric(df['Actual_MW'], errors='coerce')
         
         # Set index
         df = df.set_index('Time').sort_index()
