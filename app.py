@@ -3198,6 +3198,7 @@ with tab_validation:
                                 # CHECK IF WE SHOULD USE ACTUAL SCED DATA
                                 use_sced = source.get("use_sced", False)
                                 is_bill = source.get("source") == "BILL"
+                                invoice_price_series = None
 
                                 if is_bill:
                                     bill_xlsx = SETTLEMENT_INVOICE_XLSX
@@ -3255,6 +3256,11 @@ with tab_validation:
                                             
                                         # Set index and profile
                                         df_bill = df_bill.set_index('Time')
+                                        if 'Settlement_Point_Price' in df_bill.columns:
+                                            invoice_price_series = pd.to_numeric(
+                                                df_bill['Settlement_Point_Price'],
+                                                errors='coerce',
+                                            )
                                         
                                         # Resample/Fill if needed? Assuming 15-min.
                                         # Just take Actual_MW
@@ -3420,6 +3426,19 @@ with tab_validation:
                                     if sel_m_nums:
                                         merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
 
+                                    # Settlement Invoice uses bill floating leg (floored at $0) for settlement math.
+                                    merged['Settlement_Reference_Price'] = merged['SPP']
+                                    if is_bill and invoice_price_series is not None and not merged.empty:
+                                        invoice_price_df = pd.DataFrame({
+                                            'Time_Central': invoice_price_series.index.tz_convert('US/Central'),
+                                            'Invoice_SPP': invoice_price_series.values,
+                                        }).drop_duplicates('Time_Central')
+                                        merged = pd.merge(merged, invoice_price_df, on='Time_Central', how='left')
+                                        merged['Settlement_Reference_Price'] = pd.to_numeric(
+                                            merged['Invoice_SPP'],
+                                            errors='coerce',
+                                        ).fillna(merged['SPP']).clip(lower=0.0)
+
                                     if preview_tech == "Wind" and not use_sced and not merged.empty:
                                         modeled_mw = apply_congestion_haircut(
                                             gen_series=pd.Series(merged["Gen_MW"].values, index=merged.index),
@@ -3467,8 +3486,9 @@ with tab_validation:
 
                                     merged['Curtailed_MWh'] = 0.0
                                     if not merged.empty:
+                                        apply_curtail_to_source = bool(curtail_neg) and (not is_bill)
                                         # Apply Curtailment if selected
-                                        if curtail_neg:
+                                        if apply_curtail_to_source:
                                             merged.loc[mask_neg_price, 'Curtailed_MWh'] = merged.loc[mask_neg_price, 'Gen_Energy_MWh']
                                             merged.loc[mask_neg_price, 'Gen_Energy_MWh'] = 0
                                         else:
@@ -3476,10 +3496,15 @@ with tab_validation:
                                             pass
                                         
                                         rs_pct = val_revenue_share / 100.0
-                                        settle_p = (np.maximum(merged['SPP'] - val_vppa_price, 0) * rs_pct) + np.minimum(merged['SPP'] - val_vppa_price, 0) if rs_pct < 1.0 else merged['SPP'] - val_vppa_price
+                                        if rs_pct < 1.0:
+                                            upside = np.maximum(merged['Settlement_Reference_Price'] - val_vppa_price, 0)
+                                            downside = np.minimum(merged['Settlement_Reference_Price'] - val_vppa_price, 0)
+                                            settle_p = (upside * rs_pct) + downside
+                                        else:
+                                            settle_p = merged['Settlement_Reference_Price'] - val_vppa_price
                                         merged['Settlement_$/MWh'] = settle_p
                                         merged['Settlement_$'] = merged['Gen_Energy_MWh'] * settle_p
-                                        merged['Market_Revenue_$'] = merged['Gen_Energy_MWh'] * merged['SPP']
+                                        merged['Market_Revenue_$'] = merged['Gen_Energy_MWh'] * merged['Settlement_Reference_Price']
                                         merged['VPPA_Payment_$'] = merged['Gen_Energy_MWh'] * val_vppa_price
                                         merged['VPPA_Price'] = val_vppa_price
                                         preview_results[source["name"]] = merged
