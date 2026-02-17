@@ -208,7 +208,7 @@ def render():
             st.selectbox(
                 "Wind Model Engine",
                 list(WIND_MODEL_ENGINE_OPTIONS.keys()),
-                index=1,
+                index=0,
                 key="azure_wind_model_engine_label",
                 help="Advanced mode applies monthly EIA/CF targets, SCED bias correction, node adjustments, and tuned clipping.",
             ),
