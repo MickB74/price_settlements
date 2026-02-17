@@ -2811,7 +2811,13 @@ with tab_validation:
 
         with c7:
             # Historical Weather Logic
+            # Historical Weather Logic
             weather_options = ["Actual Weather", "Actual SCED + Model", "Compare All (Act/TMY/P50)", "Typical Year (TMY)", "Calculated P50 (Historical)"]
+            
+            # --- CUSTOM: Add Settlement Invoice if Azure Sky ---
+            if val_source == "Specific Project" and "Azure Sky" in selected_project_name:
+                 weather_options.insert(1, "Settlement Invoice (Actuals)")
+            
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
 
         preview_wind_weather_source = "AUTO"
@@ -2986,6 +2992,8 @@ with tab_validation:
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
                                 if val_source == "Specific Project" and selected_project_name == "Settlement Invoice":
                                      weather_opts = [{"name": "Invoice", "source": "BILL"}]
+                            elif preview_weather == "Settlement Invoice (Actuals)":
+                                weather_opts = [{"name": "Invoice", "source": "BILL"}]
                             elif preview_weather == "Actual SCED + Model":
                                 # NEW: Fetch actual SCED data + generate model for comparison
                                 weather_opts = [
