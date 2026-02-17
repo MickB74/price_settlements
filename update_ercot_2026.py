@@ -82,73 +82,89 @@ def update_ercot_2026():
         # Now fetch the gap (or refinement)
         if start_date <= today:
             print(f"Fetching detailed interval data from {start_date} to {today}...")
-            # get_spp supports range
-            gap_df = iso.get_spp(date=start_date, end=today, market="REAL_TIME_15_MIN")
+            
+            # New Strategy: Fetch ALL recent documents for Report 12301 and filter locally
+            # This avoids potential API filtering issues with friendly_name_timestamp
+            # Fetch only as far back as needed for the gap (plus a small safety buffer),
+            # capped to keep document scans bounded.
+            gap_days = max((today - start_date).days + 1, 1)
+            lookback_days = min(max(gap_days + 2, 3), 21)
+            print(f"  Fetching list of recent documents (last {lookback_days} days)...")
 
-            if not gap_df.empty:
-                print(f"Fetched {len(gap_df)} recent rows")
-                # Pre-process gap_df
-                if not pd.api.types.is_datetime64_any_dtype(gap_df['Time']):
-                    gap_df['Time'] = pd.to_datetime(gap_df['Time'], utc=True)
-                gap_df['Time_Central'] = gap_df['Time'].dt.tz_convert('US/Central')
-                gap_df['fetched_at'] = fetch_timestamp
-                new_df = gap_df
+            start_search = pd.Timestamp.now(tz="US/Central") - pd.Timedelta(days=lookback_days)
+            
+            all_docs = iso._get_documents(
+                report_type_id=12301,
+                published_after=start_search
+            )
+            
+            print(f"  Found {len(all_docs)} total documents.")
+            
+            # Sort docs by timestamp
+            # gridstatus Documents have a 'friendly_name_timestamp' attribute
+            all_docs.sort(key=lambda x: x.friendly_name_timestamp if x.friendly_name_timestamp else pd.Timestamp.min)
+            
+            # Filter for gap period
+            target_docs = []
+            for doc in all_docs:
+                if doc.friendly_name_timestamp:
+                    # doc ts is usually beginning of interval?
+                    doc_date = doc.friendly_name_timestamp.date()
+                    if doc_date >= start_date and doc_date <= today:
+                        target_docs.append(doc)
+                        
+            print(f"  Identified {len(target_docs)} documents covering gap {start_date} to {today}.")
+            
+            # Process in small batches (e.g., by day or 100 docs) to save incrementally
+            # Group by date
+            from collections import defaultdict
+            docs_by_date = defaultdict(list)
+            for doc in target_docs:
+                d = doc.friendly_name_timestamp.date()
+                docs_by_date[d].append(doc)
+                
+            sorted_dates = sorted(docs_by_date.keys())
+            
+            for d in sorted_dates:
+                print(f"  Processing {d} ({len(docs_by_date[d])} docs)...")
+                try:
+                    day_df = iso.read_docs(docs_by_date[d])
+                    
+                    if not day_df.empty:
+                        # Process
+                        if not pd.api.types.is_datetime64_any_dtype(day_df['Time']):
+                            day_df['Time'] = pd.to_datetime(day_df['Time'], utc=True)
+                        day_df['Time_Central'] = day_df['Time'].dt.tz_convert('US/Central')
+                        day_df['fetched_at'] = fetch_timestamp
+                        day_df['date'] = day_df['Time_Central'].dt.date
+                        
+                        # Memory Opt
+                        float_cols = day_df.select_dtypes(include=['float64']).columns
+                        for col in float_cols:
+                            day_df[col] = pd.to_numeric(day_df[col], downcast='float')
 
-        # Merge
-        if not new_df.empty:
-            if not existing_df.empty:
-                combined = pd.concat([existing_df, new_df])
-            else:
-                combined = new_df
-        else:
-            combined = existing_df
+                        # Merge with existing immediately
+                        if not existing_df.empty:
+                            existing_df = pd.concat([existing_df, day_df])
+                        else:
+                            existing_df = day_df
+                        
+                        # Deduplicate
+                        existing_df = existing_df.sort_values('Time')
+                        existing_df = existing_df.drop_duplicates(subset=['Time', 'Location'], keep='last')
+                        
+                        # SAVE IMMEDIATELY
+                        existing_df.to_parquet(cache_file)
+                        print(f"    Saved data for {d}. Total rows: {len(existing_df):,}")
+                except Exception as e:
+                        print(f"    Error processing {d}: {e}")
+                        if 'day_df' in locals() and not day_df.empty:
+                            print(f"    Columns: {day_df.columns.tolist()}")
+                        
+                        
+            # Finished processing all docs for the gap
 
-        if combined.empty:
-             print("No data found.")
-             return None
-
-        # Deduplicate using latest pulled record for each Time+Location pair.
-        print("Deduplicating...")
-        combined = combined.sort_values('Time')
-        combined = combined.drop_duplicates(subset=['Time', 'Location'], keep='last')
-        
-        # Ensure fetched_at column exists (backward compatibility)
-        if 'fetched_at' not in combined.columns:
-            combined['fetched_at'] = pd.NaT  # Set to NaT for old data
-        
-        # Memory Optimization
-        float_cols = combined.select_dtypes(include=['float64']).columns
-        for col in float_cols:
-            combined[col] = pd.to_numeric(combined[col], downcast='float')
-        
-        # Add date column for easier filtering
-        combined['date'] = combined['Time_Central'].dt.date
-
-        combined_max = pd.to_datetime(combined["Time_Central"], errors="coerce").max()
-        if pd.notna(existing_max) and pd.notna(combined_max) and combined_max < existing_max:
-            # Never overwrite newer local data with older API responses.
-            print("\n⚠️  Rollback guard triggered.")
-            print(f"  Existing max timestamp: {existing_max}")
-            print(f"  New combined max timestamp: {combined_max}")
-            print("  Keeping existing local file unchanged.")
-            return existing_df
-
-        # Save
-        print("\n" + "-" * 60)
-        print(f"Saving updated data to {cache_file}...")
-        print("-" * 60)
-        
-        combined.to_parquet(cache_file)
-        
-        print(f"\n✅ SUCCESS!")
-        print(f"  - File updated: {cache_file}")
-        print(f"  - Total rows: {len(combined):,}")
-        print(f"  - Date range: {combined['Time_Central'].min()} to {combined['Time_Central'].max()}")
-        if pd.notna(combined_max):
-            lag_days = (pd.Timestamp.now(tz="US/Central") - combined_max).total_seconds() / 86400.0
-            print(f"  - Market data lag vs now: {lag_days:.1f} days")
-
-        return combined
+        return existing_df
 
     except Exception as e:
         print(f"\n❌ ERROR: Failed to update data")

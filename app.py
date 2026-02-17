@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from utils import power_curves, variability_analysis, monte_carlo
 from datetime import datetime, timedelta
+import time
 import zipfile
 import io
 import fetch_tmy # New module for TMY data
@@ -529,7 +530,7 @@ with tab_scenarios:
     
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def get_ercot_data(year, _mtime=None):
+def get_ercot_data(year, cache_token=None):
     cache_file = f"ercot_rtm_{year}.parquet"
 
     # Try loading from local file first
@@ -573,9 +574,14 @@ def get_ercot_data(year, _mtime=None):
 def load_market_data(year):
     """Loads ERCOT market data with cache invalidation and safe UI error reporting."""
     cache_path = f"ercot_rtm_{year}.parquet"
-    mtime = os.path.getmtime(cache_path) if os.path.exists(cache_path) else 0
+    if os.path.exists(cache_path):
+        stat = os.stat(cache_path)
+        # Include nanosecond mtime + size so Streamlit cache invalidates on file updates.
+        cache_token = (int(stat.st_mtime_ns), int(stat.st_size))
+    else:
+        cache_token = (0, 0)
     try:
-        return get_ercot_data(year, _mtime=mtime)
+        return get_ercot_data(year, cache_token=cache_token)
     except Exception as e:
         st.error(str(e))
         return pd.DataFrame()
@@ -2646,8 +2652,46 @@ with tab_validation:
                 if st.button("Fetch Updates", key="btn_fetch_ercot", help="Download latest data from ERCOT"):
                     with st.spinner("Updating..."):
                         try:
-                            subprocess.run([sys.executable, "update_ercot_2026.py"], check=True)
+                            repo_dir = str(Path(__file__).resolve().parent)
+                            proc = subprocess.Popen(
+                                [sys.executable, "update_ercot_2026.py"],
+                                cwd=repo_dir,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
+                                text=True,
+                                bufsize=1,
+                            )
+
+                            log_lines = []
+                            log_placeholder = st.empty()
+                            start_ts = time.time()
+                            timeout_sec = 300
+
+                            while True:
+                                if proc.stdout is not None:
+                                    line = proc.stdout.readline()
+                                    if line:
+                                        log_lines.append(line.rstrip())
+                                        log_placeholder.code("\n".join(log_lines[-25:]))
+
+                                if proc.poll() is not None:
+                                    break
+
+                                if (time.time() - start_ts) > timeout_sec:
+                                    proc.kill()
+                                    raise TimeoutError(
+                                        f"Update timed out after {timeout_sec} seconds. "
+                                        "Try again, or run `python update_ercot_2026.py` in terminal."
+                                    )
+
+                                time.sleep(0.1)
+
+                            if proc.returncode != 0:
+                                tail = "\n".join(log_lines[-15:]) if log_lines else "No output captured."
+                                raise RuntimeError(f"Updater failed (exit {proc.returncode}).\n{tail}")
+
                             st.cache_data.clear()
+                            st.success("ERCOT 2026 file updated.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed: {e}")
