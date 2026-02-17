@@ -3275,12 +3275,9 @@ with tab_validation:
                                         # Let's assume bill data is 100% of project.
                                         # Scale = (User_Settlement_MW / 350.0)?
                                         # Use the default cap we set (350.0).
-                                        
-                                        project_total = 350.0 
+                                        project_total = 350.0
+                                        # Keep bill profile unscaled here; shared post-processing applies scale_factor once.
                                         scale_factor = preview_capacity / project_total if project_total > 0 else 1.0
-                                        
-                                        # Apply scale
-                                        profile = profile * scale_factor
                                         
                                     except Exception as e:
                                         st.error(f"Error loading bill data: {e}")
@@ -3439,7 +3436,7 @@ with tab_validation:
                                             errors='coerce',
                                         ).fillna(merged['SPP']).clip(lower=0.0)
 
-                                    if preview_tech == "Wind" and not use_sced and not merged.empty:
+                                    if preview_tech == "Wind" and not use_sced and not is_bill and not merged.empty:
                                         modeled_mw = apply_congestion_haircut(
                                             gen_series=pd.Series(merged["Gen_MW"].values, index=merged.index),
                                             spp_series=merged["SPP"],
@@ -3452,6 +3449,7 @@ with tab_validation:
                                     if (
                                         preview_tech == "Wind"
                                         and not use_sced
+                                        and not is_bill
                                         and not merged.empty
                                         and not sced_basepoint.empty
                                     ):
