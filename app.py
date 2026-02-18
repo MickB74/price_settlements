@@ -2787,6 +2787,9 @@ with tab_validation:
                     st.session_state["val_project_name"] = asset_names[0]
             if prev_source != "Specific Project":
                 st.session_state["val_price"] = 17.34
+                st.session_state["val_wind_model_engine_label"] = "Advanced Calibrated (EIA/CF/SCED/Node)"
+        elif prev_source != "Generic / Hub":
+            st.session_state["val_wind_model_engine_label"] = "Standard (Current)"
         st.session_state["val_prev_project_source"] = val_source
 
         # Row 1: Hub/Project & Year & Price
