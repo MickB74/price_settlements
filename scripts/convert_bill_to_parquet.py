@@ -1,32 +1,30 @@
 import pandas as pd
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-INPUT_FILE = REPO_ROOT / "AzureSkyActuals.xlsx"
+INPUT_FILES = [
+    REPO_ROOT / "AzureSkyActuals.xlsx",
+    REPO_ROOT / "AzureSkyActuals2.xlsx",
+]
 OUTPUT_FILE = REPO_ROOT / "data_static" / "Settlement_Invoice_Actuals.parquet"
 LEGACY_OUTPUT_FILE = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
 
-def convert_bill():
-    if not INPUT_FILE.exists():
-        print(f"Error: {INPUT_FILE} not found.")
-        return
-
-    print(f"Reading {INPUT_FILE}...")
+def _convert_single_bill(input_file: Path):
+    print(f"Reading {input_file}...")
     try:
-        df = pd.read_excel(INPUT_FILE)
+        df = pd.read_excel(input_file)
     except Exception as e:
-        print(f"Failed to read Excel: {e}")
-        return
+        print(f"Failed to read Excel {input_file}: {e}")
+        return None
 
     # Check columns
     req_cols = ['Date', 'Plant Generation (MWh)']
     if not all(col in df.columns for col in req_cols):
-        print(f"Missing columns. Found: {df.columns.tolist()}")
-        return
+        print(f"Missing columns in {input_file}. Found: {df.columns.tolist()}")
+        return None
 
     # Standardize
-    print("Processing data...")
+    print(f"Processing data from {input_file.name}...")
     # Sort by Date and Settlement Interval to ensure correct order for ambiguous time inference
     if 'Settlement Interval' in df.columns:
         df = df.sort_values(['Date', 'Settlement Interval']).reset_index(drop=True)
@@ -85,7 +83,38 @@ def convert_bill():
     
     # Sort
     final_df = final_df.sort_values('Time').reset_index(drop=True)
-    
+    return final_df
+
+def convert_bill():
+    available_inputs = [p for p in INPUT_FILES if p.exists()]
+    if not available_inputs:
+        print(f"Error: none of the input files exist: {', '.join(str(p) for p in INPUT_FILES)}")
+        return
+
+    converted = []
+    for path in available_inputs:
+        part = _convert_single_bill(path)
+        if part is not None and not part.empty:
+            converted.append((path, part))
+
+    if not converted:
+        print("Error: no valid input data to convert.")
+        return
+
+    # Use AzureSkyActuals.xlsx as the base if present, then append new timestamps from others.
+    merged = converted[0][1]
+    if len(converted) > 1:
+        base_times = set(merged["Time"])
+        for path, part in converted[1:]:
+            add = part[~part["Time"].isin(base_times)].copy()
+            # Defensive cleanup for repeated placeholder rows in supplemental files.
+            add = add.drop_duplicates(subset=["Time"], keep="first")
+            base_times.update(add["Time"])
+            merged = pd.concat([merged, add], ignore_index=True)
+            print(f"Merged {len(add)} unique rows from {path.name}.")
+
+    final_df = merged.sort_values("Time").reset_index(drop=True)
+
     # Save canonical cloud-safe output path.
     print(f"Saving to {OUTPUT_FILE}...")
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
