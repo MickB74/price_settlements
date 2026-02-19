@@ -3866,8 +3866,22 @@ with tab_validation:
                     )
             st.markdown("---")
         
-        # 2. Main Metrics (show either first one or Actual if available)
-        primary_name = "Actual" if "Actual" in preview_results else list(preview_results.keys())[0]
+        # 2. Main Metrics for selected source
+        source_names = list(preview_results.keys())
+        preferred_source_order = ["SCED_Actual", "Actual", "Settlement_Invoice", "Model", "TMY", "P50"]
+        default_source = next((s for s in preferred_source_order if s in source_names), source_names[0])
+
+        if len(source_names) > 1:
+            primary_name = st.selectbox(
+                "KPI Source",
+                source_names,
+                index=source_names.index(default_source),
+                key="preview_kpi_source",
+                help="Choose which source (SCED, Model, Invoice, etc.) drives the KPI cards and monthly KPI table.",
+            )
+        else:
+            primary_name = source_names[0]
+
         df_primary = preview_results[primary_name]
         
         total_gen = df_primary['Gen_Energy_MWh'].sum()
@@ -3903,6 +3917,87 @@ with tab_validation:
                   help="Weighted average market value of generated energy (Market Revenue / Generation)")
         col8.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
                    help="Net cost (positive) or credit (negative) paid due to PPA settlement. Calculated as -(Settlement / Generation).")
+
+        # Monthly breakdown of the same KPI fields for the selected source.
+        if not df_primary.empty and "Time_Central" in df_primary.columns:
+            df_monthly_kpi = df_primary.copy()
+            df_monthly_kpi["MonthPeriod"] = pd.to_datetime(df_monthly_kpi["Time_Central"], errors="coerce").dt.to_period("M")
+            df_monthly_kpi = df_monthly_kpi.dropna(subset=["MonthPeriod"])
+
+            if "Curtailed_MWh" not in df_monthly_kpi.columns:
+                df_monthly_kpi["Curtailed_MWh"] = 0.0
+            if "Potential_Curtailed_MWh" not in df_monthly_kpi.columns:
+                df_monthly_kpi["Potential_Curtailed_MWh"] = 0.0
+
+            month_kpi = (
+                df_monthly_kpi.groupby("MonthPeriod", as_index=False)
+                .agg(
+                    {
+                        "Gen_Energy_MWh": "sum",
+                        "Curtailed_MWh": "sum",
+                        "Potential_Curtailed_MWh": "sum",
+                        "Settlement_$": "sum",
+                        "VPPA_Payment_$": "sum",
+                        "Market_Revenue_$": "sum",
+                        "SPP": "mean",
+                    }
+                )
+                .sort_values("MonthPeriod")
+            )
+
+            month_kpi["Month"] = month_kpi["MonthPeriod"].dt.strftime("%b %Y")
+            month_kpi["Capture Price ($/MWh)"] = np.where(
+                month_kpi["Gen_Energy_MWh"] > 0,
+                month_kpi["Market_Revenue_$"] / month_kpi["Gen_Energy_MWh"],
+                0.0,
+            )
+            month_kpi["Implied REC Cost ($/MWh)"] = np.where(
+                month_kpi["Gen_Energy_MWh"] > 0,
+                -(month_kpi["Settlement_$"] / month_kpi["Gen_Energy_MWh"]),
+                0.0,
+            )
+
+            monthly_curtail_col = "Curtailed_MWh" if curtail_neg else "Potential_Curtailed_MWh"
+            monthly_curtail_label = "Curtailed Gen (MWh)" if curtail_neg else "Neg. Price Gen (MWh)"
+            month_kpi = month_kpi.rename(
+                columns={
+                    "Gen_Energy_MWh": "Total Generation (MWh)",
+                    monthly_curtail_col: monthly_curtail_label,
+                    "Settlement_$": "Total Settlement ($)",
+                    "VPPA_Payment_$": "Total Paid ($)",
+                    "Market_Revenue_$": "Total Received ($)",
+                    "SPP": "Avg Hub Price ($/MWh)",
+                }
+            )
+
+            display_cols = [
+                "Month",
+                "Total Generation (MWh)",
+                monthly_curtail_label,
+                "Total Settlement ($)",
+                "Total Paid ($)",
+                "Total Received ($)",
+                "Avg Hub Price ($/MWh)",
+                "Capture Price ($/MWh)",
+                "Implied REC Cost ($/MWh)",
+            ]
+
+            st.markdown(f"#### {primary_name} KPIs by Month")
+            st.dataframe(
+                month_kpi[display_cols].style.format(
+                    {
+                        "Total Generation (MWh)": "{:,.0f}",
+                        monthly_curtail_label: "{:,.0f}",
+                        "Total Settlement ($)": "${:,.0f}",
+                        "Total Paid ($)": "${:,.0f}",
+                        "Total Received ($)": "${:,.0f}",
+                        "Avg Hub Price ($/MWh)": "${:.2f}",
+                        "Capture Price ($/MWh)": "${:.2f}",
+                        "Implied REC Cost ($/MWh)": "${:.2f}",
+                    }
+                ),
+                use_container_width=True,
+            )
         
         # 3. Charts with own View Selector
         st.markdown("---")
