@@ -2906,7 +2906,8 @@ with tab_validation:
             # --- CUSTOM: Add Settlement Invoice if Azure Sky ---
             if val_source == "Specific Project" and "Azure Sky" in selected_project_name:
                  weather_options.insert(1, "Settlement Invoice (Actuals)")
-                 weather_options.insert(3, "Actual SCED + Model + Settlement Invoice")
+                 weather_options.insert(3, "Actual SCED + Settlement Invoice")
+                 weather_options.insert(4, "Actual SCED + Model + Settlement Invoice")
             
             preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
 
@@ -2999,7 +3000,11 @@ with tab_validation:
         if (
             val_source == "Specific Project"
             and selected_project_name == "Azure Sky Wind"
-            and preview_weather == "Actual SCED + Model"
+            and preview_weather in [
+                "Actual SCED + Model",
+                "Actual SCED + Settlement Invoice",
+                "Actual SCED + Model + Settlement Invoice",
+            ]
         ):
             azure_resource_id = selected_project_meta.get("resource_name")
             b1, b2 = st.columns([1, 2.5])
@@ -3036,13 +3041,13 @@ with tab_validation:
                             )
             with b2:
                 st.caption(
-                    "Use this once per year before `Generate Preview` when running `Actual SCED + Model`."
+                    "Use this once per year before `Generate Preview` when running SCED-based weather modes."
                 )
 
         # On-demand Bill Data refresh
         is_invoice_selected = (
             (val_source == "Specific Project" and selected_project_name == "Settlement Invoice") or
-            (preview_weather == "Settlement Invoice (Actuals)")
+            ("Settlement Invoice" in preview_weather)
         )
         
         if is_invoice_selected:
@@ -3124,6 +3129,11 @@ with tab_validation:
                                 weather_opts = [
                                     {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
                                     {"name": "Model", "force_tmy": False, "year_override": None, "use_sced": False}
+                                ]
+                            elif preview_weather == "Actual SCED + Settlement Invoice":
+                                weather_opts = [
+                                    {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
+                                    {"name": "Invoice", "source": "BILL"},
                                 ]
                             elif preview_weather == "Actual SCED + Model + Settlement Invoice":
                                 weather_opts = [
@@ -3714,6 +3724,8 @@ with tab_validation:
             # Dynamic title based on weather source
             if preview_weather == "Actual SCED + Model":
                 comparison_title = "### 📊 Contrast: Actual SCED vs Model"
+            elif preview_weather == "Actual SCED + Settlement Invoice":
+                comparison_title = "### 📊 Contrast: Actual SCED vs Settlement Invoice"
             elif preview_weather == "Actual SCED + Model + Settlement Invoice":
                 comparison_title = "### 📊 Contrast: SCED vs Model vs Settlement Invoice"
             elif preview_weather == "Compare All (Act/TMY/P50)":
