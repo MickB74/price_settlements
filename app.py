@@ -1185,6 +1185,251 @@ def generate_pdf_report(results, df_summary):
     pdf_buffer.seek(0)
     return pdf_buffer
 
+
+def build_monthly_comparison_report_excel(preview_results, selected_month_numbers, val_year, selected_project_name=None):
+    """Build a formatted monthly comparison workbook for currently selected sources/months."""
+    month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
+    if not month_numbers:
+        month_numbers = list(range(1, 13))
+
+    preferred_order = ["SCED_Actual", "Model", "Invoice", "Settlement_Invoice", "Actual", "TMY", "P50"]
+    source_keys = [k for k in preferred_order if k in preview_results]
+    source_keys += [k for k in preview_results.keys() if k not in source_keys]
+    if not source_keys:
+        raise ValueError("No preview sources available for export.")
+
+    source_label_map = {
+        "SCED_Actual": "SCED Actual",
+        "Model": "Model",
+        "Invoice": "Invoice",
+        "Settlement_Invoice": "Invoice",
+        "Actual": "Actual",
+        "TMY": "TMY",
+        "P50": "P50",
+    }
+    source_color_map = {
+        "SCED_Actual": "#E7D3C6",   # peach
+        "Model": "#CF95CB",         # violet
+        "Invoice": "#91CF5A",       # green
+        "Settlement_Invoice": "#91CF5A",
+        "Actual": "#B9DDEB",        # blue-grey
+        "TMY": "#D9D9D9",           # neutral
+        "P50": "#F4CFA4",           # sand
+    }
+    source_path_map = {
+        "SCED_Actual": f"sced_cache/AZURE_SKY_WIND_AGG_{val_year}_full.parquet",
+        "Model": "Modeled profile + ERCOT RTM hub prices",
+        "Invoice": "data_static/Settlement_Invoice_Actuals.parquet",
+        "Settlement_Invoice": "data_static/Settlement_Invoice_Actuals.parquet",
+        "Actual": "Actual weather profile + ERCOT RTM hub prices",
+        "TMY": "TMY weather profile + ERCOT RTM hub prices",
+        "P50": "Historical P50 profile + ERCOT RTM hub prices",
+    }
+
+    monthly_by_source = {}
+    for source_key in source_keys:
+        df = preview_results.get(source_key, pd.DataFrame()).copy()
+        if df.empty or "Time_Central" not in df.columns:
+            monthly_by_source[source_key] = pd.DataFrame(columns=["MonthPeriod", "Settlement_$", "Gen_Energy_MWh"])
+            continue
+        if "Settlement_$" not in df.columns:
+            df["Settlement_$"] = 0.0
+        if "Gen_Energy_MWh" not in df.columns:
+            df["Gen_Energy_MWh"] = 0.0
+        df["MonthPeriod"] = pd.to_datetime(df["Time_Central"], errors="coerce").dt.to_period("M")
+        df = df.dropna(subset=["MonthPeriod"])
+        if not df.empty:
+            df = df[df["MonthPeriod"].dt.month.isin(month_numbers)]
+        monthly = (
+            df.groupby("MonthPeriod", as_index=False)[["Settlement_$", "Gen_Energy_MWh"]]
+            .sum()
+            .sort_values("MonthPeriod")
+        )
+        monthly_by_source[source_key] = monthly
+
+    # Build row month periods from selected months in target year.
+    selected_periods = [pd.Period(f"{int(val_year)}-{m:02d}", freq="M") for m in month_numbers]
+    has_any = False
+    for source_key in source_keys:
+        monthly = monthly_by_source[source_key]
+        if monthly.empty:
+            continue
+        if set(monthly["MonthPeriod"]).intersection(selected_periods):
+            has_any = True
+            break
+    row_periods = selected_periods if has_any else sorted(
+        set(
+            p for source_key in source_keys
+            for p in monthly_by_source[source_key].get("MonthPeriod", pd.Series(dtype=object)).tolist()
+        )
+    )
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        sheet_name = "Monthly Report"
+        worksheet = workbook.add_worksheet(sheet_name)
+        writer.sheets[sheet_name] = worksheet
+
+        title_fmt = workbook.add_format({
+            "bold": True, "font_size": 14, "align": "left", "valign": "vcenter"
+        })
+        subtitle_fmt = workbook.add_format({
+            "italic": True, "font_color": "#555555", "align": "left"
+        })
+        row_label_header_fmt = workbook.add_format({
+            "bold": True, "bg_color": "#B7DCE9", "border": 1, "align": "center", "valign": "vcenter"
+        })
+        row_label_fmt = workbook.add_format({"border": 1})
+        row_label_total_fmt = workbook.add_format({
+            "bold": True, "bg_color": "#B7DCE9", "border": 1
+        })
+        money_fmt = workbook.add_format({"num_format": "$#,##0", "border": 1})
+        energy_fmt = workbook.add_format({"num_format": "#,##0.0", "border": 1})
+        money_total_fmt = workbook.add_format({
+            "num_format": "$#,##0", "border": 1, "bold": True, "bg_color": "#EFEFEF"
+        })
+        energy_total_fmt = workbook.add_format({
+            "num_format": "#,##0.0", "border": 1, "bold": True, "bg_color": "#EFEFEF"
+        })
+        group_header_fmts = {}
+        metric_header_fmts = {}
+        for source_key in source_keys:
+            src_color = source_color_map.get(source_key, "#D9D9D9")
+            group_header_fmts[source_key] = workbook.add_format({
+                "bold": True, "bg_color": src_color, "border": 1, "align": "center", "valign": "vcenter"
+            })
+            metric_header_fmts[source_key] = workbook.add_format({
+                "bold": True, "bg_color": src_color, "border": 1, "text_wrap": True, "align": "center", "valign": "vcenter"
+            })
+
+        worksheet.write(0, 0, "Azure Sky Monthly Comparison Report", title_fmt)
+        source_title = selected_project_name or "Azure Sky Wind"
+        worksheet.write(1, 0, f"Project: {source_title} | Year: {val_year} | Months: {', '.join(pd.Timestamp(1900, m, 1).strftime('%B') for m in month_numbers)}", subtitle_fmt)
+
+        start_row = 3
+        worksheet.merge_range(start_row, 0, start_row + 1, 0, "Row Labels", row_label_header_fmt)
+
+        col = 1
+        for source_key in source_keys:
+            source_label = source_label_map.get(source_key, source_key)
+            clean_label = source_label.replace(" ", "_")
+            worksheet.merge_range(start_row, col, start_row, col + 1, f"{source_label}", group_header_fmts[source_key])
+            worksheet.write(start_row + 1, col, f"Sum of Settlement_$_{clean_label}", metric_header_fmts[source_key])
+            worksheet.write(start_row + 1, col + 1, f"Sum of Gen_Energy_MWh_{clean_label}", metric_header_fmts[source_key])
+            col += 2
+
+        data_start = start_row + 2
+        current_row = data_start
+        for month_period in row_periods:
+            month_label = month_period.strftime("%B")
+            worksheet.write(current_row, 0, month_label, row_label_fmt)
+            col = 1
+            for source_key in source_keys:
+                monthly = monthly_by_source[source_key]
+                settlement = 0.0
+                energy = 0.0
+                if not monthly.empty:
+                    hit = monthly[monthly["MonthPeriod"] == month_period]
+                    if not hit.empty:
+                        settlement = float(hit["Settlement_$"].iloc[0])
+                        energy = float(hit["Gen_Energy_MWh"].iloc[0])
+                worksheet.write_number(current_row, col, settlement, money_fmt)
+                worksheet.write_number(current_row, col + 1, energy, energy_fmt)
+                col += 2
+            current_row += 1
+
+        total_row = current_row
+        worksheet.write(total_row, 0, "Grand Total", row_label_total_fmt)
+        col = 1
+        for source_key in source_keys:
+            first_row = data_start + 1
+            last_row = total_row
+            settlement_col = col
+            energy_col = col + 1
+            settlement_col_letter = chr(ord("A") + settlement_col)
+            energy_col_letter = chr(ord("A") + energy_col)
+            worksheet.write_formula(
+                total_row,
+                settlement_col,
+                f"=SUM({settlement_col_letter}{first_row}:{settlement_col_letter}{last_row})",
+                money_total_fmt,
+            )
+            worksheet.write_formula(
+                total_row,
+                energy_col,
+                f"=SUM({energy_col_letter}{first_row}:{energy_col_letter}{last_row})",
+                energy_total_fmt,
+            )
+            col += 2
+
+        # Metric definitions section
+        def_start = total_row + 3
+        worksheet.merge_range(def_start, 0, def_start, 2, "Metric Definitions", workbook.add_format({
+            "bold": True, "font_color": "white", "bg_color": "#1F4E78", "border": 1, "align": "left"
+        }))
+        worksheet.write(def_start + 1, 0, "Metric", workbook.add_format({
+            "bold": True, "font_color": "white", "bg_color": "#2E75B6", "border": 1
+        }))
+        worksheet.write(def_start + 1, 1, "Data Source / Path", workbook.add_format({
+            "bold": True, "font_color": "white", "bg_color": "#2E75B6", "border": 1
+        }))
+        worksheet.write(def_start + 1, 2, "Description", workbook.add_format({
+            "bold": True, "font_color": "white", "bg_color": "#2E75B6", "border": 1
+        }))
+
+        def_row = def_start + 2
+        for source_key in source_keys:
+            source_label = source_label_map.get(source_key, source_key)
+            src_color = source_color_map.get(source_key, "#D9D9D9")
+            cell_fmt = workbook.add_format({"bg_color": src_color, "border": 1, "text_wrap": True, "valign": "top"})
+            metric_1 = f"Settlement $ - {source_label}"
+            metric_2 = f"Energy (MWh) - {source_label}"
+            src_path = source_path_map.get(source_key, source_label)
+            desc_settle = f"Total VPPA settlement dollars calculated from {source_label.lower()} for the selected months."
+            desc_energy = f"Total settled energy (MWh) from {source_label.lower()} for the selected months."
+            worksheet.write(def_row, 0, metric_1, cell_fmt)
+            worksheet.write(def_row, 1, src_path, cell_fmt)
+            worksheet.write(def_row, 2, desc_settle, cell_fmt)
+            def_row += 1
+            worksheet.write(def_row, 0, metric_2, cell_fmt)
+            worksheet.write(def_row, 1, src_path, cell_fmt)
+            worksheet.write(def_row, 2, desc_energy, cell_fmt)
+            def_row += 1
+
+            if source_key == "SCED_Actual":
+                link_fmt = workbook.add_format({"font_color": "#0563C1", "underline": 1})
+                worksheet.write_url(
+                    def_row,
+                    0,
+                    "https://www.ercot.com/mp/data-products/data-product-details?id=NP3-965-ER",
+                    link_fmt,
+                    "https://www.ercot.com/mp/data-products/data-product-details?id=NP3-965-ER",
+                )
+                def_row += 1
+
+        footnote_fmt = workbook.add_format({
+            "italic": True, "font_color": "#666666", "text_wrap": True
+        })
+        worksheet.merge_range(
+            def_row + 1,
+            0,
+            def_row + 1,
+            2,
+            "Note: Minor month-end variance can occur from interval boundary conventions (e.g., 00:00 treatment at month rollover).",
+            footnote_fmt,
+        )
+
+        worksheet.set_column(0, 0, 20)
+        for idx in range(len(source_keys)):
+            base_col = 1 + (idx * 2)
+            worksheet.set_column(base_col, base_col, 20)
+            worksheet.set_column(base_col + 1, base_col + 1, 18)
+        worksheet.freeze_panes(data_start, 1)
+
+    output.seek(0)
+    return output.getvalue()
+
 # ...
 
 # --- Sidebar: Scenario Builder ---
@@ -4021,6 +4266,26 @@ with tab_validation:
                 ),
                 use_container_width=True,
             )
+
+        st.markdown("### 📤 Export Monthly Comparison Report")
+        st.caption("Exports a formatted Excel report for the selected months and currently active sources (SCED / Model / Invoice).")
+        try:
+            report_bytes = build_monthly_comparison_report_excel(
+                preview_results=preview_results,
+                selected_month_numbers=selected_month_numbers,
+                val_year=val_year,
+                selected_project_name=selected_project_name,
+            )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            st.download_button(
+                label="📥 Download Monthly Comparison Report (Excel)",
+                data=report_bytes,
+                file_name=f"azure_monthly_comparison_{val_year}_{timestamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_monthly_comparison_report_xlsx",
+            )
+        except Exception as e:
+            st.warning(f"Could not build monthly comparison report: {e}")
         
         # 3. Charts with own View Selector
         st.markdown("---")
