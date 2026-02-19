@@ -3866,22 +3866,10 @@ with tab_validation:
                     )
             st.markdown("---")
         
-        # 2. Main Metrics for selected source
+        # 2. Main Metrics
         source_names = list(preview_results.keys())
         preferred_source_order = ["SCED_Actual", "Actual", "Settlement_Invoice", "Model", "TMY", "P50"]
-        default_source = next((s for s in preferred_source_order if s in source_names), source_names[0])
-
-        if len(source_names) > 1:
-            primary_name = st.selectbox(
-                "KPI Source",
-                source_names,
-                index=source_names.index(default_source),
-                key="preview_kpi_source",
-                help="Choose which source (SCED, Model, Invoice, etc.) drives the KPI cards and monthly KPI table.",
-            )
-        else:
-            primary_name = source_names[0]
-
+        primary_name = next((s for s in preferred_source_order if s in source_names), source_names[0])
         df_primary = preview_results[primary_name]
         
         total_gen = df_primary['Gen_Energy_MWh'].sum()
@@ -3918,16 +3906,36 @@ with tab_validation:
         col8.metric("Implied REC Cost", f"${implied_rec_cost:.2f}/MWh",
                    help="Net cost (positive) or credit (negative) paid due to PPA settlement. Calculated as -(Settlement / Generation).")
 
-        # Monthly breakdown of the same KPI fields for the selected source.
-        if not df_primary.empty and "Time_Central" in df_primary.columns:
-            df_monthly_kpi = df_primary.copy()
+        # Monthly KPI table for all available sources at once.
+        monthly_curtail_col = "Curtailed_MWh" if curtail_neg else "Potential_Curtailed_MWh"
+        monthly_curtail_label = "Curtailed Gen (MWh)" if curtail_neg else "Neg. Price Gen (MWh)"
+        monthly_rows = []
+
+        for source_name, df_source in preview_results.items():
+            if df_source.empty or "Time_Central" not in df_source.columns:
+                continue
+
+            df_monthly_kpi = df_source.copy()
             df_monthly_kpi["MonthPeriod"] = pd.to_datetime(df_monthly_kpi["Time_Central"], errors="coerce").dt.to_period("M")
             df_monthly_kpi = df_monthly_kpi.dropna(subset=["MonthPeriod"])
+            if df_monthly_kpi.empty:
+                continue
 
+            # Ensure expected columns exist for consistent aggregation across sources.
+            if "Gen_Energy_MWh" not in df_monthly_kpi.columns:
+                df_monthly_kpi["Gen_Energy_MWh"] = 0.0
             if "Curtailed_MWh" not in df_monthly_kpi.columns:
                 df_monthly_kpi["Curtailed_MWh"] = 0.0
             if "Potential_Curtailed_MWh" not in df_monthly_kpi.columns:
                 df_monthly_kpi["Potential_Curtailed_MWh"] = 0.0
+            if "Settlement_$" not in df_monthly_kpi.columns:
+                df_monthly_kpi["Settlement_$"] = 0.0
+            if "VPPA_Payment_$" not in df_monthly_kpi.columns:
+                df_monthly_kpi["VPPA_Payment_$"] = 0.0
+            if "Market_Revenue_$" not in df_monthly_kpi.columns:
+                df_monthly_kpi["Market_Revenue_$"] = 0.0
+            if "SPP" not in df_monthly_kpi.columns:
+                df_monthly_kpi["SPP"] = np.nan
 
             month_kpi = (
                 df_monthly_kpi.groupby("MonthPeriod", as_index=False)
@@ -3946,6 +3954,7 @@ with tab_validation:
             )
 
             month_kpi["Month"] = month_kpi["MonthPeriod"].dt.strftime("%b %Y")
+            month_kpi["Source"] = source_name
             month_kpi["Capture Price ($/MWh)"] = np.where(
                 month_kpi["Gen_Energy_MWh"] > 0,
                 month_kpi["Market_Revenue_$"] / month_kpi["Gen_Energy_MWh"],
@@ -3956,9 +3965,6 @@ with tab_validation:
                 -(month_kpi["Settlement_$"] / month_kpi["Gen_Energy_MWh"]),
                 0.0,
             )
-
-            monthly_curtail_col = "Curtailed_MWh" if curtail_neg else "Potential_Curtailed_MWh"
-            monthly_curtail_label = "Curtailed Gen (MWh)" if curtail_neg else "Neg. Price Gen (MWh)"
             month_kpi = month_kpi.rename(
                 columns={
                     "Gen_Energy_MWh": "Total Generation (MWh)",
@@ -3969,9 +3975,13 @@ with tab_validation:
                     "SPP": "Avg Hub Price ($/MWh)",
                 }
             )
+            monthly_rows.append(month_kpi)
 
+        if monthly_rows:
+            month_kpi_all = pd.concat(monthly_rows, ignore_index=True).sort_values(["MonthPeriod", "Source"])
             display_cols = [
                 "Month",
+                "Source",
                 "Total Generation (MWh)",
                 monthly_curtail_label,
                 "Total Settlement ($)",
@@ -3982,9 +3992,9 @@ with tab_validation:
                 "Implied REC Cost ($/MWh)",
             ]
 
-            st.markdown(f"#### {primary_name} KPIs by Month")
+            st.markdown("#### Monthly KPIs (All Sources)")
             st.dataframe(
-                month_kpi[display_cols].style.format(
+                month_kpi_all[display_cols].style.format(
                     {
                         "Total Generation (MWh)": "{:,.0f}",
                         monthly_curtail_label: "{:,.0f}",
@@ -3994,7 +4004,8 @@ with tab_validation:
                         "Avg Hub Price ($/MWh)": "${:.2f}",
                         "Capture Price ($/MWh)": "${:.2f}",
                         "Implied REC Cost ($/MWh)": "${:.2f}",
-                    }
+                    },
+                    na_rep="-",
                 ),
                 use_container_width=True,
             )
