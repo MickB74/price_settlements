@@ -37,13 +37,7 @@ def _to_hour_number(value) -> float:
     return np.nan
 
 
-@st.cache_data(show_spinner=False)
-def load_vppa_summary_profiles(path_str: str, year: int):
-    path = Path(path_str)
-    if not path.exists():
-        raise FileNotFoundError(f"Workbook not found: {path}")
-
-    raw = pd.read_excel(path, sheet_name="Summary", header=None)
+def _parse_summary_sheet(raw: pd.DataFrame, year: int):
     default_year = _extract_default_year_from_summary(raw)
 
     header_row = None
@@ -92,6 +86,21 @@ def load_vppa_summary_profiles(path_str: str, year: int):
         .set_index("Time_Central")
     )
     return hourly, profile_cols, default_year
+
+
+@st.cache_data(show_spinner=False)
+def load_vppa_summary_profiles_from_path(path_str: str, year: int):
+    path = Path(path_str)
+    if not path.exists():
+        raise FileNotFoundError(f"Workbook not found: {path}")
+    raw = pd.read_excel(path, sheet_name="Summary", header=None)
+    return _parse_summary_sheet(raw, year)
+
+
+@st.cache_data(show_spinner=False)
+def load_vppa_summary_profiles_from_bytes(file_bytes: bytes, year: int):
+    raw = pd.read_excel(pd.io.common.BytesIO(file_bytes), sheet_name="Summary", header=None)
+    return _parse_summary_sheet(raw, year)
 
 
 def _extract_model_hourly_series(model_df: pd.DataFrame) -> pd.Series:
@@ -157,9 +166,12 @@ def render():
         st.info("Run a model in Bill Validation first, then come back here to compare against the VPPA 8760 profiles.")
         return
 
-    if not WORKBOOK_PATH.exists():
-        st.error(f"Could not find workbook: {WORKBOOK_PATH}")
-        return
+    uploaded_wb = st.file_uploader(
+        "VPPA Workbook (.xlsx)",
+        type=["xlsx"],
+        key="vppa_8760_workbook_upload",
+        help="Upload VPPA_8760s.xlsx when the app environment does not have the file locally.",
+    )
 
     model_sources = list(st.session_state["val_preview_results"].keys())
     if not model_sources:
@@ -174,9 +186,6 @@ def render():
         if not sample_time.empty:
             default_year = int(sample_time.iloc[0].year)
 
-    raw_summary = pd.read_excel(WORKBOOK_PATH, sheet_name="Summary", header=None, nrows=1)
-    workbook_default_year = _extract_default_year_from_summary(raw_summary)
-
     c1, c2 = st.columns([1, 1])
     with c1:
         model_name = st.selectbox("Model Source", model_sources, index=0, key="vppa_compare_model_source")
@@ -185,20 +194,34 @@ def render():
             "Profile Year",
             min_value=2010,
             max_value=2100,
-            value=int(default_year or workbook_default_year),
+            value=int(default_year),
             step=1,
             key="vppa_compare_profile_year",
             help="The VPPA workbook has Month/Day/Hour only, so choose the year to align with model timestamps.",
         )
 
     try:
-        profile_df, profile_cols, wb_year = load_vppa_summary_profiles(str(WORKBOOK_PATH), int(selected_year))
+        if uploaded_wb is not None:
+            profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_bytes(
+                uploaded_wb.getvalue(),
+                int(selected_year),
+            )
+            source_name = uploaded_wb.name
+        elif WORKBOOK_PATH.exists():
+            profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_path(
+                str(WORKBOOK_PATH),
+                int(selected_year),
+            )
+            source_name = WORKBOOK_PATH.name
+        else:
+            st.error(f"Could not find workbook at `{WORKBOOK_PATH}`. Upload an `.xlsx` file above.")
+            return
     except Exception as e:
         st.error(f"Could not load VPPA profiles: {e}")
         return
 
     st.caption(
-        f"Loaded `{len(profile_df):,}` hourly rows from `{WORKBOOK_PATH.name}` (Summary sheet). "
+        f"Loaded `{len(profile_df):,}` hourly rows from `{source_name}` (Summary sheet). "
         f"Workbook default year appears to be {wb_year}."
     )
 
