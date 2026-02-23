@@ -103,9 +103,14 @@ def get_asset_actual_gen(resource_name, date):
         
     # Check if we already have the asset-specific cache
     asset_cache = os.path.join(CACHE_DIR, f"{date}_{resource_name}.parquet")
+    expected_cols = ["Time", "Actual_MW", "MWh_interval", "coverage", "Base_Point_MW"]
     if os.path.exists(asset_cache):
         try:
             cached_df = pd.read_parquet(asset_cache)
+            cache_cols = {str(c) for c in cached_df.columns}
+            # Empty sentinel cache: known no-data day for this asset.
+            if cached_df.empty and set(expected_cols).issubset(cache_cols):
+                return pd.DataFrame(columns=expected_cols)
             # Older cache files did not carry Base Point. Rebuild those files.
             if (not cached_df.empty) and ("Base_Point_MW" in cached_df.columns):
                 normalized = _normalize_asset_cache_df(cached_df)
@@ -125,6 +130,9 @@ def get_asset_actual_gen(resource_name, date):
                 unit_dfs.append(df_unit.set_index('Time'))
         
         if not unit_dfs:
+            latest_disclosure = (datetime.now() - timedelta(days=60)).date()
+            if date <= latest_disclosure:
+                pd.DataFrame(columns=expected_cols).to_parquet(asset_cache)
             return pd.DataFrame()
         
         # Combine all units and sum their generation
@@ -168,6 +176,9 @@ def get_asset_actual_gen(resource_name, date):
     # Otherwise, get the full daily disclosure (potentially from cache)
     df_full = get_daily_disclosure(date)
     if df_full.empty:
+        latest_disclosure = (datetime.now() - timedelta(days=60)).date()
+        if date <= latest_disclosure:
+            pd.DataFrame(columns=expected_cols).to_parquet(asset_cache)
         return pd.DataFrame()
         
     # Filter for our specific resource
@@ -175,8 +186,11 @@ def get_asset_actual_gen(resource_name, date):
     
     if df_asset.empty:
         print(f"Resource {resource_name} not found in {date} disclosure.")
-        # Save empty to avoid re-searching? 
-        # No, might be too many files.
+        # Cache "known empty" only for dates beyond disclosure lag to avoid
+        # repeatedly re-querying historical no-data days.
+        latest_disclosure = (datetime.now() - timedelta(days=60)).date()
+        if date <= latest_disclosure:
+            pd.DataFrame(columns=expected_cols).to_parquet(asset_cache)
         return pd.DataFrame()
         
     # --- Rigorous Time-Weighted Average (TWA) Logic ---
