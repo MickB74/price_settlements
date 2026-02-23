@@ -730,6 +730,50 @@ def get_cached_asset_data_with_base_point_local(resource_id, start_date, end_dat
         return df_bp
     return sced_fetcher.get_asset_period_data_cache_only(resource_id, start_date, end_date)
 
+
+@st.cache_data(show_spinner=False, ttl=900)
+def get_first_cached_sced_date(resource_id):
+    """
+    Return the first local SCED date available for a resource, if any.
+    Uses daily cache filenames and falls back to consolidated year files.
+    """
+    if not resource_id:
+        return None
+
+    rid = str(resource_id).strip()
+    if not rid:
+        return None
+
+    cache_dir = REPO_ROOT / sced_fetcher.CACHE_DIR
+    if not cache_dir.exists():
+        return None
+
+    first_date = None
+    for p in cache_dir.glob(f"????-??-??_{rid}.parquet"):
+        try:
+            d = datetime.strptime(p.name[:10], "%Y-%m-%d").date()
+        except Exception:
+            continue
+        if first_date is None or d < first_date:
+            first_date = d
+
+    if first_date is not None:
+        return first_date.isoformat()
+
+    # Fallback: some resources may only have consolidated year cache files.
+    for p in sorted(cache_dir.glob(f"{rid}_*_full.parquet")):
+        try:
+            df_time = pd.read_parquet(p, columns=["Time"])
+            t = pd.to_datetime(df_time["Time"], utc=True, errors="coerce").dropna()
+            if not t.empty:
+                d = t.min().date()
+                if first_date is None or d < first_date:
+                    first_date = d
+        except Exception:
+            continue
+
+    return first_date.isoformat() if first_date is not None else None
+
 # --- Helper Functions ---
 def calculate_scenario(scenario, df_rtm):
     """Calculates settlement for a single scenario."""
@@ -1491,6 +1535,23 @@ with st.sidebar:
             
             if sb_selected_asset:
                 selected_asset_info = ercot_assets[sb_selected_asset]
+                selected_resource_id = selected_asset_info.get("resource_name")
+                first_sced_date = get_first_cached_sced_date(selected_resource_id)
+                if first_sced_date:
+                    st.caption(f"SCED first available: {first_sced_date}")
+                elif selected_resource_id:
+                    st.caption("SCED first available: not cached locally")
+
+                # Keep Scenario Builder location synced to selected asset metadata.
+                try:
+                    asset_lat = float(selected_asset_info.get("lat"))
+                    asset_lon = float(selected_asset_info.get("lon"))
+                    st.session_state.sb_custom_lat = asset_lat
+                    st.session_state.sb_custom_lon = asset_lon
+                    st.session_state.map_lat = asset_lat
+                    st.session_state.map_lon = asset_lon
+                except (TypeError, ValueError):
+                    pass
                 
                 # Auto-set Tech (Update session state for multiselect)
                 tech = selected_asset_info.get("tech", "Wind")
@@ -3069,6 +3130,13 @@ with tab_validation:
                     st.session_state.val_map_lon = selected_project_meta.get('lon', -100.0)
                     st.session_state.val_custom_lat = selected_project_meta.get('lat', 32.0)
                     st.session_state.val_custom_lon = selected_project_meta.get('lon', -100.0)
+
+                    selected_resource_id = selected_project_meta.get("resource_name")
+                    first_sced_date = get_first_cached_sced_date(selected_resource_id)
+                    if first_sced_date:
+                        st.caption(f"SCED first available: {first_sced_date}")
+                    elif selected_resource_id:
+                        st.caption("SCED first available: not cached locally")
                     
                     # Auto-select Hub if possible (though we might want to keep it editable?)
                     # Ideally, we key off the project's node or just its lat/lon for price? 
