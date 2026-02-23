@@ -103,8 +103,8 @@
         "tech": "Solar",
         "capacity_mw": 141.05,
         "hub": "North",
-        "lat": 30.8252,
-        "lon": -96.5358,
+        "lat": 30.705329,
+        "lon": -96.06983,
         "county": "Robertson"
     },
     "Long Point Solar": {
@@ -452,8 +452,8 @@
         "tech": "Wind",
         "capacity_mw": 150.0,
         "hub": "West",
-        "lat": 31.9,
-        "lon": -101.4,
+        "lat": 33.5035496,
+        "lon": -98.5787138,
         "county": "Glasscock",
         "hub_height_m": 80.0,
         "turbine_model": "GE1.62-91",
