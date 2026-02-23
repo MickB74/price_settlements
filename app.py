@@ -31,6 +31,7 @@ from geopy.exc import GeocoderTimedOut
 import sced_fetcher
 import json
 import tabs.azure_comparison as tab_azure
+import tabs.vppa_8760_compare as tab_vppa_8760
 
 try:
     from utils.wind_calibration import apply_congestion_haircut, get_offline_threshold_mw
@@ -253,8 +254,15 @@ st.session_state.setdefault("bench_wind_model_engine_label", "Standard (Current)
 
 
 # Create Tabs
-tab_guide, tab_validation, tab_scenarios, tab_performance, tab_azure_sky = st.tabs(
-    ["📘 Guide & Business Context", "Bill Validation", "Scenario Analysis", "Model Performance", "Azure Sky Analysis"]
+tab_guide, tab_validation, tab_scenarios, tab_performance, tab_azure_sky, tab_vppa_8760 = st.tabs(
+    [
+        "📘 Guide & Business Context",
+        "Bill Validation",
+        "Scenario Analysis",
+        "Model Performance",
+        "Azure Sky Analysis",
+        "VPPA 8760 Compare",
+    ]
 )
 
 # --- Dynamic Sidebar Visibility ---
@@ -271,7 +279,7 @@ components.html(
             
             tabs.forEach(tab => {
                 // Check for Guide, Validation, Performance, etc.
-                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("Azure Sky Analysis")) && tab.getAttribute("aria-selected") === "true") {
+                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("Azure Sky Analysis") || tab.innerText.includes("VPPA 8760 Compare")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
@@ -6259,6 +6267,13 @@ with tab_azure_sky:
         tab_azure.render()
     except Exception as e:
         st.error(f"Error loading Azure Sky Analysis: {e}")
+        st.code(str(e))
+
+with tab_vppa_8760:
+    try:
+        tab_vppa_8760.render()
+    except Exception as e:
+        st.error(f"Error loading VPPA 8760 Compare: {e}")
         st.code(str(e))
 
 st.markdown("---")
