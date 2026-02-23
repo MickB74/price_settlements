@@ -1724,19 +1724,29 @@ def build_monthly_comparison_report_excel(
                 "SCED Actual vs Invoice": "#F57C00",
                 "Model vs Invoice": "#0F9D58",
             }
-            pair_cell_formats = {}
-            for pair_name in corr_df.columns:
-                pair_color = pair_header_colors.get(pair_name, "#2E75B6")
-                pair_cell_formats[pair_name] = workbook.add_format({
-                    "num_format": "0.0000",
-                    "bg_color": pair_color,
-                    "font_color": "white",
-                    "border": 1,
-                    "align": "center",
-                })
 
             metric_cell_fmt = workbook.add_format({"border": 1})
             na_cell_fmt = workbook.add_format({"border": 1, "align": "center"})
+            corr_good_fmt = workbook.add_format({
+                "num_format": "0.0000", "bg_color": "#0F9D58", "font_color": "white", "border": 1, "align": "center"
+            })
+            corr_ok_fmt = workbook.add_format({
+                "num_format": "0.0000", "bg_color": "#F6BF26", "font_color": "#1F1F1F", "border": 1, "align": "center"
+            })
+            corr_bad_fmt = workbook.add_format({
+                "num_format": "0.0000", "bg_color": "#D93025", "font_color": "white", "border": 1, "align": "center"
+            })
+            corr_good_threshold = 0.80
+            corr_ok_threshold = 0.60
+
+            def _corr_quality_format(val):
+                if pd.isna(val):
+                    return na_cell_fmt
+                if float(val) >= corr_good_threshold:
+                    return corr_good_fmt
+                if float(val) >= corr_ok_threshold:
+                    return corr_ok_fmt
+                return corr_bad_fmt
 
             worksheet.merge_range(
                 corr_start,
@@ -1765,7 +1775,7 @@ def build_monthly_comparison_report_excel(
                 for idx, pair_name in enumerate(corr_df.columns, start=1):
                     val = row_vals.get(pair_name)
                     if pd.notna(val):
-                        worksheet.write_number(corr_data_row, idx, float(val), pair_cell_formats[pair_name])
+                        worksheet.write_number(corr_data_row, idx, float(val), _corr_quality_format(val))
                     else:
                         worksheet.write(corr_data_row, idx, "-", na_cell_fmt)
                 corr_data_row += 1
@@ -1784,7 +1794,16 @@ def build_monthly_comparison_report_excel(
                 })
                 worksheet.write(key_row, idx, pair_name, key_fmt)
 
-            corr_month_row = key_row + 2
+            quality_key_row = key_row + 1
+            worksheet.write(quality_key_row, 0, "Correlation quality key:", key_label_fmt)
+            quality_good_fmt = workbook.add_format({"bg_color": "#0F9D58", "font_color": "white", "border": 1, "align": "center", "italic": True})
+            quality_ok_fmt = workbook.add_format({"bg_color": "#F6BF26", "font_color": "#1F1F1F", "border": 1, "align": "center", "italic": True})
+            quality_bad_fmt = workbook.add_format({"bg_color": "#D93025", "font_color": "white", "border": 1, "align": "center", "italic": True})
+            worksheet.write(quality_key_row, 1, f"Good >= {corr_good_threshold:.2f}", quality_good_fmt)
+            worksheet.write(quality_key_row, 2, f"OK {corr_ok_threshold:.2f}-{corr_good_threshold - 0.01:.2f}", quality_ok_fmt)
+            worksheet.write(quality_key_row, 3, f"Bad < {corr_ok_threshold:.2f}", quality_bad_fmt)
+
+            corr_month_row = quality_key_row + 2
             corr_by_month = build_multi_source_correlation_by_month(preview_results, month_numbers)
             if corr_by_month:
                 month_section_fmt = workbook.add_format({
@@ -1818,7 +1837,7 @@ def build_monthly_comparison_report_excel(
                         for idx, pair_name in enumerate(month_corr_df.columns, start=1):
                             val = row_vals.get(pair_name)
                             if pd.notna(val):
-                                worksheet.write_number(month_data_row, idx, float(val), pair_cell_formats[pair_name])
+                                worksheet.write_number(month_data_row, idx, float(val), _corr_quality_format(val))
                             else:
                                 worksheet.write(month_data_row, idx, "-", na_cell_fmt)
                         month_data_row += 1
