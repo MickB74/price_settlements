@@ -1230,7 +1230,163 @@ def generate_pdf_report(results, df_summary):
     return pdf_buffer
 
 
-def build_monthly_comparison_report_excel(preview_results, selected_month_numbers, val_year, selected_project_name=None):
+def _safe_pearson_correlation(series_a, series_b):
+    """Robust Pearson correlation with graceful handling of sparse/constant data."""
+    a = pd.to_numeric(pd.Series(series_a), errors="coerce")
+    b = pd.to_numeric(pd.Series(series_b), errors="coerce")
+    mask = a.notna() & b.notna()
+    if mask.sum() < 2:
+        return np.nan
+
+    a = a[mask].astype(float)
+    b = b[mask].astype(float)
+    if np.isclose(a.std(ddof=0), 0.0) or np.isclose(b.std(ddof=0), 0.0):
+        return 1.0 if np.allclose(a.values, b.values, atol=1e-12, rtol=0.0) else np.nan
+    return float(a.corr(b))
+
+
+def _compute_monthly_core_metrics(df_source, selected_month_numbers):
+    """Compute monthly metrics used for multi-source correlation analysis."""
+    if df_source is None or df_source.empty or "Time_Central" not in df_source.columns:
+        return pd.DataFrame(columns=[
+            "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP", "Settlement_$",
+            "Settlement_$/MWh", "Implied_REC_Cost_$"
+        ])
+
+    df = df_source.copy()
+    df["Time_Central"] = pd.to_datetime(df["Time_Central"], errors="coerce")
+    df = df.dropna(subset=["Time_Central"])
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP", "Settlement_$",
+            "Settlement_$/MWh", "Implied_REC_Cost_$"
+        ])
+
+    month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
+    if month_numbers:
+        df = df[df["Time_Central"].dt.month.isin(month_numbers)]
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP", "Settlement_$",
+            "Settlement_$/MWh", "Implied_REC_Cost_$"
+        ])
+
+    if "Gen_Energy_MWh" not in df.columns:
+        df["Gen_Energy_MWh"] = 0.0
+    if "Settlement_$" not in df.columns:
+        df["Settlement_$"] = 0.0
+    if "SPP" not in df.columns:
+        df["SPP"] = np.nan
+
+    df["Gen_Energy_MWh"] = pd.to_numeric(df["Gen_Energy_MWh"], errors="coerce").fillna(0.0)
+    df["Settlement_$"] = pd.to_numeric(df["Settlement_$"], errors="coerce").fillna(0.0)
+    df["SPP"] = pd.to_numeric(df["SPP"], errors="coerce")
+
+    if "Gen_MW" in df.columns:
+        df["Gen_MW"] = pd.to_numeric(df["Gen_MW"], errors="coerce")
+    else:
+        interval_hours = 0.25
+        if len(df) >= 2:
+            diffs = df["Time_Central"].sort_values().diff().dropna().dt.total_seconds() / 3600.0
+            if not diffs.empty and diffs.median() > 0:
+                interval_hours = float(diffs.median())
+        df["Gen_MW"] = np.where(interval_hours > 0, df["Gen_Energy_MWh"] / interval_hours, np.nan)
+
+    df["MonthPeriod"] = df["Time_Central"].dt.to_period("M")
+    monthly = (
+        df.groupby("MonthPeriod", as_index=False)
+        .agg(
+            {
+                "Gen_MW": "mean",
+                "Gen_Energy_MWh": "sum",
+                "SPP": "mean",
+                "Settlement_$": "sum",
+            }
+        )
+        .sort_values("MonthPeriod")
+    )
+    monthly["Settlement_$/MWh"] = np.where(
+        monthly["Gen_Energy_MWh"] > 0,
+        monthly["Settlement_$"] / monthly["Gen_Energy_MWh"],
+        np.nan,
+    )
+    monthly["Implied_REC_Cost_$"] = np.where(
+        monthly["Gen_Energy_MWh"] > 0,
+        -(monthly["Settlement_$"] / monthly["Gen_Energy_MWh"]),
+        np.nan,
+    )
+    return monthly
+
+
+def build_multi_source_correlation_analysis(preview_results, selected_month_numbers):
+    """
+    Build pairwise monthly Pearson correlations for SCED/Model/Invoice metrics.
+    Returns DataFrame indexed by metric with one column per available source pair.
+    """
+    monthly_by_label = {}
+    source_candidates = [
+        ("SCED_Actual", "SCED Actual"),
+        ("Model", "Model"),
+        ("Settlement_Invoice", "Invoice"),
+        ("Invoice", "Invoice"),
+    ]
+    for source_key, source_label in source_candidates:
+        if source_label in monthly_by_label:
+            continue
+        if source_key not in preview_results:
+            continue
+        monthly = _compute_monthly_core_metrics(preview_results.get(source_key), selected_month_numbers)
+        if not monthly.empty:
+            monthly_by_label[source_label] = monthly
+
+    pair_defs = [
+        ("SCED Actual vs Model", "SCED Actual", "Model"),
+        ("SCED Actual vs Invoice", "SCED Actual", "Invoice"),
+        ("Model vs Invoice", "Model", "Invoice"),
+    ]
+    available_pairs = [(name, left, right) for name, left, right in pair_defs if left in monthly_by_label and right in monthly_by_label]
+    if not available_pairs:
+        return pd.DataFrame()
+
+    metrics = [
+        ("Gen_MW", "Gen MW"),
+        ("Gen_Energy_MWh", "Energy MWh"),
+        ("SPP", "SPP ($/MWh)"),
+        ("Settlement_$", "Settlement $"),
+        ("Settlement_$/MWh", "Settlement $/MWh"),
+        ("Implied_REC_Cost_$", "Implied REC Cost $"),
+    ]
+
+    out = pd.DataFrame({"Metric": [label for _, label in metrics]})
+    for pair_name, left_label, right_label in available_pairs:
+        left_df = monthly_by_label[left_label][["MonthPeriod"] + [key for key, _ in metrics]]
+        right_df = monthly_by_label[right_label][["MonthPeriod"] + [key for key, _ in metrics]]
+        merged = left_df.merge(right_df, on="MonthPeriod", how="inner", suffixes=("_left", "_right"))
+
+        pair_vals = []
+        for metric_key, _ in metrics:
+            if merged.empty:
+                pair_vals.append(np.nan)
+                continue
+            pair_vals.append(
+                _safe_pearson_correlation(
+                    merged[f"{metric_key}_left"],
+                    merged[f"{metric_key}_right"],
+                )
+            )
+        out[pair_name] = pair_vals
+
+    return out.set_index("Metric")
+
+
+def build_monthly_comparison_report_excel(
+    preview_results,
+    selected_month_numbers,
+    val_year,
+    selected_project_name=None,
+    selected_resource_id=None,
+    report_context_label=None,
+):
     """Build a formatted monthly comparison workbook for currently selected sources/months."""
     month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
     if not month_numbers:
@@ -1261,7 +1417,10 @@ def build_monthly_comparison_report_excel(preview_results, selected_month_number
         "P50": "#F4CFA4",           # sand
     }
     source_path_map = {
-        "SCED_Actual": f"sced_cache/AZURE_SKY_WIND_AGG_{val_year}_full.parquet",
+        "SCED_Actual": (
+            f"sced_cache/{selected_resource_id}_{val_year}_full.parquet"
+            if selected_resource_id else f"sced_cache/*_{val_year}.parquet"
+        ),
         "Model": "Modeled profile + ERCOT RTM hub prices",
         "Invoice": "data_static/Settlement_Invoice_Actuals.parquet",
         "Settlement_Invoice": "data_static/Settlement_Invoice_Actuals.parquet",
@@ -1347,8 +1506,8 @@ def build_monthly_comparison_report_excel(preview_results, selected_month_number
                 "bold": True, "bg_color": src_color, "border": 1, "text_wrap": True, "align": "center", "valign": "vcenter"
             })
 
-        worksheet.write(0, 0, "Azure Sky Monthly Comparison Report", title_fmt)
-        source_title = selected_project_name or "Azure Sky Wind"
+        worksheet.write(0, 0, "Monthly Comparison Report", title_fmt)
+        source_title = report_context_label or selected_project_name or "Selected Source"
         worksheet.write(1, 0, f"Project: {source_title} | Year: {val_year} | Months: {', '.join(pd.Timestamp(1900, m, 1).strftime('%B') for m in month_numbers)}", subtitle_fmt)
 
         start_row = 3
@@ -1407,8 +1566,87 @@ def build_monthly_comparison_report_excel(preview_results, selected_month_number
             )
             col += 2
 
+        # Multi-source correlation section (monthly pairwise Pearson R)
+        corr_df = build_multi_source_correlation_analysis(preview_results, month_numbers)
+        if not corr_df.empty:
+            corr_start = total_row + 3
+            corr_end_col = len(corr_df.columns)
+            corr_title_fmt = workbook.add_format({
+                "bold": True, "font_color": "white", "bg_color": "#1F3A68", "border": 1, "align": "center"
+            })
+            corr_metric_header_fmt = workbook.add_format({
+                "bold": True, "font_color": "white", "bg_color": "#1F3A68", "border": 1, "align": "center"
+            })
+            pair_header_colors = {
+                "SCED Actual vs Model": "#6A1B9A",
+                "SCED Actual vs Invoice": "#F57C00",
+                "Model vs Invoice": "#0F9D58",
+            }
+            pair_cell_formats = {}
+            for pair_name in corr_df.columns:
+                pair_color = pair_header_colors.get(pair_name, "#2E75B6")
+                pair_cell_formats[pair_name] = workbook.add_format({
+                    "num_format": "0.0000",
+                    "bg_color": pair_color,
+                    "font_color": "white",
+                    "border": 1,
+                    "align": "center",
+                })
+
+            metric_cell_fmt = workbook.add_format({"border": 1})
+            na_cell_fmt = workbook.add_format({"border": 1, "align": "center"})
+
+            worksheet.merge_range(
+                corr_start,
+                0,
+                corr_start,
+                corr_end_col,
+                f"{source_title} {val_year} - Multi-Source Correlation Analysis",
+                corr_title_fmt,
+            )
+            corr_header_row = corr_start + 1
+            worksheet.write(corr_header_row, 0, "Metric", corr_metric_header_fmt)
+            for idx, pair_name in enumerate(corr_df.columns, start=1):
+                pair_color = pair_header_colors.get(pair_name, "#2E75B6")
+                pair_header_fmt = workbook.add_format({
+                    "bold": True,
+                    "font_color": "white",
+                    "bg_color": pair_color,
+                    "border": 1,
+                    "align": "center",
+                })
+                worksheet.write(corr_header_row, idx, pair_name, pair_header_fmt)
+
+            corr_data_row = corr_header_row + 1
+            for metric_name, row_vals in corr_df.iterrows():
+                worksheet.write(corr_data_row, 0, metric_name, metric_cell_fmt)
+                for idx, pair_name in enumerate(corr_df.columns, start=1):
+                    val = row_vals.get(pair_name)
+                    if pd.notna(val):
+                        worksheet.write_number(corr_data_row, idx, float(val), pair_cell_formats[pair_name])
+                    else:
+                        worksheet.write(corr_data_row, idx, "-", na_cell_fmt)
+                corr_data_row += 1
+
+            key_row = corr_data_row + 1
+            key_label_fmt = workbook.add_format({"italic": True, "font_color": "#444444"})
+            worksheet.write(key_row, 0, "Source color key:", key_label_fmt)
+            for idx, pair_name in enumerate(corr_df.columns, start=1):
+                pair_color = pair_header_colors.get(pair_name, "#2E75B6")
+                key_fmt = workbook.add_format({
+                    "bg_color": pair_color,
+                    "font_color": "white",
+                    "border": 1,
+                    "align": "center",
+                    "italic": True,
+                })
+                worksheet.write(key_row, idx, pair_name, key_fmt)
+
+            def_start = key_row + 3
+        else:
+            def_start = total_row + 3
+
         # Metric definitions section
-        def_start = total_row + 3
         worksheet.merge_range(def_start, 0, def_start, 2, "Metric Definitions", workbook.add_format({
             "bold": True, "font_color": "white", "bg_color": "#1F4E78", "border": 1, "align": "left"
         }))
@@ -3102,6 +3340,7 @@ with tab_validation:
         c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
         
         selected_project_meta = {}
+        selected_resource_id = None
         selected_project_name = st.session_state.get("val_project_name", "")
         
         with c1:
@@ -4335,20 +4574,36 @@ with tab_validation:
                 use_container_width=True,
             )
 
+        corr_df = build_multi_source_correlation_analysis(preview_results, selected_month_numbers)
+        if not corr_df.empty:
+            context_label = selected_project_name if (val_source == "Specific Project" and selected_project_name) else val_hub
+            st.markdown("#### Multi-Source Correlation Analysis")
+            st.caption(f"{context_label} {val_year} - Multi-Source Correlation Analysis")
+            st.caption("Source color key: Purple = SCED Actual vs Model | Orange = SCED Actual vs Invoice | Green = Model vs Invoice")
+            st.dataframe(
+                corr_df.style.format("{:.4f}", na_rep="-"),
+                use_container_width=True,
+            )
+
         st.markdown("### 📤 Export Monthly Comparison Report")
         st.caption("Exports a formatted Excel report for the selected months and currently active sources (SCED / Model / Invoice).")
         try:
+            report_context_label = selected_project_name if (val_source == "Specific Project" and selected_project_name) else val_hub
             report_bytes = build_monthly_comparison_report_excel(
                 preview_results=preview_results,
                 selected_month_numbers=selected_month_numbers,
                 val_year=val_year,
                 selected_project_name=selected_project_name,
+                selected_resource_id=selected_resource_id,
+                report_context_label=report_context_label,
             )
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_stub = "".join(ch.lower() if ch.isalnum() else "_" for ch in str(report_context_label or "monthly_comparison")).strip("_")
+            file_stub = file_stub or "monthly_comparison"
             st.download_button(
                 label="📥 Download Monthly Comparison Report (Excel)",
                 data=report_bytes,
-                file_name=f"azure_monthly_comparison_{val_year}_{timestamp}.xlsx",
+                file_name=f"{file_stub}_monthly_comparison_{val_year}_{timestamp}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_monthly_comparison_report_xlsx",
             )
