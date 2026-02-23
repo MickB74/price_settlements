@@ -54,6 +54,9 @@ REPO_ROOT = Path(__file__).resolve().parent
 SETTLEMENT_INVOICE_XLSX = REPO_ROOT / "AzureSkyActuals.xlsx"
 SETTLEMENT_INVOICE_PARQUET = REPO_ROOT / "data_static" / "Settlement_Invoice_Actuals.parquet"
 SETTLEMENT_INVOICE_PARQUET_LEGACY = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
+# Invoice floating-price feed is offset by one 15-min interval vs SCED timeline.
+# Shift back one row (negative shift) so each timestamp uses the current interval price.
+INVOICE_PRICE_ALIGNMENT_SHIFT_INTERVALS = -1
 
 HUB_LOCATIONS = {
     "HB_NORTH": (32.3865, -96.8475),   # Waxahachie, TX (I-35 solar corridor)
@@ -3819,7 +3822,10 @@ with tab_validation:
                         except Exception as e:
                             st.error(f"Failed to update bill data: {e}")
              with b2:
-                 st.caption("Reloads data from `AzureSkyActuals.xlsx`.")
+                 st.caption(
+                     "Reloads data from `AzureSkyActuals.xlsx` and applies a 1-interval "
+                     "price alignment correction for invoice settlement price."
+                 )
 
 
         # Row 3: Actions
@@ -4027,6 +4033,11 @@ with tab_validation:
                                                 df_bill['Settlement_Point_Price'],
                                                 errors='coerce',
                                             )
+                                            invoice_price_series = invoice_price_series.sort_index()
+                                            if INVOICE_PRICE_ALIGNMENT_SHIFT_INTERVALS != 0:
+                                                invoice_price_series = invoice_price_series.shift(
+                                                    INVOICE_PRICE_ALIGNMENT_SHIFT_INTERVALS
+                                                )
                                         
                                         # Resample/Fill if needed? Assuming 15-min.
                                         # Just take Actual_MW
