@@ -1318,6 +1318,72 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
     return monthly
 
 
+def _compute_interval_core_metrics(df_source, selected_month_numbers):
+    """Compute interval-level metrics used for per-month correlation analysis."""
+    if df_source is None or df_source.empty or "Time_Central" not in df_source.columns:
+        return pd.DataFrame(columns=[
+            "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
+            "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+        ])
+
+    df = df_source.copy()
+    df["Time_Central"] = pd.to_datetime(df["Time_Central"], errors="coerce")
+    df = df.dropna(subset=["Time_Central"])
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
+            "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+        ])
+
+    month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
+    if month_numbers:
+        df = df[df["Time_Central"].dt.month.isin(month_numbers)]
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
+            "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+        ])
+
+    if "Gen_Energy_MWh" not in df.columns:
+        df["Gen_Energy_MWh"] = 0.0
+    if "Settlement_$" not in df.columns:
+        df["Settlement_$"] = 0.0
+    if "SPP" not in df.columns:
+        df["SPP"] = np.nan
+
+    df["Gen_Energy_MWh"] = pd.to_numeric(df["Gen_Energy_MWh"], errors="coerce").fillna(0.0)
+    df["Settlement_$"] = pd.to_numeric(df["Settlement_$"], errors="coerce").fillna(0.0)
+    df["SPP"] = pd.to_numeric(df["SPP"], errors="coerce")
+
+    if "Gen_MW" in df.columns:
+        df["Gen_MW"] = pd.to_numeric(df["Gen_MW"], errors="coerce")
+    else:
+        interval_hours = 0.25
+        if len(df) >= 2:
+            diffs = df["Time_Central"].sort_values().diff().dropna().dt.total_seconds() / 3600.0
+            if not diffs.empty and diffs.median() > 0:
+                interval_hours = float(diffs.median())
+        df["Gen_MW"] = np.where(interval_hours > 0, df["Gen_Energy_MWh"] / interval_hours, np.nan)
+
+    df["Settlement_$/MWh"] = np.where(
+        df["Gen_Energy_MWh"] > 0,
+        df["Settlement_$"] / df["Gen_Energy_MWh"],
+        np.nan,
+    )
+    df["Implied_REC_Cost_$"] = np.where(
+        df["Gen_Energy_MWh"] > 0,
+        -(df["Settlement_$"] / df["Gen_Energy_MWh"]),
+        np.nan,
+    )
+    df["MonthPeriod"] = df["Time_Central"].dt.to_period("M")
+    df = df.sort_values("Time_Central").drop_duplicates(subset=["Time_Central"], keep="last")
+
+    return df[[
+        "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
+        "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+    ]]
+
+
 def build_multi_source_correlation_analysis(preview_results, selected_month_numbers):
     """
     Build pairwise monthly Pearson correlations for SCED/Model/Invoice metrics.
@@ -1377,6 +1443,82 @@ def build_multi_source_correlation_analysis(preview_results, selected_month_numb
         out[pair_name] = pair_vals
 
     return out.set_index("Metric")
+
+
+def build_multi_source_correlation_by_month(preview_results, selected_month_numbers):
+    """
+    Build pairwise interval-level Pearson correlations grouped by calendar month.
+    Returns dict: {"Jan 2025": DataFrame(metric x pair), ...}
+    """
+    interval_by_label = {}
+    source_candidates = [
+        ("SCED_Actual", "SCED Actual"),
+        ("Model", "Model"),
+        ("Settlement_Invoice", "Invoice"),
+        ("Invoice", "Invoice"),
+    ]
+    for source_key, source_label in source_candidates:
+        if source_label in interval_by_label:
+            continue
+        if source_key not in preview_results:
+            continue
+        interval_df = _compute_interval_core_metrics(preview_results.get(source_key), selected_month_numbers)
+        if not interval_df.empty:
+            interval_by_label[source_label] = interval_df
+
+    pair_defs = [
+        ("SCED Actual vs Model", "SCED Actual", "Model"),
+        ("SCED Actual vs Invoice", "SCED Actual", "Invoice"),
+        ("Model vs Invoice", "Model", "Invoice"),
+    ]
+    available_pairs = [(name, left, right) for name, left, right in pair_defs if left in interval_by_label and right in interval_by_label]
+    if not available_pairs:
+        return {}
+
+    metrics = [
+        ("Gen_MW", "Gen MW"),
+        ("Gen_Energy_MWh", "Energy MWh"),
+        ("SPP", "SPP ($/MWh)"),
+        ("Settlement_$", "Settlement $"),
+        ("Settlement_$/MWh", "Settlement $/MWh"),
+        ("Implied_REC_Cost_$", "Implied REC Cost $"),
+    ]
+
+    month_periods = sorted(
+        set(
+            p
+            for df in interval_by_label.values()
+            for p in df["MonthPeriod"].dropna().unique().tolist()
+        )
+    )
+    out = {}
+    for month_period in month_periods:
+        month_df = pd.DataFrame({"Metric": [label for _, label in metrics]})
+        for pair_name, left_label, right_label in available_pairs:
+            left_df = interval_by_label[left_label]
+            left_df = left_df[left_df["MonthPeriod"] == month_period][["Time_Central"] + [k for k, _ in metrics]]
+            right_df = interval_by_label[right_label]
+            right_df = right_df[right_df["MonthPeriod"] == month_period][["Time_Central"] + [k for k, _ in metrics]]
+            merged = left_df.merge(right_df, on="Time_Central", how="inner", suffixes=("_left", "_right"))
+
+            pair_vals = []
+            for metric_key, _ in metrics:
+                if merged.empty:
+                    pair_vals.append(np.nan)
+                    continue
+                pair_vals.append(
+                    _safe_pearson_correlation(
+                        merged[f"{metric_key}_left"],
+                        merged[f"{metric_key}_right"],
+                    )
+                )
+            month_df[pair_name] = pair_vals
+
+        month_df = month_df.set_index("Metric")
+        if month_df.notna().any().any():
+            out[month_period.strftime("%b %Y")] = month_df
+
+    return out
 
 
 def build_monthly_comparison_report_excel(
@@ -1642,7 +1784,47 @@ def build_monthly_comparison_report_excel(
                 })
                 worksheet.write(key_row, idx, pair_name, key_fmt)
 
-            def_start = key_row + 3
+            corr_month_row = key_row + 2
+            corr_by_month = build_multi_source_correlation_by_month(preview_results, month_numbers)
+            if corr_by_month:
+                month_section_fmt = workbook.add_format({
+                    "bold": True, "font_color": "white", "bg_color": "#2E75B6", "border": 1, "align": "center"
+                })
+                for month_label, month_corr_df in corr_by_month.items():
+                    worksheet.merge_range(
+                        corr_month_row,
+                        0,
+                        corr_month_row,
+                        corr_end_col,
+                        f"{month_label} Correlation Analysis",
+                        month_section_fmt,
+                    )
+                    month_header_row = corr_month_row + 1
+                    worksheet.write(month_header_row, 0, "Metric", corr_metric_header_fmt)
+                    for idx, pair_name in enumerate(month_corr_df.columns, start=1):
+                        pair_color = pair_header_colors.get(pair_name, "#2E75B6")
+                        pair_header_fmt = workbook.add_format({
+                            "bold": True,
+                            "font_color": "white",
+                            "bg_color": pair_color,
+                            "border": 1,
+                            "align": "center",
+                        })
+                        worksheet.write(month_header_row, idx, pair_name, pair_header_fmt)
+
+                    month_data_row = month_header_row + 1
+                    for metric_name, row_vals in month_corr_df.iterrows():
+                        worksheet.write(month_data_row, 0, metric_name, metric_cell_fmt)
+                        for idx, pair_name in enumerate(month_corr_df.columns, start=1):
+                            val = row_vals.get(pair_name)
+                            if pd.notna(val):
+                                worksheet.write_number(month_data_row, idx, float(val), pair_cell_formats[pair_name])
+                            else:
+                                worksheet.write(month_data_row, idx, "-", na_cell_fmt)
+                        month_data_row += 1
+                    corr_month_row = month_data_row + 1
+
+            def_start = corr_month_row + 1
         else:
             def_start = total_row + 3
 
@@ -4584,6 +4766,17 @@ with tab_validation:
                 corr_df.style.format("{:.4f}", na_rep="-"),
                 use_container_width=True,
             )
+            corr_by_month = build_multi_source_correlation_by_month(preview_results, selected_month_numbers)
+            if corr_by_month:
+                st.markdown("##### Correlations by Month")
+                month_labels = list(corr_by_month.keys())
+                month_tabs = st.tabs(month_labels)
+                for tab, month_label in zip(month_tabs, month_labels):
+                    with tab:
+                        st.dataframe(
+                            corr_by_month[month_label].style.format("{:.4f}", na_rep="-"),
+                            use_container_width=True,
+                        )
 
         st.markdown("### 📤 Export Monthly Comparison Report")
         st.caption("Exports a formatted Excel report for the selected months and currently active sources (SCED / Model / Invoice).")
