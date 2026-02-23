@@ -31,7 +31,7 @@ from geopy.exc import GeocoderTimedOut
 import sced_fetcher
 import json
 import tabs.azure_comparison as tab_azure
-import tabs.vppa_8760_compare as tab_vppa_8760
+import tabs.vppa_8760_compare as tab_vppa_8760_compare
 
 try:
     from utils.wind_calibration import apply_congestion_haircut, get_offline_threshold_mw
@@ -6271,7 +6271,7 @@ with tab_azure_sky:
 
 with tab_vppa_8760:
     try:
-        tab_vppa_8760.render()
+        tab_vppa_8760_compare.render()
     except Exception as e:
         st.error(f"Error loading VPPA 8760 Compare: {e}")
         st.code(str(e))
