@@ -5782,3 +5782,6 @@ with tab_azure_sky:
     except Exception as e:
         st.error(f"Error loading Azure Sky Analysis: {e}")
         st.code(str(e))
+
+st.markdown("---")
+st.caption("Claude Project: [Open link](https://claude.ai/project/019c8810-9a99-7236-a14f-64b8e10f853a)")
