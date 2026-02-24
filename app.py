@@ -3921,6 +3921,16 @@ with tab_validation:
 
                             weather_opts = []
                             median_year = None
+                            project_turbine_model = "GENERIC"
+                            if (
+                                val_source == "Specific Project"
+                                and preview_tech == "Wind"
+                                and selected_project_meta
+                                and ("turbines" not in selected_project_meta)
+                            ):
+                                project_turbine_model = str(
+                                    selected_project_meta.get("turbine_model", selected_turbine or "GENERIC")
+                                )
                             
                             # Pre-calculate P50 if needed
                             if preview_weather in ["Compare All (Act/TMY/P50)", "Calculated P50 (Historical)"]:
@@ -3931,7 +3941,7 @@ with tab_validation:
                                 df_res, stats = variability_analysis.run_historical_analysis(
                                     lat=lat, lon=lon, tech=preview_tech, 
                                     capacity_mw=preview_capacity, losses_pct=14, 
-                                    turbine_type=selected_turbine, progress_bar=None
+                                    turbine_type=project_turbine_model, progress_bar=None
                                 )
                                 p50_val = stats['P50']
                                 df_res['diff'] = (df_res['Annual_MWh'] - p50_val).abs()
@@ -4176,7 +4186,7 @@ with tab_validation:
                                             scale_factor = preview_capacity / project_total
                                     
                                     # Handle turbine type for SCED comparison
-                                    final_turbine = selected_turbine
+                                    final_turbine = project_turbine_model if preview_tech == "Wind" else selected_turbine
                                     if is_sced_comparison and val_source == "Specific Project":
                                         # For Azure Sky specifically, or if turbine_model is Nordex
                                         t_model_raw = selected_project_meta.get('turbine_model', '').upper()
