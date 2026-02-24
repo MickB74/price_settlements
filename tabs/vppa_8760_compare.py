@@ -197,7 +197,29 @@ def load_local_profile_catalog(workbook_specs, year: int):
     return combined, list(combined.columns), int(default_year), source_map, offtake_map
 
 
-def _extract_model_series(model_df: pd.DataFrame, interval_label: str = "Hourly") -> pd.Series:
+def _normalize_model_timestamps(ts: pd.Series, time_alignment: str) -> pd.Series:
+    # Normalize model timestamps into a consistent local timeline for VPPA alignment.
+    # VPPA 8760 profiles are typically fixed standard time (no DST), so CST-no-DST
+    # is offered as the default alignment mode.
+    if getattr(ts.dt, "tz", None) is None:
+        try:
+            ts_local = ts.dt.tz_localize("US/Central", ambiguous="infer", nonexistent="shift_forward")
+        except Exception:
+            ts_local = ts.dt.tz_localize("US/Central", ambiguous=False, nonexistent="shift_forward")
+    else:
+        ts_local = ts.dt.tz_convert("US/Central")
+
+    if time_alignment == "CST_NO_DST":
+        ts_local = ts_local.dt.tz_convert("Etc/GMT+6")
+
+    return ts_local.dt.tz_localize(None)
+
+
+def _extract_model_series(
+    model_df: pd.DataFrame,
+    interval_label: str = "Hourly",
+    time_alignment: str = "CST_NO_DST",
+) -> pd.Series:
     if "Time_Central" in model_df.columns:
         ts = pd.to_datetime(model_df["Time_Central"], errors="coerce")
     else:
@@ -208,11 +230,7 @@ def _extract_model_series(model_df: pd.DataFrame, interval_label: str = "Hourly"
 
     working = model_df.loc[mask_valid].copy()
     ts = ts.loc[mask_valid]
-    if getattr(ts.dt, "tz", None) is None:
-        ts = ts.dt.tz_localize("US/Central", ambiguous=False, nonexistent="shift_forward")
-    else:
-        ts = ts.dt.tz_convert("US/Central")
-    working["Time_Central"] = ts.dt.tz_localize(None)
+    working["Time_Central"] = _normalize_model_timestamps(ts, time_alignment)
     working = working.dropna(subset=["Time_Central"])
     if working.empty:
         return pd.Series(dtype=float)
@@ -353,7 +371,7 @@ def render():
         if not sample_time.empty:
             default_year = int(sample_time.iloc[0].year)
 
-    c1, c2, c3 = st.columns([1, 1, 1])
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 1.3])
     with c1:
         model_name = st.selectbox("Model Source", model_sources, index=0, key="vppa_compare_model_source")
     with c2:
@@ -374,6 +392,15 @@ def render():
             key="vppa_compare_interval",
             help="Choose whether to compare at hourly or 15-minute intervals.",
         )
+    with c4:
+        time_alignment_label = st.selectbox(
+            "Time Alignment",
+            options=["CST (No DST)", "US/Central (DST-aware)"],
+            index=0,
+            key="vppa_compare_time_alignment",
+            help="VPPA 8760 profiles are usually fixed standard-time hours. Use CST (No DST) for best alignment.",
+        )
+    time_alignment = "CST_NO_DST" if time_alignment_label == "CST (No DST)" else "US_CENTRAL_DST"
 
     if source_mode == "Local file":
         st.caption(f"Using all local VPPA workbooks found in the directory ({len(local_workbooks)} files).")
@@ -418,6 +445,10 @@ def render():
     )
     if compare_interval == "15-min":
         st.caption("15-min mode distributes each hourly VPPA value evenly across four quarter-hour intervals.")
+    if time_alignment == "CST_NO_DST":
+        st.caption("Using fixed CST (no DST) alignment for model timestamps.")
+    else:
+        st.caption("Using DST-aware US/Central alignment for model timestamps.")
 
     def _format_profile_option(profile_name: str) -> str:
         mw = offtake_map.get(profile_name)
@@ -445,7 +476,7 @@ def render():
         return
 
     model_df = st.session_state["val_preview_results"][model_name]
-    model_series = _extract_model_series(model_df, compare_interval)
+    model_series = _extract_model_series(model_df, compare_interval, time_alignment=time_alignment)
     if model_series.empty:
         st.error("Selected model source does not include usable generation data.")
         return
