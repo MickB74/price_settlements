@@ -304,6 +304,19 @@ def _build_monthly_correlation(
         row[count_label] = int(min_hours or 0)
         rows.append(row)
 
+    # Add a full-period row so total correlation is visible with monthly values.
+    total_row = {"Month": "Total"}
+    total_count = None
+    for target in targets:
+        pair = compare_table[["Model_MWh", target]].dropna()
+        n_obs = int(len(pair))
+        if total_count is None or n_obs < total_count:
+            total_count = n_obs
+        corr = pair["Model_MWh"].corr(pair[target]) if n_obs > 1 else np.nan
+        total_row[target] = float(corr) if pd.notna(corr) else np.nan
+    total_row[count_label] = int(total_count or 0)
+    rows.append(total_row)
+
     if not rows:
         return pd.DataFrame()
 
