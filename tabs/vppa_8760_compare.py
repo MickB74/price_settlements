@@ -89,7 +89,7 @@ def _parse_summary_sheet(raw: pd.DataFrame, year: int):
 
 
 @st.cache_data(show_spinner=False)
-def load_vppa_summary_profiles_from_path(path_str: str, year: int):
+def load_vppa_summary_profiles_from_path(path_str: str, year: int, file_mtime_ns: int):
     path = Path(path_str)
     if not path.exists():
         raise FileNotFoundError(f"Workbook not found: {path}")
@@ -208,9 +208,11 @@ def render():
             )
             source_name = uploaded_wb.name
         elif WORKBOOK_PATH.exists():
+            file_mtime_ns = int(WORKBOOK_PATH.stat().st_mtime_ns)
             profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_path(
                 str(WORKBOOK_PATH),
                 int(selected_year),
+                file_mtime_ns,
             )
             source_name = WORKBOOK_PATH.name
         else:
