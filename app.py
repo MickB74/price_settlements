@@ -3506,14 +3506,18 @@ with tab_validation:
 
         # Load Asset Registry
         @st.cache_data
-        def load_asset_registry():
+        def load_asset_registry(path_str: str, file_mtime_ns: int):
+            # Include file mtime in cache key so dropdown refreshes after asset updates.
             try:
-                with open('ercot_assets.json', 'r') as f:
-                    return json.load(f)
+                with open(path_str, 'r') as f:
+                    data = json.load(f)
+                return data if isinstance(data, dict) else {}
             except Exception:
                 return {}
-        
-        asset_registry = load_asset_registry()
+
+        assets_path = REPO_ROOT / "ercot_assets.json"
+        assets_mtime_ns = assets_path.stat().st_mtime_ns if assets_path.exists() else -1
+        asset_registry = load_asset_registry(str(assets_path), int(assets_mtime_ns))
         # sort by name
         asset_names = sorted(list(asset_registry.keys()))
         asset_names.append("Settlement Invoice")
