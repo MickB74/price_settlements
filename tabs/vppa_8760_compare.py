@@ -705,6 +705,23 @@ def render():
         else:
             monthly_table[corr_col] = np.nan
 
+    # Append a full-period totals row.
+    total_row = {"Month": "Total", "Model": float(compare_table["Model_MWh"].sum())}
+    for target in table_targets:
+        if target not in compare_table.columns:
+            continue
+        pair = compare_table[["Model_MWh", target]].dropna()
+        target_total = float(pair[target].sum()) if not pair.empty else np.nan
+        total_diff = target_total - total_row["Model"] if pd.notna(target_total) else np.nan
+        total_pct = (total_diff / total_row["Model"]) * 100.0 if total_row["Model"] != 0 else np.nan
+        total_corr = pair["Model_MWh"].corr(pair[target]) if len(pair) > 1 else np.nan
+        total_row[target] = target_total
+        total_row[f"{target} Diff (MWh)"] = total_diff
+        total_row[f"{target} Diff (%)"] = total_pct
+        total_row[f"{target} Corr (R)"] = float(total_corr) if pd.notna(total_corr) else np.nan
+
+    monthly_table = pd.concat([monthly_table, pd.DataFrame([total_row])], ignore_index=True)
+
     ordered_cols = ["Month", "Model"]
     for target in table_targets:
         ordered_cols.extend(
