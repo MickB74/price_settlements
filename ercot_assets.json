@@ -527,5 +527,56 @@
                 "hub_height_m": 80.0
             }
         ]
+    },
+    "Mesquite Star": {
+        "resource_name": "WH_WIND_UNIT2",
+        "project_name": "Mesquite Star",
+        "tech": "Wind",
+        "capacity_mw": 418.9,
+        "hub": "North",
+        "lat": 32.584459,
+        "lon": -100.558808,
+        "county": "Fisher",
+        "hub_height_m": 101.5,
+        "turbine_model": "SG-3.465-132",
+        "turbine_manuf": "Siemens Gamesa Renewable Energy",
+        "location_confidence": "high",
+        "location_source": "uswtdb_tx centroid (118 turbines, eia_id 62587)"
+    },
+    "Millers Branch 2": {
+        "resource_name": "MILLERS_BRANCH_2",
+        "project_name": "Millers Branch 2",
+        "tech": "Solar",
+        "capacity_mw": 50.0,
+        "hub": "North",
+        "lat": 33.22,
+        "lon": -99.59,
+        "county": "Haskell",
+        "location_confidence": "medium",
+        "location_source": "user-provided coordinates"
+    },
+    "Star Dairy": {
+        "resource_name": "STAR_DAIRY_SOLAR",
+        "project_name": "Star Dairy",
+        "tech": "Solar",
+        "capacity_mw": 50.0,
+        "hub": "North",
+        "lat": 33.55789,
+        "lon": -95.46863,
+        "county": "Lamar",
+        "location_confidence": "medium",
+        "location_source": "project parcel listing"
+    },
+    "Rosebud": {
+        "resource_name": "ROSEBUD_SOLAR",
+        "project_name": "Rosebud",
+        "tech": "Solar",
+        "capacity_mw": 50.0,
+        "hub": "North",
+        "lat": 30.7863,
+        "lon": -96.9761,
+        "county": "Milam",
+        "location_confidence": "low",
+        "location_source": "Milam County centroid fallback"
     }
 }
