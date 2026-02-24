@@ -52,6 +52,30 @@ def _to_hour_number(value) -> float:
     return np.nan
 
 
+def _extract_offtake_map(raw: pd.DataFrame, header_row: int, headers: list[str]) -> dict:
+    """Extract per-profile off-take MW from Summary rows above the data header."""
+    offtake_row = None
+    for idx in range(header_row):
+        vals = [str(v).strip().lower() if pd.notna(v) else "" for v in raw.iloc[idx].tolist()]
+        if any(("offtake" in v) or ("off-take" in v) for v in vals):
+            offtake_row = idx
+            break
+
+    if offtake_row is None:
+        return {}
+
+    row_vals = raw.iloc[offtake_row].tolist()
+    offtake_map = {}
+    for i, col in enumerate(headers):
+        if col in {"Month", "Day", "Hour", "Time_Central"}:
+            continue
+        val = row_vals[i] if i < len(row_vals) else np.nan
+        num = pd.to_numeric(val, errors="coerce")
+        if pd.notna(num):
+            offtake_map[col] = float(num)
+    return offtake_map
+
+
 def _parse_summary_sheet(raw: pd.DataFrame, year: int):
     default_year = _extract_default_year_from_summary(raw)
 
@@ -65,6 +89,8 @@ def _parse_summary_sheet(raw: pd.DataFrame, year: int):
         raise ValueError("Could not find Month/Day/Hour header row in Summary sheet.")
 
     headers = [str(v).strip() if pd.notna(v) else f"col_{i}" for i, v in enumerate(raw.iloc[header_row].tolist())]
+    offtake_map = _extract_offtake_map(raw, int(header_row), headers)
+
     data = raw.iloc[header_row + 1 :].copy()
     data.columns = headers
     data = data.dropna(subset=["Month", "Day", "Hour"], how="any")
@@ -100,7 +126,8 @@ def _parse_summary_sheet(raw: pd.DataFrame, year: int):
         .drop_duplicates(subset=["Time_Central"], keep="first")
         .set_index("Time_Central")
     )
-    return hourly, profile_cols, default_year
+    offtake_map = {col: offtake_map[col] for col in profile_cols if col in offtake_map}
+    return hourly, profile_cols, default_year, offtake_map
 
 
 @st.cache_data(show_spinner=False)
@@ -128,7 +155,7 @@ def load_local_profile_catalog(workbook_specs, year: int):
     default_years = []
 
     for path_str, file_mtime_ns in workbook_specs:
-        hourly, profile_cols, default_year = load_vppa_summary_profiles_from_path(
+        hourly, profile_cols, default_year, wb_offtake_map = load_vppa_summary_profiles_from_path(
             path_str,
             int(year),
             int(file_mtime_ns),
@@ -136,16 +163,24 @@ def load_local_profile_catalog(workbook_specs, year: int):
         default_years.append(int(default_year))
         source_name = Path(path_str).name
         for project in profile_cols:
-            project_entries.append((project, source_name, pd.to_numeric(hourly[project], errors="coerce")))
+            project_entries.append(
+                (
+                    project,
+                    source_name,
+                    pd.to_numeric(hourly[project], errors="coerce"),
+                    wb_offtake_map.get(project),
+                )
+            )
 
     if not project_entries:
-        return pd.DataFrame(), [], int(datetime.now().year), {}
+        return pd.DataFrame(), [], int(datetime.now().year), {}, {}
 
-    counts = Counter(project for project, _, _ in project_entries)
+    counts = Counter(project for project, _, _, _ in project_entries)
     combined = pd.DataFrame()
     source_map = {}
+    offtake_map = {}
 
-    for project, source_name, series in project_entries:
+    for project, source_name, series, offtake_mw in project_entries:
         label = project if counts[project] == 1 else f"{project} ({source_name})"
         if label in combined.columns:
             idx = 2
@@ -154,10 +189,12 @@ def load_local_profile_catalog(workbook_specs, year: int):
             label = f"{label} [{idx}]"
         combined[label] = series
         source_map[label] = source_name
+        if offtake_mw is not None and pd.notna(offtake_mw):
+            offtake_map[label] = float(offtake_mw)
 
     combined = combined.sort_index()
     default_year = default_years[0] if default_years else int(datetime.now().year)
-    return combined, list(combined.columns), int(default_year), source_map
+    return combined, list(combined.columns), int(default_year), source_map, offtake_map
 
 
 def _extract_model_hourly_series(model_df: pd.DataFrame) -> pd.Series:
@@ -277,11 +314,13 @@ def render():
         st.caption("No workbook uploaded yet. Use the uploader above.")
 
     try:
+        source_map = {}
+        offtake_map = {}
         if source_mode == "Upload":
             if uploaded_wb is None:
                 st.error("No workbook uploaded yet. Upload an Excel file above.")
                 return
-            profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_bytes(
+            profile_df, profile_cols, wb_year, offtake_map = load_vppa_summary_profiles_from_bytes(
                 uploaded_wb.getvalue(),
                 int(selected_year),
             )
@@ -291,7 +330,7 @@ def render():
                 (str(p), int(p.stat().st_mtime_ns))
                 for p in local_workbooks
             )
-            profile_df, profile_cols, wb_year, source_map = load_local_profile_catalog(
+            profile_df, profile_cols, wb_year, source_map, offtake_map = load_local_profile_catalog(
                 workbook_specs,
                 int(selected_year),
             )
@@ -311,11 +350,20 @@ def render():
         f"Workbook default year appears to be {wb_year}."
     )
 
+    def _format_profile_option(profile_name: str) -> str:
+        mw = offtake_map.get(profile_name)
+        if mw is None or pd.isna(mw):
+            return profile_name
+        mw_f = float(mw)
+        mw_str = f"{mw_f:,.0f}" if mw_f.is_integer() else f"{mw_f:,.2f}".rstrip("0").rstrip(".")
+        return f"{profile_name} ({mw_str} MW)"
+
     selected_profiles = st.multiselect(
         "Select VPPA profiles to compare",
         options=profile_cols,
         default=profile_cols[: min(2, len(profile_cols))],
         key="vppa_compare_selected_profiles",
+        format_func=_format_profile_option,
     )
     include_total = st.checkbox(
         "Include total of selected profiles",
