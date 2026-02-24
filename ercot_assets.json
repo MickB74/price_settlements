@@ -534,14 +534,14 @@
         "tech": "Wind",
         "capacity_mw": 418.9,
         "hub": "North",
-        "lat": 32.584459,
-        "lon": -100.558808,
+        "lat": 32.5501,
+        "lon": -100.569,
         "county": "Fisher",
         "hub_height_m": 101.5,
         "turbine_model": "SG-3.465-132",
         "turbine_manuf": "Siemens Gamesa Renewable Energy",
         "location_confidence": "high",
-        "location_source": "uswtdb_tx centroid (118 turbines, eia_id 62587)"
+        "location_source": "user-provided phase coordinate (WGS84)"
     },
     "Millers Branch 2": {
         "resource_name": "MILLERS_BRANCH_2",
