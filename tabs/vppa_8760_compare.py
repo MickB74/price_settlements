@@ -680,5 +680,15 @@ def render():
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    monthly_table_cols = ["Model_MWh"] + selected_profiles + (["Selected Total"] if include_total else [])
+    monthly_table = monthly.groupby("Month", as_index=False)[monthly_table_cols].sum()
+    monthly_table = monthly_table.rename(columns={"Model_MWh": "Model"})
+    st.subheader("Monthly Energy Table (MWh)")
+    st.dataframe(
+        monthly_table.style.format({c: "{:,.0f}" for c in monthly_table.columns if c != "Month"}),
+        use_container_width=True,
+        hide_index=True,
+    )
+
     with st.expander("View hourly comparison data"):
         st.dataframe(compare_table, use_container_width=True)
