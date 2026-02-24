@@ -197,7 +197,7 @@ def load_local_profile_catalog(workbook_specs, year: int):
     return combined, list(combined.columns), int(default_year), source_map, offtake_map
 
 
-def _extract_model_hourly_series(model_df: pd.DataFrame) -> pd.Series:
+def _extract_model_series(model_df: pd.DataFrame, interval_label: str = "Hourly") -> pd.Series:
     if "Time_Central" in model_df.columns:
         ts = pd.to_datetime(model_df["Time_Central"], errors="coerce")
     else:
@@ -229,13 +229,22 @@ def _extract_model_hourly_series(model_df: pd.DataFrame) -> pd.Series:
     else:
         return pd.Series(dtype=float)
 
-    hourly = (
-        pd.DataFrame({"Time_Central": working["Time_Central"].dt.floor("h"), "Model_MWh": energy})
+    native = (
+        pd.DataFrame({"Time_Central": working["Time_Central"], "Model_MWh": energy})
         .groupby("Time_Central", as_index=True)["Model_MWh"]
         .sum()
         .sort_index()
     )
-    return hourly
+
+    if interval_label == "15-min":
+        idx_diffs = native.index.to_series().sort_values().diff().dropna()
+        if not idx_diffs.empty:
+            native_step_hours = float(idx_diffs.median().total_seconds() / 3600.0)
+            if native_step_hours >= 0.99:
+                return _expand_hourly_series_to_15min(native)
+        return native.groupby(native.index.floor("15min")).sum().sort_index()
+
+    return native.groupby(native.index.floor("h")).sum().sort_index()
 
 
 def _build_metrics(model_s: pd.Series, profile_s: pd.Series) -> dict:
@@ -252,7 +261,11 @@ def _build_metrics(model_s: pd.Series, profile_s: pd.Series) -> dict:
     }
 
 
-def _build_monthly_correlation(compare_table: pd.DataFrame, targets: list[str]) -> pd.DataFrame:
+def _build_monthly_correlation(
+    compare_table: pd.DataFrame,
+    targets: list[str],
+    count_label: str = "Hours Compared",
+) -> pd.DataFrame:
     if compare_table.empty or not targets:
         return pd.DataFrame()
 
@@ -270,14 +283,32 @@ def _build_monthly_correlation(compare_table: pd.DataFrame, targets: list[str]) 
                 min_hours = hours
             corr = pair["Model_MWh"].corr(pair[target]) if hours > 1 else np.nan
             row[target] = float(corr) if pd.notna(corr) else np.nan
-        row["Hours Compared"] = int(min_hours or 0)
+        row[count_label] = int(min_hours or 0)
         rows.append(row)
 
     if not rows:
         return pd.DataFrame()
 
-    cols = ["Month", "Hours Compared"] + targets
+    cols = ["Month", count_label] + targets
     return pd.DataFrame(rows)[cols]
+
+
+def _expand_hourly_series_to_15min(series: pd.Series) -> pd.Series:
+    if series.empty:
+        return series
+    expanded = series.reindex(series.index.repeat(4)).astype(float) / 4.0
+    offsets = np.tile(np.array([0, 15, 30, 45], dtype=int), len(series))
+    expanded.index = expanded.index + pd.to_timedelta(offsets, unit="m")
+    return expanded.groupby(level=0).sum().sort_index()
+
+
+def _expand_hourly_df_to_15min(profile_df: pd.DataFrame) -> pd.DataFrame:
+    if profile_df.empty:
+        return profile_df
+    expanded = profile_df.reindex(profile_df.index.repeat(4)).copy() / 4.0
+    offsets = np.tile(np.array([0, 15, 30, 45], dtype=int), len(profile_df))
+    expanded.index = expanded.index + pd.to_timedelta(offsets, unit="m")
+    return expanded.sort_index()
 
 
 def render():
@@ -322,7 +353,7 @@ def render():
         if not sample_time.empty:
             default_year = int(sample_time.iloc[0].year)
 
-    c1, c2 = st.columns([1, 1])
+    c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
         model_name = st.selectbox("Model Source", model_sources, index=0, key="vppa_compare_model_source")
     with c2:
@@ -334,6 +365,14 @@ def render():
             step=1,
             key="vppa_compare_profile_year",
             help="The VPPA workbook has Month/Day/Hour only, so choose the year to align with model timestamps.",
+        )
+    with c3:
+        compare_interval = st.selectbox(
+            "Comparison Interval",
+            options=["Hourly", "15-min"],
+            index=0,
+            key="vppa_compare_interval",
+            help="Choose whether to compare at hourly or 15-minute intervals.",
         )
 
     if source_mode == "Local file":
@@ -377,6 +416,8 @@ def render():
         f"Loaded `{len(profile_df):,}` hourly rows from `{source_name}` (Summary sheet). "
         f"Workbook default year appears to be {wb_year}."
     )
+    if compare_interval == "15-min":
+        st.caption("15-min mode distributes each hourly VPPA value evenly across four quarter-hour intervals.")
 
     def _format_profile_option(profile_name: str) -> str:
         mw = offtake_map.get(profile_name)
@@ -404,14 +445,16 @@ def render():
         return
 
     model_df = st.session_state["val_preview_results"][model_name]
-    model_hourly = _extract_model_hourly_series(model_df)
-    if model_hourly.empty:
+    model_series = _extract_model_series(model_df, compare_interval)
+    if model_series.empty:
         st.error("Selected model source does not include usable generation data.")
         return
 
-    compare_table = pd.DataFrame({"Model_MWh": model_hourly})
+    profile_compare_df = profile_df if compare_interval == "Hourly" else _expand_hourly_df_to_15min(profile_df)
+
+    compare_table = pd.DataFrame({"Model_MWh": model_series})
     for prof in selected_profiles:
-        compare_table[prof] = profile_df[prof].reindex(compare_table.index)
+        compare_table[prof] = profile_compare_df[prof].reindex(compare_table.index)
     if include_total:
         compare_table["Selected Total"] = compare_table[selected_profiles].sum(axis=1, min_count=1)
     compare_table = compare_table.dropna(subset=selected_profiles, how="all")
@@ -420,6 +463,9 @@ def render():
         st.error("No overlapping timestamps between model data and selected VPPA profiles.")
         return
 
+    count_label = "Hours Compared" if compare_interval == "Hourly" else "Intervals Compared"
+    error_label = "MAE (MWh/h)" if compare_interval == "Hourly" else "MAE (MWh/interval)"
+    rmse_label = "RMSE (MWh/h)" if compare_interval == "Hourly" else "RMSE (MWh/interval)"
     metric_rows = []
     compare_targets = selected_profiles + (["Selected Total"] if include_total else [])
     for target in compare_targets:
@@ -427,6 +473,9 @@ def render():
         if joined.empty:
             continue
         metrics = _build_metrics(joined["Model_MWh"], joined[target])
+        metrics[count_label] = metrics.pop("Hours Compared")
+        metrics[error_label] = metrics.pop("MAE (MWh/h)")
+        metrics[rmse_label] = metrics.pop("RMSE (MWh/h)")
         metrics["Profile"] = target
         metric_rows.append(metrics)
 
@@ -438,13 +487,13 @@ def render():
         mdf = pd.DataFrame(metric_rows)[
             [
                 "Profile",
-                "Hours Compared",
+                count_label,
                 "Model Total (MWh)",
                 "Profile Total (MWh)",
                 "Difference (MWh)",
                 "Difference (%)",
-                "MAE (MWh/h)",
-                "RMSE (MWh/h)",
+                error_label,
+                rmse_label,
                 "Correlation",
             ]
         ]
@@ -456,8 +505,8 @@ def render():
                     "Profile Total (MWh)": "{:,.0f}",
                     "Difference (MWh)": "{:+,.0f}",
                     "Difference (%)": "{:+.2f}%",
-                    "MAE (MWh/h)": "{:,.2f}",
-                    "RMSE (MWh/h)": "{:,.2f}",
+                    error_label: "{:,.2f}",
+                    rmse_label: "{:,.2f}",
                     "Correlation": "{:.3f}",
                 }
             ),
@@ -466,7 +515,7 @@ def render():
         )
 
     monthly_corr_targets = selected_profiles + (["Selected Total"] if include_total else [])
-    monthly_corr_df = _build_monthly_correlation(compare_table, monthly_corr_targets)
+    monthly_corr_df = _build_monthly_correlation(compare_table, monthly_corr_targets, count_label=count_label)
     if not monthly_corr_df.empty:
         corr_fmt = {c: "{:.3f}" for c in monthly_corr_targets if c in monthly_corr_df.columns}
         st.subheader("Monthly Correlation (Pearson R)")
