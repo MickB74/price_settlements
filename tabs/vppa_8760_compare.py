@@ -7,6 +7,15 @@ import streamlit as st
 
 
 WORKBOOK_PATH = Path(__file__).resolve().parents[1] / "VPPA_8760s.xlsx"
+WORKBOOK_GLOB = "VPPA_8760*.xlsx"
+
+
+def _list_local_workbooks():
+    root = Path(__file__).resolve().parents[1]
+    candidates = [p for p in sorted(root.glob(WORKBOOK_GLOB)) if not p.name.startswith("~$")]
+    # Prefer the original workbook first if present.
+    candidates.sort(key=lambda p: (0 if p.name == WORKBOOK_PATH.name else 1, p.name.lower()))
+    return candidates
 
 
 def _extract_default_year_from_summary(raw_df: pd.DataFrame) -> int:
@@ -172,6 +181,7 @@ def render():
         key="vppa_8760_workbook_upload",
         help="Upload VPPA_8760s.xlsx when the app environment does not have the file locally.",
     )
+    local_workbooks = _list_local_workbooks()
 
     model_sources = list(st.session_state["val_preview_results"].keys())
     if not model_sources:
@@ -200,6 +210,24 @@ def render():
             help="The VPPA workbook has Month/Day/Hour only, so choose the year to align with model timestamps.",
         )
 
+    selected_local = None
+    if uploaded_wb is None:
+        if local_workbooks:
+            if len(local_workbooks) == 1:
+                selected_local = local_workbooks[0]
+                st.caption(f"Using local workbook: `{selected_local.name}`")
+            else:
+                selected_local_name = st.selectbox(
+                    "Local Workbook",
+                    options=[p.name for p in local_workbooks],
+                    index=0,
+                    key="vppa_compare_local_workbook_name",
+                    help="Select which local VPPA 8760 workbook to process.",
+                )
+                selected_local = next((p for p in local_workbooks if p.name == selected_local_name), local_workbooks[0])
+        else:
+            st.caption("No local VPPA workbook found. Upload an `.xlsx` file above.")
+
     try:
         if uploaded_wb is not None:
             profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_bytes(
@@ -207,16 +235,16 @@ def render():
                 int(selected_year),
             )
             source_name = uploaded_wb.name
-        elif WORKBOOK_PATH.exists():
-            file_mtime_ns = int(WORKBOOK_PATH.stat().st_mtime_ns)
+        elif selected_local is not None and selected_local.exists():
+            file_mtime_ns = int(selected_local.stat().st_mtime_ns)
             profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_path(
-                str(WORKBOOK_PATH),
+                str(selected_local),
                 int(selected_year),
                 file_mtime_ns,
             )
-            source_name = WORKBOOK_PATH.name
+            source_name = selected_local.name
         else:
-            st.error(f"Could not find workbook at `{WORKBOOK_PATH}`. Upload an `.xlsx` file above.")
+            st.error("Could not find a local workbook. Upload an `.xlsx` file above.")
             return
     except Exception as e:
         st.error(f"Could not load VPPA profiles: {e}")
