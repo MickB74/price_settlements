@@ -683,9 +683,56 @@ def render():
     monthly_table_cols = ["Model_MWh"] + selected_profiles + (["Selected Total"] if include_total else [])
     monthly_table = monthly.groupby("Month", as_index=False)[monthly_table_cols].sum()
     monthly_table = monthly_table.rename(columns={"Model_MWh": "Model"})
+    table_targets = selected_profiles + (["Selected Total"] if include_total else [])
+    corr_lookup = pd.DataFrame()
+    if not monthly_corr_df.empty:
+        corr_lookup = monthly_corr_df[monthly_corr_df["Month"] != "Total"].set_index("Month")
+
+    for target in table_targets:
+        if target not in monthly_table.columns:
+            continue
+        diff_col = f"{target} Diff (MWh)"
+        pct_col = f"{target} Diff (%)"
+        corr_col = f"{target} Corr (R)"
+        monthly_table[diff_col] = monthly_table[target] - monthly_table["Model"]
+        monthly_table[pct_col] = np.where(
+            monthly_table["Model"] != 0,
+            (monthly_table[diff_col] / monthly_table["Model"]) * 100.0,
+            np.nan,
+        )
+        if not corr_lookup.empty and target in corr_lookup.columns:
+            monthly_table[corr_col] = monthly_table["Month"].map(corr_lookup[target])
+        else:
+            monthly_table[corr_col] = np.nan
+
+    ordered_cols = ["Month", "Model"]
+    for target in table_targets:
+        ordered_cols.extend(
+            [
+                target,
+                f"{target} Diff (MWh)",
+                f"{target} Diff (%)",
+                f"{target} Corr (R)",
+            ]
+        )
+    monthly_table = monthly_table[[c for c in ordered_cols if c in monthly_table.columns]]
+
+    fmt_map = {}
+    for c in monthly_table.columns:
+        if c == "Month":
+            continue
+        if c.endswith("Diff (MWh)"):
+            fmt_map[c] = "{:+,.0f}"
+        elif c.endswith("Diff (%)"):
+            fmt_map[c] = "{:+.2f}%"
+        elif c.endswith("Corr (R)"):
+            fmt_map[c] = "{:.3f}"
+        else:
+            fmt_map[c] = "{:,.0f}"
+
     st.subheader("Monthly Energy Table (MWh)")
     st.dataframe(
-        monthly_table.style.format({c: "{:,.0f}" for c in monthly_table.columns if c != "Month"}),
+        monthly_table.style.format(fmt_map),
         use_container_width=True,
         hide_index=True,
     )
