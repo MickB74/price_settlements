@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime, time
+from collections import Counter
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -117,6 +118,48 @@ def load_vppa_summary_profiles_from_bytes(file_bytes: bytes, year: int):
     return _parse_summary_sheet(raw, year)
 
 
+@st.cache_data(show_spinner=False)
+def load_local_profile_catalog(workbook_specs, year: int):
+    """
+    Load all local VPPA workbooks and return one combined profile table.
+    workbook_specs: tuple of (path_str, file_mtime_ns)
+    """
+    project_entries = []
+    default_years = []
+
+    for path_str, file_mtime_ns in workbook_specs:
+        hourly, profile_cols, default_year = load_vppa_summary_profiles_from_path(
+            path_str,
+            int(year),
+            int(file_mtime_ns),
+        )
+        default_years.append(int(default_year))
+        source_name = Path(path_str).name
+        for project in profile_cols:
+            project_entries.append((project, source_name, pd.to_numeric(hourly[project], errors="coerce")))
+
+    if not project_entries:
+        return pd.DataFrame(), [], int(datetime.now().year), {}
+
+    counts = Counter(project for project, _, _ in project_entries)
+    combined = pd.DataFrame()
+    source_map = {}
+
+    for project, source_name, series in project_entries:
+        label = project if counts[project] == 1 else f"{project} ({source_name})"
+        if label in combined.columns:
+            idx = 2
+            while f"{label} [{idx}]" in combined.columns:
+                idx += 1
+            label = f"{label} [{idx}]"
+        combined[label] = series
+        source_map[label] = source_name
+
+    combined = combined.sort_index()
+    default_year = default_years[0] if default_years else int(datetime.now().year)
+    return combined, list(combined.columns), int(default_year), source_map
+
+
 def _extract_model_hourly_series(model_df: pd.DataFrame) -> pd.Series:
     if "Time_Central" in model_df.columns:
         ts = pd.to_datetime(model_df["Time_Central"], errors="coerce")
@@ -228,20 +271,8 @@ def render():
             help="The VPPA workbook has Month/Day/Hour only, so choose the year to align with model timestamps.",
         )
 
-    selected_local = None
     if source_mode == "Local file":
-        if len(local_workbooks) == 1:
-            selected_local = local_workbooks[0]
-            st.caption(f"Using local workbook: `{selected_local.name}`")
-        else:
-            selected_local_name = st.selectbox(
-                "Local Workbook",
-                options=[p.name for p in local_workbooks],
-                index=0,
-                key="vppa_compare_local_workbook_name",
-                help="Select which local VPPA 8760 workbook to process.",
-            )
-            selected_local = next((p for p in local_workbooks if p.name == selected_local_name), local_workbooks[0])
+        st.caption(f"Using all local VPPA workbooks found in the directory ({len(local_workbooks)} files).")
     elif uploaded_wb is None:
         st.caption("No workbook uploaded yet. Use the uploader above.")
 
@@ -255,14 +286,19 @@ def render():
                 int(selected_year),
             )
             source_name = uploaded_wb.name
-        elif selected_local is not None and selected_local.exists():
-            file_mtime_ns = int(selected_local.stat().st_mtime_ns)
-            profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_path(
-                str(selected_local),
-                int(selected_year),
-                file_mtime_ns,
+        elif local_workbooks:
+            workbook_specs = tuple(
+                (str(p), int(p.stat().st_mtime_ns))
+                for p in local_workbooks
             )
-            source_name = selected_local.name
+            profile_df, profile_cols, wb_year, source_map = load_local_profile_catalog(
+                workbook_specs,
+                int(selected_year),
+            )
+            source_name = f"{len(local_workbooks)} local workbook(s)"
+            if source_map:
+                unique_sources = sorted(set(source_map.values()))
+                st.caption("Loaded from: " + ", ".join(f"`{n}`" for n in unique_sources))
         else:
             st.error("Could not find a local workbook. Upload an Excel file above.")
             return
