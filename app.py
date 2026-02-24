@@ -3515,9 +3515,41 @@ with tab_validation:
             except Exception:
                 return {}
 
+        @st.cache_data
+        def load_vppa_offtake_lookup(workbook_specs):
+            """
+            Build {project_name: offtake_mw} from local VPPA_8760* workbooks.
+            workbook_specs: tuple[(path_str, file_mtime_ns)]
+            """
+            lookup = {}
+            for path_str, file_mtime_ns in workbook_specs:
+                try:
+                    _, profile_cols, _, offtake_map = tab_vppa_8760_compare.load_vppa_summary_profiles_from_path(
+                        str(path_str),
+                        2026,
+                        int(file_mtime_ns),
+                    )
+                except Exception:
+                    continue
+
+                for name in profile_cols:
+                    mw = offtake_map.get(name)
+                    if mw is None:
+                        continue
+                    try:
+                        mw_f = float(mw)
+                    except (TypeError, ValueError):
+                        continue
+                    if name not in lookup:
+                        lookup[name] = mw_f
+            return lookup
+
         assets_path = REPO_ROOT / "ercot_assets.json"
         assets_mtime_ns = assets_path.stat().st_mtime_ns if assets_path.exists() else -1
         asset_registry = load_asset_registry(str(assets_path), int(assets_mtime_ns))
+        local_vppa_workbooks = tab_vppa_8760_compare._list_local_workbooks()
+        vppa_workbook_specs = tuple((str(p), int(p.stat().st_mtime_ns)) for p in local_vppa_workbooks)
+        vppa_offtake_lookup = load_vppa_offtake_lookup(vppa_workbook_specs)
         # sort by name
         asset_names = sorted(list(asset_registry.keys()))
         asset_names.append("Settlement Invoice")
@@ -3653,15 +3685,31 @@ with tab_validation:
             else:
                 # Settlement MW Logic
                 project_total_cap = selected_project_meta.get('capacity_mw', 100.0)
+                selected_offtake_mw = vppa_offtake_lookup.get(selected_project_name)
+                prev_project_for_mw = st.session_state.get("val_prev_project_for_mw")
+                if selected_project_name != prev_project_for_mw:
+                    if selected_offtake_mw is not None:
+                        st.session_state["val_settlement_mw"] = float(selected_offtake_mw)
+                    elif "val_settlement_mw" not in st.session_state:
+                        st.session_state["val_settlement_mw"] = float(min(68.0, project_total_cap))
+                    st.session_state["val_prev_project_for_mw"] = selected_project_name
+
+                default_settlement_mw = float(
+                    st.session_state.get("val_settlement_mw", min(68.0, project_total_cap))
+                )
+                default_settlement_mw = max(0.1, default_settlement_mw)
+                max_settlement_mw = float(max(project_total_cap * 1.5, default_settlement_mw))
                 preview_capacity = st.number_input(
                     "Settlement Capacity (MW)", 
                     min_value=0.1, 
-                    max_value=project_total_cap * 1.5, # Allow some buffer, but warn?
-                    value=min(68.0, project_total_cap), # Default to something reasonable or project cap
+                    max_value=max_settlement_mw, # Allow some buffer, but warn?
+                    value=default_settlement_mw,
                     step=1.0, 
                     help=f"Enter the MW volume to settle. Project Total: {project_total_cap} MW",
                     key="val_settlement_mw"
                 )
+                if selected_offtake_mw is not None:
+                    st.caption(f"VPPA Offtake default: {selected_offtake_mw:,.2f} MW")
                 if preview_capacity != project_total_cap:
                     pct = (preview_capacity / project_total_cap) * 100.0
                     st.caption(f"Settling {pct:.1f}% of Project ({project_total_cap} MW)")
