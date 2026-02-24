@@ -289,6 +289,7 @@ def _build_monthly_correlation(
     compare_table: pd.DataFrame,
     targets: list[str],
     count_label: str = "Hours Compared",
+    corr_granularity: str = "interval",
 ) -> pd.DataFrame:
     if compare_table.empty or not targets:
         return pd.DataFrame()
@@ -302,6 +303,8 @@ def _build_monthly_correlation(
         min_hours = None
         for target in targets:
             pair = month_df[["Model_MWh", target]].dropna()
+            if corr_granularity == "daily" and not pair.empty:
+                pair = pair.groupby(pair.index.floor("D")).sum()
             hours = int(len(pair))
             if min_hours is None or hours < min_hours:
                 min_hours = hours
@@ -315,6 +318,8 @@ def _build_monthly_correlation(
     total_count = None
     for target in targets:
         pair = compare_table[["Model_MWh", target]].dropna()
+        if corr_granularity == "daily" and not pair.empty:
+            pair = pair.groupby(pair.index.floor("D")).sum()
         n_obs = int(len(pair))
         if total_count is None or n_obs < total_count:
             total_count = n_obs
@@ -650,10 +655,17 @@ def render():
             )
 
     monthly_corr_targets = selected_profiles + (["Selected Total"] if include_total else [])
-    monthly_corr_df = _build_monthly_correlation(compare_table, monthly_corr_targets, count_label=count_label)
+    monthly_corr_count_label = "Days Compared"
+    monthly_corr_df = _build_monthly_correlation(
+        compare_table,
+        monthly_corr_targets,
+        count_label=monthly_corr_count_label,
+        corr_granularity="daily",
+    )
     if not monthly_corr_df.empty:
         corr_fmt = {c: "{:.3f}" for c in monthly_corr_targets if c in monthly_corr_df.columns}
         st.subheader("Monthly Correlation (Pearson R)")
+        st.caption("Correlation is computed on daily MWh totals within each month.")
         st.dataframe(
             monthly_corr_df.style.format(corr_fmt),
             use_container_width=True,
@@ -747,6 +759,7 @@ def render():
             fmt_map[c] = "{:,.0f}"
 
     st.subheader("Monthly Energy Table (MWh)")
+    st.caption("`Monthly Corr (R)` columns use daily energy totals within each month.")
     st.dataframe(
         monthly_table.style.format(fmt_map),
         use_container_width=True,
