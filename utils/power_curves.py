@@ -58,6 +58,12 @@ def get_normalized_power(wind_speed_series, turbine_type="GENERIC"):
         return _curve_nordex_n163(v)
     elif t_type == "NORDEX_N149":
         return _curve_nordex_n149(v)
+    elif (
+        t_type == "SG_3_4_132"
+        or "SG-3.4-132" in t_type
+        or ("3.4" in t_type and "132" in t_type and ("SIEMENS" in t_type or "GAMESA" in t_type or t_type.startswith("SG")))
+    ):
+        return _curve_siemens_gamesa_sg_3_4_132(v)
     else:
         return _curve_generic_iec2(v)
 
@@ -85,6 +91,10 @@ def get_curve_for_specs(manuf, model, rotor_m=None):
     if "NORDEX" in manuf:
         if "163" in model or "5." in model:
             return "NORDEX_N163"
+
+    if "SIEMENS" in manuf or "GAMESA" in manuf or model.startswith("SG"):
+        if "3.4" in model and "132" in model:
+            return "SG_3_4_132"
             
     # New Mappings from Enrichment
     if "ACCIONA" in manuf or "AW125" in model or "AW116" in model:
@@ -216,4 +226,24 @@ def _curve_nordex_n149(v):
     power[mask_rated] = 1.0
     
     return _finalize_power_curve(v, power, rated_speed=11.5)
+
+
+def _curve_siemens_gamesa_sg_3_4_132(v):
+    """
+    Siemens-Gamesa SG 3.4-132.
+    Mid-specific-power turbine (132m rotor, ~3.465 MW uprated) with strong low-wind output.
+    Cut-in: 3.0 m/s
+    Rated: ~10.8 m/s
+    Cut-out: 25.0 m/s
+    """
+    power = np.zeros_like(v, dtype=float)
+
+    # Smooth but efficient ramp in sub-rated region.
+    mask_ramp = (v >= 3.0) & (v < 10.8)
+    power[mask_ramp] = ((v[mask_ramp] - 3.0) / 7.8) ** 2.6
+
+    mask_rated = (v >= 10.8) & (v < 25.0)
+    power[mask_rated] = 1.0
+
+    return _finalize_power_curve(v, power, rated_speed=10.8)
     

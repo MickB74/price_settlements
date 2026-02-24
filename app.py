@@ -3683,7 +3683,7 @@ with tab_validation:
         selected_turbine = "GENERIC"
         # Only show turbine selector for Generic
         if val_source == "Generic / Hub" and preview_tech == "Wind":
-            turbine_opts = ["Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
+            turbine_opts = ["Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)", "Siemens-Gamesa SG 3.4-132"]
             c_turb1, c_turb2, c_turb3 = st.columns(3)
             with c_turb1:
                 val_turb_ui = st.selectbox("Turbine Model", turbine_opts, key="val_preview_turbine")
@@ -3693,7 +3693,8 @@ with tab_validation:
                 "Vestas V163 (Low Wind)": "VESTAS_V163",
                 "GE 2.x (Workhorse)": "GE_2X",
                 "GE 3.6-154 (Modern Mainstream)": "GE_3X",
-                "Nordex N163 (5.X MW)": "NORDEX_N163"
+                "Nordex N163 (5.X MW)": "NORDEX_N163",
+                "Siemens-Gamesa SG 3.4-132": "SG_3_4_132",
             }
             if val_turb_ui in turbine_override_map:
                 selected_turbine = turbine_override_map[val_turb_ui]
@@ -5826,7 +5827,7 @@ with tab_performance:
             model_bias = c_p2.number_input("Linear Bias Correction (Multiplier)", 0.5, 1.5, 1.0, step=0.01, help="Scalar to linearly tune model up/down.")
             
             # Turbine Type
-            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)"]
+            turbine_opts = ["Auto-Detect", "Generic (IEC Class 2)", "Vestas V163 (Low Wind)", "GE 2.x (Workhorse)", "GE 3.6-154 (Modern Mainstream)", "Nordex N163 (5.X MW)", "Siemens-Gamesa SG 3.4-132"]
             selected_turb = c_p3.selectbox("Turbine Type Override", turbine_opts)
             
             turbine_override_map = {
@@ -5835,7 +5836,8 @@ with tab_performance:
                 "Vestas V163 (Low Wind)": "VESTAS_V163",
                 "GE 2.x (Workhorse)": "GE_2X",
                 "GE 3.6-154 (Modern Mainstream)": "GE_3X",
-                "Nordex N163 (5.X MW)": "NORDEX_N163"
+                "Nordex N163 (5.X MW)": "NORDEX_N163",
+                "Siemens-Gamesa SG 3.4-132": "SG_3_4_132",
             }
             final_turbine_req = turbine_override_map[selected_turb]
 
