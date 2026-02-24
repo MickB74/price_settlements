@@ -183,6 +183,19 @@ def render():
     )
     local_workbooks = _list_local_workbooks()
 
+    source_options = []
+    if local_workbooks:
+        source_options.append("Local file")
+    source_options.append("Upload")
+    source_mode = st.radio(
+        "Workbook Source",
+        options=source_options,
+        index=0,
+        horizontal=True,
+        key="vppa_compare_source_mode",
+        help="Choose whether to process a local VPPA workbook or the uploaded workbook.",
+    )
+
     model_sources = list(st.session_state["val_preview_results"].keys())
     if not model_sources:
         st.warning("No model sources are available in session state.")
@@ -211,25 +224,27 @@ def render():
         )
 
     selected_local = None
-    if uploaded_wb is None:
-        if local_workbooks:
-            if len(local_workbooks) == 1:
-                selected_local = local_workbooks[0]
-                st.caption(f"Using local workbook: `{selected_local.name}`")
-            else:
-                selected_local_name = st.selectbox(
-                    "Local Workbook",
-                    options=[p.name for p in local_workbooks],
-                    index=0,
-                    key="vppa_compare_local_workbook_name",
-                    help="Select which local VPPA 8760 workbook to process.",
-                )
-                selected_local = next((p for p in local_workbooks if p.name == selected_local_name), local_workbooks[0])
+    if source_mode == "Local file":
+        if len(local_workbooks) == 1:
+            selected_local = local_workbooks[0]
+            st.caption(f"Using local workbook: `{selected_local.name}`")
         else:
-            st.caption("No local VPPA workbook found. Upload an `.xlsx` file above.")
+            selected_local_name = st.selectbox(
+                "Local Workbook",
+                options=[p.name for p in local_workbooks],
+                index=0,
+                key="vppa_compare_local_workbook_name",
+                help="Select which local VPPA 8760 workbook to process.",
+            )
+            selected_local = next((p for p in local_workbooks if p.name == selected_local_name), local_workbooks[0])
+    elif uploaded_wb is None:
+        st.caption("No workbook uploaded yet. Use the uploader above.")
 
     try:
-        if uploaded_wb is not None:
+        if source_mode == "Upload":
+            if uploaded_wb is None:
+                st.error("No workbook uploaded yet. Upload an `.xlsx` file above.")
+                return
             profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_bytes(
                 uploaded_wb.getvalue(),
                 int(selected_year),
