@@ -350,12 +350,14 @@ def render():
 
     monthly = compare_table.copy()
     monthly["Month"] = monthly.index.to_period("M").astype(str)
-    agg_cols = ["Model_MWh"] + compare_targets
+    # Keep chart focused on individual selected profiles; hide "Selected Total" from bars.
+    chart_targets = selected_profiles
+    agg_cols = ["Model_MWh"] + chart_targets
     monthly_agg = monthly.groupby("Month", as_index=False)[agg_cols].sum()
 
     fig = go.Figure()
     fig.add_trace(go.Bar(name="Model", x=monthly_agg["Month"], y=monthly_agg["Model_MWh"]))
-    for target in compare_targets:
+    for target in chart_targets:
         fig.add_trace(go.Bar(name=target, x=monthly_agg["Month"], y=monthly_agg[target]))
     fig.update_layout(
         barmode="group",
