@@ -219,6 +219,7 @@ def _extract_model_series(
     model_df: pd.DataFrame,
     interval_label: str = "Hourly",
     time_alignment: str = "CST_NO_DST",
+    energy_basis: str = "SETTLED",
 ) -> pd.Series:
     if "Time_Central" in model_df.columns:
         ts = pd.to_datetime(model_df["Time_Central"], errors="coerce")
@@ -236,7 +237,12 @@ def _extract_model_series(
         return pd.Series(dtype=float)
 
     if "Gen_Energy_MWh" in working.columns:
-        energy = pd.to_numeric(working["Gen_Energy_MWh"], errors="coerce").fillna(0.0)
+        settled = pd.to_numeric(working["Gen_Energy_MWh"], errors="coerce").fillna(0.0)
+        if energy_basis == "POTENTIAL" and "Curtailed_MWh" in working.columns:
+            curtailed = pd.to_numeric(working["Curtailed_MWh"], errors="coerce").fillna(0.0)
+            energy = settled + curtailed
+        else:
+            energy = settled
     elif "Gen_MW" in working.columns:
         energy = pd.to_numeric(working["Gen_MW"], errors="coerce").fillna(0.0)
         diffs = working["Time_Central"].sort_values().diff().dropna()
@@ -342,6 +348,28 @@ def _expand_hourly_df_to_15min(profile_df: pd.DataFrame) -> pd.DataFrame:
     return expanded.sort_index()
 
 
+def _best_lag_correlation(model_s: pd.Series, profile_s: pd.Series, interval_label: str = "Hourly", max_hours: int = 24):
+    step_minutes = 60 if interval_label == "Hourly" else 15
+    max_steps = int((max_hours * 60) / step_minutes)
+    best = {"Lag (hours)": 0.0, "Correlation": np.nan, "Points": 0}
+
+    for step in range(-max_steps, max_steps + 1):
+        shifted = profile_s.copy()
+        shifted.index = shifted.index + pd.to_timedelta(step * step_minutes, unit="m")
+        joined = pd.concat([model_s, shifted], axis=1, keys=["Model", "Profile"]).dropna()
+        n = int(len(joined))
+        corr = joined["Model"].corr(joined["Profile"]) if n > 1 else np.nan
+        if pd.isna(corr):
+            continue
+        if pd.isna(best["Correlation"]) or corr > best["Correlation"]:
+            best = {
+                "Lag (hours)": float(step * step_minutes / 60.0),
+                "Correlation": float(corr),
+                "Points": n,
+            }
+    return best
+
+
 def render():
     st.header("VPPA 8760 Comparison")
     st.caption("Load profiles from VPPA_8760s.xlsx and compare selected profiles against your latest Bill Validation model run.")
@@ -384,7 +412,7 @@ def render():
         if not sample_time.empty:
             default_year = int(sample_time.iloc[0].year)
 
-    c1, c2, c3, c4 = st.columns([1, 1, 1, 1.3])
+    c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1.2, 1.1])
     with c1:
         model_name = st.selectbox("Model Source", model_sources, index=0, key="vppa_compare_model_source")
     with c2:
@@ -413,7 +441,16 @@ def render():
             key="vppa_compare_time_alignment",
             help="VPPA 8760 profiles are usually fixed standard-time hours. Use CST (No DST) for best alignment.",
         )
+    with c5:
+        energy_basis_label = st.selectbox(
+            "Model Energy Basis",
+            options=["Settled (post-curtail)", "Potential (pre-curtail)"],
+            index=1,
+            key="vppa_compare_energy_basis",
+            help="Potential adds curtailed MWh back before comparison.",
+        )
     time_alignment = "CST_NO_DST" if time_alignment_label == "CST (No DST)" else "US_CENTRAL_DST"
+    energy_basis = "POTENTIAL" if energy_basis_label == "Potential (pre-curtail)" else "SETTLED"
 
     if source_mode == "Local file":
         st.caption(f"Using all local VPPA workbooks found in the directory ({len(local_workbooks)} files).")
@@ -462,6 +499,18 @@ def render():
         st.caption("Using fixed CST (no DST) alignment for model timestamps.")
     else:
         st.caption("Using DST-aware US/Central alignment for model timestamps.")
+    if energy_basis == "POTENTIAL":
+        st.caption("Comparing against potential generation (curtailment added back).")
+
+    profile_shift_hours = st.number_input(
+        "VPPA Time Shift (hours)",
+        min_value=-24,
+        max_value=24,
+        value=0,
+        step=1,
+        key="vppa_compare_profile_shift_hours",
+        help="Shift VPPA profile timestamps to test hour alignment (positive moves VPPA later).",
+    )
 
     def _format_profile_option(profile_name: str) -> str:
         mw = offtake_map.get(profile_name)
@@ -489,12 +538,20 @@ def render():
         return
 
     model_df = st.session_state["val_preview_results"][model_name]
-    model_series = _extract_model_series(model_df, compare_interval, time_alignment=time_alignment)
+    model_series = _extract_model_series(
+        model_df,
+        compare_interval,
+        time_alignment=time_alignment,
+        energy_basis=energy_basis,
+    )
     if model_series.empty:
         st.error("Selected model source does not include usable generation data.")
         return
 
     profile_compare_df = profile_df if compare_interval == "Hourly" else _expand_hourly_df_to_15min(profile_df)
+    if int(profile_shift_hours) != 0:
+        profile_compare_df = profile_compare_df.copy()
+        profile_compare_df.index = profile_compare_df.index + pd.to_timedelta(int(profile_shift_hours), unit="h")
 
     compare_table = pd.DataFrame({"Model_MWh": model_series})
     for prof in selected_profiles:
@@ -557,6 +614,40 @@ def render():
             use_container_width=True,
             hide_index=True,
         )
+
+    lag_rows = []
+    for target in selected_profiles:
+        joined = compare_table[["Model_MWh", target]].dropna()
+        if joined.empty:
+            continue
+        best = _best_lag_correlation(
+            joined["Model_MWh"],
+            joined[target],
+            interval_label=compare_interval,
+            max_hours=24,
+        )
+        lag_rows.append(
+            {
+                "Profile": target,
+                "Best Lag (hours)": best["Lag (hours)"],
+                "Best Correlation": best["Correlation"],
+                "Points": best["Points"],
+            }
+        )
+
+    if lag_rows:
+        with st.expander("Lag Diagnostic (best correlation within +/-24 hours)", expanded=False):
+            st.dataframe(
+                pd.DataFrame(lag_rows).style.format(
+                    {
+                        "Best Lag (hours)": "{:+.2f}",
+                        "Best Correlation": "{:.3f}",
+                        "Points": "{:,.0f}",
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
 
     monthly_corr_targets = selected_profiles + (["Selected Total"] if include_total else [])
     monthly_corr_df = _build_monthly_correlation(compare_table, monthly_corr_targets, count_label=count_label)
