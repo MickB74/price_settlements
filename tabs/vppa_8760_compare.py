@@ -252,6 +252,34 @@ def _build_metrics(model_s: pd.Series, profile_s: pd.Series) -> dict:
     }
 
 
+def _build_monthly_correlation(compare_table: pd.DataFrame, targets: list[str]) -> pd.DataFrame:
+    if compare_table.empty or not targets:
+        return pd.DataFrame()
+
+    working = compare_table.copy()
+    working["Month"] = working.index.to_period("M").astype(str)
+    rows = []
+
+    for month, month_df in working.groupby("Month", sort=True):
+        row = {"Month": month}
+        min_hours = None
+        for target in targets:
+            pair = month_df[["Model_MWh", target]].dropna()
+            hours = int(len(pair))
+            if min_hours is None or hours < min_hours:
+                min_hours = hours
+            corr = pair["Model_MWh"].corr(pair[target]) if hours > 1 else np.nan
+            row[target] = float(corr) if pd.notna(corr) else np.nan
+        row["Hours Compared"] = int(min_hours or 0)
+        rows.append(row)
+
+    if not rows:
+        return pd.DataFrame()
+
+    cols = ["Month", "Hours Compared"] + targets
+    return pd.DataFrame(rows)[cols]
+
+
 def render():
     st.header("VPPA 8760 Comparison")
     st.caption("Load profiles from VPPA_8760s.xlsx and compare selected profiles against your latest Bill Validation model run.")
@@ -433,6 +461,17 @@ def render():
                     "Correlation": "{:.3f}",
                 }
             ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    monthly_corr_targets = selected_profiles + (["Selected Total"] if include_total else [])
+    monthly_corr_df = _build_monthly_correlation(compare_table, monthly_corr_targets)
+    if not monthly_corr_df.empty:
+        corr_fmt = {c: "{:.3f}" for c in monthly_corr_targets if c in monthly_corr_df.columns}
+        st.subheader("Monthly Correlation (Pearson R)")
+        st.dataframe(
+            monthly_corr_df.style.format(corr_fmt),
             use_container_width=True,
             hide_index=True,
         )
