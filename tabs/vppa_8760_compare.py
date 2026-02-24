@@ -693,7 +693,7 @@ def render():
             continue
         diff_col = f"{target} Diff (MWh)"
         pct_col = f"{target} Diff (%)"
-        corr_col = f"{target} Corr (R)"
+        corr_col = f"{target} Monthly Corr (R)"
         monthly_table[diff_col] = monthly_table[target] - monthly_table["Model"]
         monthly_table[pct_col] = np.where(
             monthly_table["Model"] != 0,
@@ -714,11 +714,10 @@ def render():
         target_total = float(pair[target].sum()) if not pair.empty else np.nan
         total_diff = target_total - total_row["Model"] if pd.notna(target_total) else np.nan
         total_pct = (total_diff / total_row["Model"]) * 100.0 if total_row["Model"] != 0 else np.nan
-        total_corr = pair["Model_MWh"].corr(pair[target]) if len(pair) > 1 else np.nan
         total_row[target] = target_total
         total_row[f"{target} Diff (MWh)"] = total_diff
         total_row[f"{target} Diff (%)"] = total_pct
-        total_row[f"{target} Corr (R)"] = float(total_corr) if pd.notna(total_corr) else np.nan
+        total_row[f"{target} Monthly Corr (R)"] = np.nan
 
     monthly_table = pd.concat([monthly_table, pd.DataFrame([total_row])], ignore_index=True)
 
@@ -729,7 +728,7 @@ def render():
                 target,
                 f"{target} Diff (MWh)",
                 f"{target} Diff (%)",
-                f"{target} Corr (R)",
+                f"{target} Monthly Corr (R)",
             ]
         )
     monthly_table = monthly_table[[c for c in ordered_cols if c in monthly_table.columns]]
