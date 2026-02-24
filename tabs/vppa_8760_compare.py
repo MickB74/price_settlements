@@ -7,12 +7,17 @@ import streamlit as st
 
 
 WORKBOOK_PATH = Path(__file__).resolve().parents[1] / "VPPA_8760s.xlsx"
-WORKBOOK_GLOB = "VPPA_8760*.xlsx"
+WORKBOOK_GLOB = "VPPA_8760*"
+WORKBOOK_EXTENSIONS = {".xlsx", ".xls", ".xlsm"}
 
 
 def _list_local_workbooks():
     root = Path(__file__).resolve().parents[1]
-    candidates = [p for p in sorted(root.glob(WORKBOOK_GLOB)) if not p.name.startswith("~$")]
+    candidates = [
+        p
+        for p in sorted(root.glob(WORKBOOK_GLOB))
+        if (not p.name.startswith("~$")) and p.is_file() and (p.suffix.lower() in WORKBOOK_EXTENSIONS)
+    ]
     # Prefer the original workbook first if present.
     candidates.sort(key=lambda p: (0 if p.name == WORKBOOK_PATH.name else 1, p.name.lower()))
     return candidates
@@ -176,10 +181,10 @@ def render():
         return
 
     uploaded_wb = st.file_uploader(
-        "VPPA Workbook (.xlsx)",
-        type=["xlsx"],
+        "VPPA Workbook (.xlsx/.xls/.xlsm)",
+        type=["xlsx", "xls", "xlsm"],
         key="vppa_8760_workbook_upload",
-        help="Upload VPPA_8760s.xlsx when the app environment does not have the file locally.",
+        help="Upload a VPPA 8760 Excel workbook when the app environment does not have the file locally.",
     )
     local_workbooks = _list_local_workbooks()
 
@@ -243,7 +248,7 @@ def render():
     try:
         if source_mode == "Upload":
             if uploaded_wb is None:
-                st.error("No workbook uploaded yet. Upload an `.xlsx` file above.")
+                st.error("No workbook uploaded yet. Upload an Excel file above.")
                 return
             profile_df, profile_cols, wb_year = load_vppa_summary_profiles_from_bytes(
                 uploaded_wb.getvalue(),
@@ -259,7 +264,7 @@ def render():
             )
             source_name = selected_local.name
         else:
-            st.error("Could not find a local workbook. Upload an `.xlsx` file above.")
+            st.error("Could not find a local workbook. Upload an Excel file above.")
             return
     except Exception as e:
         st.error(f"Could not load VPPA profiles: {e}")
