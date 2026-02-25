@@ -655,17 +655,18 @@ def render():
             )
 
     monthly_corr_targets = selected_profiles + (["Selected Total"] if include_total else [])
-    monthly_corr_count_label = "Days Compared"
+    monthly_corr_count_label = "Hours Compared" if compare_interval == "Hourly" else "Intervals Compared"
     monthly_corr_df = _build_monthly_correlation(
         compare_table,
         monthly_corr_targets,
         count_label=monthly_corr_count_label,
-        corr_granularity="daily",
+        corr_granularity="interval",
     )
     if not monthly_corr_df.empty:
         corr_fmt = {c: "{:.3f}" for c in monthly_corr_targets if c in monthly_corr_df.columns}
         st.subheader("Monthly Correlation (Pearson R)")
-        st.caption("Correlation is computed on daily MWh totals within each month.")
+        interval_caption = "hourly" if compare_interval == "Hourly" else "15-min"
+        st.caption(f"Correlation is computed from {interval_caption} MWh intervals within each month.")
         st.dataframe(
             monthly_corr_df.style.format(corr_fmt),
             use_container_width=True,
@@ -759,7 +760,8 @@ def render():
             fmt_map[c] = "{:,.0f}"
 
     st.subheader("Monthly Energy Table (MWh)")
-    st.caption("`Monthly Corr (R)` columns use daily energy totals within each month.")
+    interval_caption = "hourly" if compare_interval == "Hourly" else "15-min"
+    st.caption(f"`Monthly Corr (R)` columns use {interval_caption} intervals within each month.")
     st.dataframe(
         monthly_table.style.format(fmt_map),
         use_container_width=True,
