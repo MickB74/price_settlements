@@ -23,6 +23,21 @@
     "HOUSTON": 0.24,
     "PAN": 0.32
   },
+  "project_shear_alpha": {
+    "Maryneal Wind": 0.28,
+    "South Ranch Wind": 0.25,
+    "Vera Wind": 0.30,
+    "Azure Sky Wind": 0.28,
+    "Bobcat Wind": 0.37,
+    "Ajax Wind": 0.27,
+    "Capricorn Ridge": 0.35,
+    "Horse Hollow": 0.36,
+    "Goat Mountain": 0.35,
+    "Mesquite Star": 0.30,
+    "Flat Top Wind": 0.31,
+    "South Plains": 0.29,
+    "Cameron Wind": 0.26
+  },
   "project_multiplier": {
     "Anchor Wind Iii": 1.1605,
     "Maryneal Wind": 1.1255,

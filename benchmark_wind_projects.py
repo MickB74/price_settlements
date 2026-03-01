@@ -130,7 +130,7 @@ def run_benchmark():
 
         # C. Model 2: Advanced (Actual Hub, Actual Curve / Mixed Fleet)
         print(f"  Running Advanced Model ({actual_hub_h}m, {actual_tech_type})...")
-        
+
         turbines = meta.get('turbines')
         p24_adv = fetch_tmy.get_profile_for_year(
             2024,
@@ -160,32 +160,71 @@ def run_benchmark():
             apply_wind_calibration=True,
             turbines=turbines,
         )
-            
+
         prof_advanced = pd.concat([p24_adv, p25_adv])
         prof_advanced = prof_advanced[~prof_advanced.index.duplicated(keep='first')]
-        
+
+        # C2. Model 3: V3 (100m wind + improved curves + per-project shear)
+        print(f"  Running V3 Model ({actual_hub_h}m, {actual_tech_type})...")
+        p24_v3 = fetch_tmy.get_profile_for_year(
+            2024,
+            "Wind",
+            capacity,
+            lat=lat,
+            lon=lon,
+            hub_height=actual_hub_h,
+            turbine_type=actual_tech_type,
+            hub_name=hub,
+            project_name=p_name,
+            resource_id=r_id,
+            apply_wind_calibration=True,
+            turbines=turbines,
+            wind_model_engine="V3_100M",
+        )
+        p25_v3 = fetch_tmy.get_profile_for_year(
+            2025,
+            "Wind",
+            capacity,
+            lat=lat,
+            lon=lon,
+            hub_height=actual_hub_h,
+            turbine_type=actual_tech_type,
+            hub_name=hub,
+            project_name=p_name,
+            resource_id=r_id,
+            apply_wind_calibration=True,
+            turbines=turbines,
+            wind_model_engine="V3_100M",
+        )
+
+        prof_v3 = pd.concat([p24_v3, p25_v3])
+        prof_v3 = prof_v3[~prof_v3.index.duplicated(keep='first')]
+
         # D. Align index for comparison
         # Model profiles have a specific year index, actual might start at a specific day.
         # Ensure both are aligned to UTC.
         baseline_aligned = prof_baseline.reindex(df_actual_full.index).fillna(0)
         advanced_aligned = prof_advanced.reindex(df_actual_full.index).fillna(0)
-        
+        v3_aligned = prof_v3.reindex(df_actual_full.index).fillna(0)
+
         # --- APPLY ECONOMIC DISPATCH (CURTAILMENT) ---
         # Cap modeled generation at Base Point if available
         if 'Base_Point_MW' in df_actual_full.columns:
             # Fill NaN Base Points with infinity (unconstrained) to be safe
             base_point = df_actual_full['Base_Point_MW'].fillna(np.inf)
             base_point = base_point.clip(lower=0) # ensure no negatives
-            
+
             baseline_aligned = np.minimum(baseline_aligned, base_point)
             advanced_aligned = np.minimum(advanced_aligned, base_point)
+            v3_aligned = np.minimum(v3_aligned, base_point)
         else:
             print("  ! Warning: No Base Point data found. Using unconstrained physics model.")
 
         # E. Calculate Metrics
         metrics_baseline = calculate_metrics(df_actual_full['Actual_MW'], baseline_aligned, capacity_mw=capacity)
         metrics_advanced = calculate_metrics(df_actual_full['Actual_MW'], advanced_aligned, capacity_mw=capacity)
-        
+        metrics_v3 = calculate_metrics(df_actual_full['Actual_MW'], v3_aligned, capacity_mw=capacity)
+
         results.append({
             'Project': p_name,
             'Model': 'Baseline (Curtailed)',
@@ -197,12 +236,21 @@ def run_benchmark():
         })
         results.append({
             'Project': p_name,
-            'Model': f"Advanced (Curtailed)",
+            'Model': 'Advanced (Curtailed)',
             'R': metrics_advanced['R'],
             'R_Hourly': metrics_advanced['R_Hourly'],
             'R_Daily': metrics_advanced['R_Daily'],
             'MBE (MW)': metrics_advanced['MBE'],
             'RMSE (MW)': metrics_advanced['RMSE']
+        })
+        results.append({
+            'Project': p_name,
+            'Model': 'V3 (Curtailed)',
+            'R': metrics_v3['R'],
+            'R_Hourly': metrics_v3['R_Hourly'],
+            'R_Daily': metrics_v3['R_Daily'],
+            'MBE (MW)': metrics_v3['MBE'],
+            'RMSE (MW)': metrics_v3['RMSE']
         })
         
     # Print Summary Table

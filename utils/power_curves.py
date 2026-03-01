@@ -64,6 +64,10 @@ def get_normalized_power(wind_speed_series, turbine_type="GENERIC"):
         or ("3.4" in t_type and "132" in t_type and ("SIEMENS" in t_type or "GAMESA" in t_type or t_type.startswith("SG")))
     ):
         return _curve_siemens_gamesa_sg_3_4_132(v)
+    elif t_type == "GE_1X":
+        return _curve_ge_1x(v)
+    elif t_type == "AW3000":
+        return _curve_acciona_aw3000(v)
     else:
         return _curve_generic_iec2(v)
 
@@ -75,6 +79,8 @@ def get_curve_for_specs(manuf, model, rotor_m=None):
     manuf = str(manuf).upper()
     
     if "GE" in manuf or "GE" in model:
+        if "1.5" in model or "1.6" in model:
+            return "GE_1X"
         if "2.8" in model or "127" in model:
             return "GE_2X"
         if "3.6" in model or "154" in model:
@@ -98,7 +104,7 @@ def get_curve_for_specs(manuf, model, rotor_m=None):
             
     # New Mappings from Enrichment
     if "ACCIONA" in manuf or "AW125" in model or "AW116" in model:
-        return "GE_2X" # Proxy for 3MW class / 125m rotor
+        return "AW3000" # Acciona 3MW class with dedicated curve
         
     if "V117" in model or "V126" in model:
         return "GE_2X" # Proxy for 3.3MW class
@@ -246,4 +252,42 @@ def _curve_siemens_gamesa_sg_3_4_132(v):
     power[mask_rated] = 1.0
 
     return _finalize_power_curve(v, power, rated_speed=10.8)
-    
+
+
+def _curve_ge_1x(v):
+    """
+    GE 1.5/1.6 MW class (Legacy fleet: GE1.5sle, GE1.5xle, GE1.6-82.5, GE1.6-91).
+    Older high-wind machines with higher cut-in and rated speeds.
+    Cut-in: 3.5 m/s
+    Rated: 12.5 m/s
+    Cut-out: 25.0 m/s
+    """
+    power = np.zeros_like(v, dtype=float)
+
+    mask_ramp = (v >= 3.5) & (v < 12.5)
+    power[mask_ramp] = ((v[mask_ramp] - 3.5) / 9.0) ** 3.0
+
+    mask_rated = (v >= 12.5) & (v < 25.0)
+    power[mask_rated] = 1.0
+
+    return _finalize_power_curve(v, power, rated_speed=12.5)
+
+
+def _curve_acciona_aw3000(v):
+    """
+    Acciona AW116/3000 and AW125/3000 (3.0 MW class, 116-125m rotor).
+    Medium-wind machine, higher specific power than modern low-wind designs.
+    Cut-in: 3.0 m/s
+    Rated: 11.5 m/s
+    Cut-out: 25.0 m/s
+    """
+    power = np.zeros_like(v, dtype=float)
+
+    mask_ramp = (v >= 3.0) & (v < 11.5)
+    power[mask_ramp] = ((v[mask_ramp] - 3.0) / 8.5) ** 2.7
+
+    mask_rated = (v >= 11.5) & (v < 25.0)
+    power[mask_rated] = 1.0
+
+    return _finalize_power_curve(v, power, rated_speed=11.5)
+

@@ -917,8 +917,17 @@ def load_wind_calibration_table(calibration_path=None):
     return derive_table_from_benchmark_files(_repo_root())
 
 
-def get_hub_shear_alpha(lat=None, lon=None, hub_name=None, calibration_table=None):
+def get_hub_shear_alpha(lat=None, lon=None, hub_name=None, project_name=None, calibration_table=None):
     table = calibration_table or load_wind_calibration_table()
+
+    # Highest priority: per-project shear alpha override.
+    if project_name and isinstance(table, dict):
+        proj_shear_map = table.get("project_shear_alpha", {})
+        if project_name in proj_shear_map:
+            val = _as_float(proj_shear_map[project_name])
+            if val is not None:
+                return float(val), f"project:{project_name}"
+
     shear_map = table.get("hub_shear_alpha", {}) if isinstance(table, dict) else {}
 
     hub = normalize_hub_name(hub_name) or infer_hub_from_coords(lat, lon)
