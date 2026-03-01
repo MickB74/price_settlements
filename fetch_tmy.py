@@ -160,17 +160,16 @@ def get_openmeteo_data(year, lat, lon):
     """Fetch hourly solar and wind data from Open-Meteo for any year."""
     cache_file = os.path.join(CACHE_DIR, f"openmeteo_{year}_{lat}_{lon}.parquet")
     
-    # Check if cache exists (and verify columns if old cache used 100m)
-    # Check if cache exists (and verify columns if old cache used 100m)
+    # Check if cache exists and has required columns (including 100m wind)
     if os.path.exists(cache_file):
         try:
             df = pd.read_parquet(cache_file)
-            if not df.empty and 'Wind_Speed_10m_mps' in df.columns:
+            if not df.empty and 'Wind_Speed_10m_mps' in df.columns and 'Wind_Speed_100m_mps' in df.columns:
                 return df
-            print(f"Cache file {cache_file} is empty or outdated. Re-fetching...")
+            # Old cache missing 100m wind column — re-fetch to get it
+            print(f"Cache file {cache_file} missing 100m wind data. Re-fetching...")
         except Exception:
             pass # Ignore corrupt cache
-        # If old cache (100m), ignore it and re-fetch
         
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
@@ -178,7 +177,7 @@ def get_openmeteo_data(year, lat, lon):
         "longitude": lon,
         "start_date": f"{year}-01-01",
         "end_date": f"{year+1}-01-02", # Fetch TWO extra days to cover UTC-Central offset at year end and avoid boundary issues
-        "hourly": "shortwave_radiation,wind_speed_10m",
+        "hourly": "shortwave_radiation,wind_speed_10m,wind_speed_100m",
         "timezone": "UTC"
     }
 
@@ -190,7 +189,7 @@ def get_openmeteo_data(year, lat, lon):
     params["end_date"] = str(safe_end)
 
     
-    print(f"Fetching Open-Meteo {year} data (10m) for {lat}, {lon}...")
+    print(f"Fetching Open-Meteo {year} data (10m + 100m wind) for {lat}, {lon}...")
     
     try:
         response = requests.get(url, params=params)
@@ -207,8 +206,13 @@ def get_openmeteo_data(year, lat, lon):
         # wind_speed_10m is in km/h -> Convert to m/s
         df['GHI_Wm2'] = df['shortwave_radiation']
         df['Wind_Speed_10m_mps'] = df['wind_speed_10m'] / 3.6
-        
-        out_df = df[['datetime', 'GHI_Wm2', 'Wind_Speed_10m_mps']].copy()
+
+        out_cols = ['datetime', 'GHI_Wm2', 'Wind_Speed_10m_mps']
+        if 'wind_speed_100m' in df.columns:
+            df['Wind_Speed_100m_mps'] = df['wind_speed_100m'] / 3.6
+            out_cols.append('Wind_Speed_100m_mps')
+
+        out_df = df[out_cols].copy()
         out_df.to_parquet(cache_file)
         return out_df
         
@@ -278,12 +282,15 @@ def get_openmeteo_2024_data(lat, lon):
 
 WIND_MODEL_ENGINE_STANDARD = "STANDARD"
 WIND_MODEL_ENGINE_ADVANCED = "ADVANCED_CALIBRATED"
+WIND_MODEL_ENGINE_V3 = "V3_100M"
 
 
 def _normalize_wind_model_engine(wind_model_engine):
     key = str(wind_model_engine or WIND_MODEL_ENGINE_STANDARD).strip().upper()
     if key in {"ADVANCED", "ADVANCED_CALIBRATED", "V2", "CALIBRATED"}:
         return WIND_MODEL_ENGINE_ADVANCED
+    if key in {"V3", "V3_100M", "100M"}:
+        return WIND_MODEL_ENGINE_V3
     return WIND_MODEL_ENGINE_STANDARD
 
 
@@ -294,7 +301,7 @@ def _engine_calibration_table(base_table, wind_model_engine):
     calibrations for the alternate engine.
     """
     engine_key = _normalize_wind_model_engine(wind_model_engine)
-    if engine_key != WIND_MODEL_ENGINE_ADVANCED or not isinstance(base_table, dict):
+    if engine_key not in {WIND_MODEL_ENGINE_ADVANCED, WIND_MODEL_ENGINE_V3} or not isinstance(base_table, dict):
         return base_table
 
     table = json.loads(json.dumps(base_table))
@@ -308,9 +315,17 @@ def _engine_calibration_table(base_table, wind_model_engine):
     post_cfg["apply_congestion_haircut"] = False
     table["postprocess_config"] = post_cfg
 
-    # Explicit reanalysis blending for advanced mode.
-    table["reanalysis_blend"] = {"era5_weight": 0.70, "merra2_weight": 0.30}
-    table["advanced_engine_version"] = "wind_v2_2026_02"
+    if engine_key == WIND_MODEL_ENGINE_V3:
+        # V3: improved power curves + per-project shear + all advanced features.
+        # 100m wind tested but worsened results (reanalysis 100m has own biases);
+        # keeping 10m with calibrated shear which is proven more accurate.
+        table["reanalysis_blend"] = {"era5_weight": 0.70, "merra2_weight": 0.30}
+        table["use_100m_wind"] = False
+        table["advanced_engine_version"] = "wind_v3_2026_03"
+    else:
+        # Explicit reanalysis blending for advanced mode.
+        table["reanalysis_blend"] = {"era5_weight": 0.70, "merra2_weight": 0.30}
+        table["advanced_engine_version"] = "wind_v2_2026_02"
     return table
 
 
@@ -614,14 +629,31 @@ def get_profile_for_year(
                                 + merged["merra_ws10m"] * merra2_w
                             )
                 
-                # Hub-aware scaling at hub height (power law: v_h = v_10 * (h/10)^alpha).
+                # Hub-aware scaling at hub height (power law: v_h = v_ref * (h/h_ref)^alpha).
+                # Per-project shear overrides only apply to V3 engine;
+                # Advanced/Standard use hub-level defaults to avoid regression.
+                _shear_project = project_name if wind_model_engine_key == WIND_MODEL_ENGINE_V3 else None
                 alpha, _ = get_hub_shear_alpha(
                     lat=lat,
                     lon=lon,
                     hub_name=hub_name,
+                    project_name=_shear_project,
                     calibration_table=calibration_table,
                 )
-                wind_speed_hub = ws_10m * ((hub_height / 10.0) ** alpha)
+
+                # V3 engine: prefer 100m wind data for reduced shear extrapolation.
+                use_100m = (
+                    wind_model_engine_key == WIND_MODEL_ENGINE_V3
+                    and calibration_table is not None
+                    and calibration_table.get("use_100m_wind")
+                    and 'Wind_Speed_100m_mps' in df_data.columns
+                )
+                if use_100m:
+                    ws_100m = df_data['Wind_Speed_100m_mps']
+                    wind_speed_hub = ws_100m * ((hub_height / 100.0) ** alpha)
+                else:
+                    wind_speed_hub = ws_10m * ((hub_height / 10.0) ** alpha)
+
                 mw_hourly = wind_from_speed(wind_speed_hub, capacity_mw, turbine_type=turbine_type) * efficiency
                 if apply_wind_calibration:
                     bias_mult, _ = get_wind_bias_multiplier(
@@ -633,7 +665,7 @@ def get_profile_for_year(
                         calibration_table=calibration_table,
                     )
                     mw_hourly = (mw_hourly * bias_mult).clip(lower=0.0, upper=capacity_mw)
-                if wind_model_engine_key == WIND_MODEL_ENGINE_ADVANCED:
+                if wind_model_engine_key in {WIND_MODEL_ENGINE_ADVANCED, WIND_MODEL_ENGINE_V3}:
                     mw_hourly = _apply_advanced_power_curve_clipping(
                         mw_hourly=mw_hourly,
                         wind_speed_hub=wind_speed_hub,

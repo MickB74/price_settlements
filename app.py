@@ -75,6 +75,7 @@ WIND_WEATHER_SOURCE_OPTIONS = {
 WIND_MODEL_ENGINE_OPTIONS = {
     "Standard (Current)": "STANDARD",
     "Advanced Calibrated (EIA/CF/SCED/Node)": "ADVANCED_CALIBRATED",
+    "V3 (Improved Curves + Per-Project Shear)": "V3_100M",
 }
 
 # Soft dispatch cap strength: 0.0 = ignore BP, 1.0 = hard cap at BP.
