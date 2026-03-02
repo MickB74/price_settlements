@@ -4,7 +4,6 @@ __pycache__/
 .env
 .venv/
 venv/
-ercot_rtm_*.parquet
 miso_rtm_*.parquet
 user_uploads/
 data_cache/*
