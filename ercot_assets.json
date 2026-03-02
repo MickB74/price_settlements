@@ -578,5 +578,16 @@
         "county": "Milam",
         "location_confidence": "low",
         "location_source": "Milam County centroid fallback"
+    },
+    "Liberty Solar": {
+        "resource_name": "LIBERTY_SOLAR",
+        "project_name": "Liberty Solar",
+        "tech": "Solar",
+        "capacity_mw": 100.0,
+        "hub": "Houston",
+        "lat": 29.95888,
+        "lon": -94.85048,
+        "location_confidence": "high",
+        "location_source": "user-provided coordinates"
     }
 }
