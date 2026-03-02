@@ -635,6 +635,28 @@ def render():
         st.warning("Select at least one VPPA profile.")
         return
 
+    # ── Month filter ──────────────────────────────────────────────────────────
+    _ALL_MONTHS = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+    selected_month_names = st.multiselect(
+        "Months",
+        _ALL_MONTHS,
+        default=_ALL_MONTHS,
+        key="vppa_8760_month_select",
+        help="Filter the comparison to specific months.",
+    )
+    _month_name_to_num = {m: i + 1 for i, m in enumerate(_ALL_MONTHS)}
+    selected_month_nums = sorted(_month_name_to_num[m] for m in selected_month_names)
+    if not selected_month_nums:
+        st.warning("⚠️ No months selected. Please select at least one month.")
+        return
+
+    # Apply month filter to the XLS profile data
+    if len(selected_month_nums) < 12:
+        profile_df = profile_df[profile_df.index.month.isin(selected_month_nums)]
+
     # ══════════════════════════════════════════════════════════════════════════
     # MODE A — Generate weather-model profiles from registry
     # ══════════════════════════════════════════════════════════════════════════
@@ -772,7 +794,10 @@ def render():
                 continue
 
             model_s = model_series_map[proj]   # hourly MWh (avg MW over 1h)
-            profile_s_raw = profile_df[proj]   # hourly MWh from XLS
+            # Apply same month filter to model series
+            if len(selected_month_nums) < 12:
+                model_s = model_s[model_s.index.month.isin(selected_month_nums)]
+            profile_s_raw = profile_df[proj]   # hourly MWh from XLS (already filtered)
 
             # Align on timestamps
             combined = pd.DataFrame({"Model_MWh": model_s, proj: profile_s_raw}).dropna()
