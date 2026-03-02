@@ -590,17 +590,24 @@ def render():
             t_model  = str(meta.get("turbine_model", "GENERIC"))
             hub_h    = float(meta.get("hub_height_m", 80.0))
 
+            # Use offtake MW from XLS when available; fall back to full capacity
+            offtake_mw = offtake_map.get(proj)
+            use_offtake = offtake_mw is not None and pd.notna(offtake_mw) and float(offtake_mw) > 0
+            scale = float(offtake_mw) / cap_mw if use_offtake else 1.0
+            display_mw = float(offtake_mw) if use_offtake else cap_mw
+
             meta_rows.append({
                 "XLS Profile": proj,
                 "Registry Name": p_name,
                 "Tech": tech,
                 "Capacity (MW)": cap_mw,
+                "Offtake (MW)": float(offtake_mw) if use_offtake else None,
                 "Lat": lat,
                 "Lon": lon,
                 "Turbine": t_model if tech == "Wind" else "—",
             })
 
-            with st.spinner(f"Generating TMY {tmy_year} for {p_name} ({tech}, {cap_mw:.0f} MW)…"):
+            with st.spinner(f"Generating TMY {tmy_year} for {p_name} ({tech}, {display_mw:.0f} MW)…"):
                 try:
                     s = _generate_tmy_profile(
                         project_name=p_name,
@@ -615,6 +622,9 @@ def render():
                     if s.empty:
                         st.warning(f"TMY generation returned empty series for {p_name}.")
                     else:
+                        # Scale to offtake share if XLS provides an offtake MW
+                        if use_offtake and abs(scale - 1.0) > 1e-6:
+                            s = s * scale
                         model_series_map[proj] = s
                 except Exception as e:
                     st.error(f"Error generating TMY for {p_name}: {e}")
