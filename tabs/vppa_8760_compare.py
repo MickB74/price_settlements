@@ -653,7 +653,7 @@ def render():
         st.subheader(f"{source_label} Model Profiles")
         st.caption(
             f"Generating **{source_label.lower()}** profiles for each selected XLS project "
-            f"covering years **{', '.join(str(y) for y in xls_years)}**. "
+            f"(years auto-detected per project). "
             "**No curtailment** (negative-price curtailment is ignored). "
             "**No SCED** (pure weather model). "
             "Capacity is taken from the registry (`capacity_mw`)."
@@ -699,9 +699,16 @@ def render():
                 "Turbine": t_model if tech == "Wind" else "—",
             })
 
+            # Determine which years THIS project's XLS data actually covers
+            proj_years = xls_years  # fallback to global
+            if proj in profile_df.columns:
+                proj_data = profile_df[proj].dropna()
+                if not proj_data.empty:
+                    proj_years = sorted(proj_data.index.year.unique())
+
             # Generate model for each year in the XLS and concatenate
             year_series = []
-            for yr in xls_years:
+            for yr in proj_years:
                 with st.spinner(f"Generating {source_label} {yr} for {p_name} ({tech}, {display_mw:.0f} MW)…"):
                     try:
                         s = _generate_weather_profile(
