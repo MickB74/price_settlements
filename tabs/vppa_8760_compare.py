@@ -88,6 +88,9 @@ def _generate_weather_profile(
     if len(series) > 9000:
         series = series.resample("h").mean()
 
+    # Hard-clip to nameplate AC capacity (model can exceed due to DC/AC ratio)
+    series = series.clip(upper=capacity_mw)
+
     series = series[series.index.year == year]
     return series
 
@@ -527,12 +530,12 @@ def render():
     # ── Mode picker ──────────────────────────────────────────────────────────
     mode = st.radio(
         "Mode",
-        options=["Generate TMY Profiles", "Compare vs Bill Validation Model"],
+        options=["Generate Weather Model Profiles", "Compare vs Bill Validation Model"],
         index=0,
         horizontal=True,
         key="vppa_8760_mode",
         help=(
-            "Generate TMY Profiles: build a 2025 TMY profile for each XLS project "
+            "Generate Weather Model Profiles: build an actual-weather or TMY profile for each XLS project "
             "from the registry (no curtailment, no SCED) and compare vs the XLS values.\n"
             "Compare vs Model: compare XLS profiles against a completed Bill Validation run."
         ),
@@ -623,7 +626,7 @@ def render():
     # ══════════════════════════════════════════════════════════════════════════
     # MODE A — Generate weather-model profiles from registry
     # ══════════════════════════════════════════════════════════════════════════
-    if mode == "Generate TMY Profiles":
+    if mode == "Generate Weather Model Profiles":
         st.markdown("---")
 
         # Weather source toggle
@@ -811,13 +814,14 @@ def render():
                     monthly_rows_all.append({
                         "Project": proj,
                         "Month": mo,
-                        "Model TMY (MWh)": ml.get(mo, np.nan),
+                        f"Model {source_label} (MWh)": ml.get(mo, np.nan),
                         "XLS (MWh)": xl.get(mo, np.nan),
                     })
 
             if monthly_rows_all:
                 monthly_df_all = pd.DataFrame(monthly_rows_all)
-                monthly_df_all["Diff (MWh)"] = monthly_df_all["Model TMY (MWh)"] - monthly_df_all["XLS (MWh)"]
+                model_col_name = f"Model {source_label} (MWh)"
+                monthly_df_all["Diff (MWh)"] = monthly_df_all[model_col_name] - monthly_df_all["XLS (MWh)"]
                 monthly_df_all["Diff (%)"] = np.where(
                     monthly_df_all["XLS (MWh)"] != 0,
                     (monthly_df_all["Diff (MWh)"] / monthly_df_all["XLS (MWh)"]) * 100.0,
@@ -826,7 +830,7 @@ def render():
                 st.subheader("Monthly Energy Breakdown")
                 st.dataframe(
                     monthly_df_all.style.format({
-                        "Model TMY (MWh)": "{:,.0f}",
+                        model_col_name: "{:,.0f}",
                         "XLS (MWh)":       "{:,.0f}",
                         "Diff (MWh)":      "{:+,.0f}",
                         "Diff (%)":        "{:+.2f}%",
@@ -844,9 +848,9 @@ def render():
                         continue
                     c = colors[i % len(colors)]
                     fig.add_trace(go.Bar(
-                        name=f"{proj} — Model TMY",
+                        name=f"{proj} — Model {source_label}",
                         x=sub["Month"],
-                        y=sub["Model TMY (MWh)"],
+                        y=sub[model_col_name],
                         marker_color=c,
                     ))
                     fig.add_trace(go.Bar(
@@ -858,14 +862,14 @@ def render():
                     ))
                 fig.update_layout(
                     barmode="group",
-                    title="Monthly Energy: Model TMY vs XLS (MWh)",
+                    title=f"Monthly Energy: Model {source_label} vs XLS (MWh)",
                     xaxis_title="Month",
                     yaxis_title="MWh",
                     legend_title="Series",
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-        return  # end TMY mode
+        return  # end Mode A (weather model)
 
     # ══════════════════════════════════════════════════════════════════════════
     # MODE B — Compare vs Bill Validation model (original flow)
@@ -873,7 +877,7 @@ def render():
     if "val_preview_results" not in st.session_state:
         st.info(
             "Run a model in **Bill Validation** first, then come back here to compare "
-            "against the VPPA 8760 profiles. Or switch Mode to **Generate TMY Profiles** above."
+            "against the VPPA 8760 profiles. Or switch Mode to **Generate Weather Model Profiles** above."
         )
         return
 
