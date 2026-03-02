@@ -1336,7 +1336,7 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
     )
     monthly["Implied_REC_Cost_$"] = np.where(
         monthly["Gen_Energy_MWh"] > 0,
-        -(monthly["Settlement_$"] / monthly["Gen_Energy_MWh"]),
+        -(monthly["Settlement_$_Uniform"] / monthly["Gen_Energy_MWh"]),
         np.nan,
     )
     return monthly
@@ -1407,7 +1407,7 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
     )
     df["Implied_REC_Cost_$"] = np.where(
         df["Gen_Energy_MWh"] > 0,
-        -(df["Settlement_$"] / df["Gen_Energy_MWh"]),
+        -(df["Settlement_$_Uniform"] / df["Gen_Energy_MWh"]),
         np.nan,
     )
     df["MonthPeriod"] = df["Time_Central"].dt.to_period("M")
@@ -1451,9 +1451,14 @@ def build_multi_source_correlation_analysis(preview_results, selected_month_numb
         return pd.DataFrame()
 
     metrics = [
-        ("Gen_MW",         "Gen MW"),
+        ("Gen_MW", "Gen MW"),
         ("Gen_Energy_MWh", "Energy MWh"),
-        ("SPP",            "SPP ($/MWh)"),
+        ("SPP", "SPP ($/MWh)"),
+        # Use uniform (raw hub SPP) settlement columns so all three sources
+        # are on the same price basis and the Pearson R is meaningful.
+        ("Settlement_$_Uniform", "Settlement $ (Hub)"),
+        ("Settlement_$/MWh_Uniform", "Settlement $/MWh (Hub)"),
+        ("Implied_REC_Cost_$", "Implied REC Cost $"),
     ]
 
     out = pd.DataFrame({"Metric": [label for _, label in metrics]})
@@ -1509,9 +1514,14 @@ def build_multi_source_correlation_by_month(preview_results, selected_month_numb
         return {}
 
     metrics = [
-        ("Gen_MW",         "Gen MW"),
+        ("Gen_MW", "Gen MW"),
         ("Gen_Energy_MWh", "Energy MWh"),
-        ("SPP",            "SPP ($/MWh)"),
+        ("SPP", "SPP ($/MWh)"),
+        # Use uniform (raw hub SPP) settlement columns so all three sources
+        # are on the same price basis and the Pearson R is meaningful.
+        ("Settlement_$_Uniform", "Settlement $ (Hub)"),
+        ("Settlement_$/MWh_Uniform", "Settlement $/MWh (Hub)"),
+        ("Implied_REC_Cost_$", "Implied REC Cost $"),
     ]
 
     month_periods = sorted(
