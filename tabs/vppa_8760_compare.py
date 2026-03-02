@@ -7,6 +7,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+# Bump this any time cached behaviour needs to be invalidated on deploy.
+_CODE_VERSION = "2026-03-02-v3"
+
 
 WORKBOOK_PATH = Path(__file__).resolve().parents[1] / "VPPA_8760s.xlsx"
 WORKBOOK_GLOB = "VPPA_8760*"
@@ -524,10 +527,11 @@ def _best_lag_correlation(model_s: pd.Series, profile_s: pd.Series, interval_lab
 
 
 def render():
-    # One-time purge of stale Streamlit caches from old function signatures
-    if "weather_cache_v2" not in st.session_state:
+    # Purge ALL Streamlit caches whenever the code version changes.
+    _cache_key = f"weather_cache_{_CODE_VERSION}"
+    if _cache_key not in st.session_state:
         st.cache_data.clear()
-        st.session_state["weather_cache_v2"] = True
+        st.session_state[_cache_key] = True
 
     st.header("VPPA 8760 Comparison")
 
@@ -705,6 +709,14 @@ def render():
                 proj_data = profile_df[proj].dropna()
                 if not proj_data.empty:
                     proj_years = sorted(proj_data.index.year.unique())
+
+            # Drop the current calendar year — Open-Meteo data is incomplete
+            # for years still in progress, which inflates model totals.
+            current_year = datetime.now().year
+            proj_years = [y for y in proj_years if y < current_year]
+            if not proj_years:
+                st.warning(f"No complete calendar years in XLS for {p_name}; skipping model.")
+                continue
 
             # Generate model for each year in the XLS and concatenate
             year_series = []
