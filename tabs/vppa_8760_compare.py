@@ -43,6 +43,9 @@ def _match_project_meta(project_name: str, registry: list[dict]) -> dict | None:
     return None
 
 
+_WEATHER_PROFILE_VERSION = 3  # bump to bust st.cache_data
+
+
 @st.cache_data(show_spinner=False)
 def _generate_weather_profile(
     project_name: str,
@@ -54,6 +57,7 @@ def _generate_weather_profile(
     turbine_model: str = "GENERIC",
     hub_height_m: float = 80.0,
     use_actual_weather: bool = True,
+    _version: int = _WEATHER_PROFILE_VERSION,
 ) -> pd.Series:
     """
     Generate an hourly generation profile for a single project.
