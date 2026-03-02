@@ -3827,11 +3827,26 @@ with tab_validation:
             val_vppa_price = st.number_input("VPPA / Strike Price ($/MWh)", value=50.0, step=0.5, key="val_price")
         with c4:
             val_revenue_share = st.number_input(
-                "Buyer's Upside Share %", 
+                "Buyer's Upside Share %",
                 min_value=0, max_value=100, value=100, step=5,
                 help="% of upside buyer receives when SPP > PPA price.",
                 key="val_revenue_share"
             )
+
+        # Month selector
+        _ALL_MONTHS = ["January", "February", "March", "April", "May", "June",
+                       "July", "August", "September", "October", "November", "December"]
+        selected_month_names = st.multiselect(
+            "Months",
+            _ALL_MONTHS,
+            default=_ALL_MONTHS,
+            key="val_month_multiselect",
+            help="Select which months to include in the analysis.",
+        )
+        _month_name_to_num = {m: i + 1 for i, m in enumerate(_ALL_MONTHS)}
+        selected_month_numbers = sorted(_month_name_to_num[m] for m in selected_month_names)
+        if not selected_month_numbers:
+            st.warning("⚠️ No months selected. Please select at least one month.")
 
         # Row 2: Technology & Preview Settings
         c5, c6, c7 = st.columns(3)
@@ -4544,36 +4559,8 @@ with tab_validation:
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-    # --- Month Selection ---
-    with st.expander("📅 Select Months for Validation", expanded=True):
-        st.caption("Select which months to include in the validation analysis")
-        
-        val_months = ["January", "February", "March", "April", "May", "June", 
-                      "July", "August", "September", "October", "November", "December"]
-        
-        # Select All / Clear All buttons
-        col_m1, col_m2 = st.columns([0.2, 0.8])
-        if col_m1.button("Select All", key="val_all_months"):
-            for m in val_months:
-                st.session_state[f"val_sel_{m}"] = True
-        if col_m2.button("Clear All", key="val_clear_months"):
-            for m in val_months:
-                st.session_state[f"val_sel_{m}"] = False
+    # Month selection is now in the config row above (multiselect).
 
-        selected_month_names = []
-        cols = st.columns(4)
-        for i, month in enumerate(val_months):
-            with cols[i % 4]:
-                if st.checkbox(month, value=st.session_state.get(f"val_sel_{month}", True), key=f"val_sel_{month}"):
-                    selected_month_names.append(month)
-        
-        # Convert month names to numbers (1-12)
-        month_map = {m: i+1 for i, m in enumerate(val_months)}
-        selected_month_numbers = [month_map[m] for m in selected_month_names]
-        
-        if not selected_month_numbers:
-            st.warning("⚠️ No months selected. Please select at least one month.")
-    
 
     st.caption("💡 Enter your project's exact coordinates or use the map below")
     
