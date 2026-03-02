@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import datetime, time
 from collections import Counter
+import json
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -10,6 +11,82 @@ import streamlit as st
 WORKBOOK_PATH = Path(__file__).resolve().parents[1] / "VPPA_8760s.xlsx"
 WORKBOOK_GLOB = "VPPA_8760*"
 WORKBOOK_EXTENSIONS = {".xlsx", ".xls", ".xlsm"}
+REGISTRY_PATH = Path(__file__).resolve().parents[1] / "ercot_assets.json"
+
+
+def _load_registry() -> list[dict]:
+    """Load ercot_assets.json and return a flat list of project dicts."""
+    if not REGISTRY_PATH.exists():
+        return []
+    with open(REGISTRY_PATH) as f:
+        raw = json.load(f)
+    if isinstance(raw, dict):
+        return [v for v in raw.values() if isinstance(v, dict)]
+    if isinstance(raw, list):
+        return [v for v in raw if isinstance(v, dict)]
+    return []
+
+
+def _match_project_meta(project_name: str, registry: list[dict]) -> dict | None:
+    """Fuzzy-match a project name to a registry entry (case-insensitive substring)."""
+    needle = project_name.strip().lower()
+    # Exact match first
+    for p in registry:
+        candidate = (p.get("project_name") or p.get("name") or "").strip().lower()
+        if candidate == needle:
+            return p
+    # Substring match
+    for p in registry:
+        candidate = (p.get("project_name") or p.get("name") or "").strip().lower()
+        if needle in candidate or candidate in needle:
+            return p
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def _generate_tmy_profile(
+    project_name: str,
+    tech: str,
+    lat: float,
+    lon: float,
+    capacity_mw: float,
+    year: int,
+    turbine_model: str = "GENERIC",
+    hub_height_m: float = 80.0,
+) -> pd.Series:
+    """
+    Generate a TMY profile for a single project using fetch_tmy.
+    - force_tmy=True  →  typical-year weather (no actual year data)
+    - no curtailment, no SCED
+    Returns an hourly Series indexed by tz-naive local timestamps.
+    """
+    import fetch_tmy  # local import to avoid circular
+
+    series = fetch_tmy.get_profile_for_year(
+        year=year,
+        tech=tech,
+        capacity_mw=capacity_mw,
+        lat=lat,
+        lon=lon,
+        force_tmy=True,
+        turbine_type=turbine_model if tech == "Wind" else "GENERIC",
+        hub_height=int(hub_height_m),
+        efficiency=0.86,  # 14% losses
+        apply_wind_calibration=False,  # pure model, no SCED bias correction
+    )
+    if series is None or series.empty:
+        return pd.Series(dtype=float)
+
+    # Normalise to tz-naive hourly CST-no-DST (same basis as VPPA 8760 sheets)
+    if series.index.tz is not None:
+        series = series.tz_convert("Etc/GMT+6").tz_localize(None)
+
+    # Resample to hourly if 15-min
+    if len(series) > 9000:
+        series = series.resample("h").sum()
+
+    series = series[series.index.year == year]
+    return series
 
 
 def _list_local_workbooks():
@@ -377,17 +454,27 @@ def _best_lag_correlation(model_s: pd.Series, profile_s: pd.Series, interval_lab
 
 def render():
     st.header("VPPA 8760 Comparison")
-    st.caption("Load profiles from VPPA_8760s.xlsx and compare selected profiles against your latest Bill Validation model run.")
 
-    if "val_preview_results" not in st.session_state:
-        st.info("Run a model in Bill Validation first, then come back here to compare against the VPPA 8760 profiles.")
-        return
+    # ── Mode picker ──────────────────────────────────────────────────────────
+    mode = st.radio(
+        "Mode",
+        options=["Generate TMY Profiles", "Compare vs Bill Validation Model"],
+        index=0,
+        horizontal=True,
+        key="vppa_8760_mode",
+        help=(
+            "Generate TMY Profiles: build a 2025 TMY profile for each XLS project "
+            "from the registry (no curtailment, no SCED) and compare vs the XLS values.\n"
+            "Compare vs Model: compare XLS profiles against a completed Bill Validation run."
+        ),
+    )
 
+    # ── Workbook source ───────────────────────────────────────────────────────
     uploaded_wb = st.file_uploader(
         "VPPA Workbook (.xlsx/.xls/.xlsm)",
         type=["xlsx", "xls", "xlsm"],
         key="vppa_8760_workbook_upload",
-        help="Upload a VPPA 8760 Excel workbook when the app environment does not have the file locally.",
+        help="Upload a VPPA 8760 Excel workbook when the file is not available locally.",
     )
     local_workbooks = _list_local_workbooks()
 
@@ -401,8 +488,289 @@ def render():
         index=0,
         horizontal=True,
         key="vppa_compare_source_mode",
-        help="Choose whether to process a local VPPA workbook or the uploaded workbook.",
     )
+
+    # ── Load workbook ─────────────────────────────────────────────────────────
+    try:
+        source_map: dict = {}
+        offtake_map: dict = {}
+        if source_mode == "Upload":
+            if uploaded_wb is None:
+                st.error("No workbook uploaded yet. Upload an Excel file above.")
+                return
+            profile_df, profile_cols, wb_year, offtake_map = load_vppa_summary_profiles_from_bytes(
+                uploaded_wb.getvalue(), 2025
+            )
+            source_name = uploaded_wb.name
+        elif local_workbooks:
+            workbook_specs = tuple(
+                (str(p), int(p.stat().st_mtime_ns)) for p in local_workbooks
+            )
+            profile_df, profile_cols, wb_year, source_map, offtake_map = load_local_profile_catalog(
+                workbook_specs, 2025
+            )
+            source_name = f"{len(local_workbooks)} local workbook(s)"
+            if source_map:
+                unique_sources = sorted(set(source_map.values()))
+                st.caption("Loaded from: " + ", ".join(f"`{n}`" for n in unique_sources))
+        else:
+            st.error("Could not find a local workbook. Upload an Excel file above.")
+            return
+    except Exception as e:
+        st.error(f"Could not load VPPA profiles: {e}")
+        return
+
+    st.caption(
+        f"Loaded `{len(profile_df):,}` hourly rows from `{source_name}` (Summary sheet). "
+        f"Workbook default year appears to be {wb_year}."
+    )
+
+    # ── Profile selection ─────────────────────────────────────────────────────
+    def _format_profile_option(profile_name: str) -> str:
+        mw = offtake_map.get(profile_name)
+        if mw is None or pd.isna(mw):
+            return profile_name
+        mw_f = float(mw)
+        mw_str = f"{mw_f:,.0f}" if mw_f.is_integer() else f"{mw_f:,.2f}".rstrip("0").rstrip(".")
+        return f"{profile_name} ({mw_str} MW)"
+
+    selected_profiles = st.multiselect(
+        "Select VPPA profiles to compare",
+        options=profile_cols,
+        default=profile_cols,
+        key="vppa_compare_selected_profiles",
+        format_func=_format_profile_option,
+    )
+    include_total = st.checkbox(
+        "Include total of selected profiles",
+        value=len(selected_profiles) > 1,
+        key="vppa_compare_include_total",
+    )
+
+    if not selected_profiles:
+        st.warning("Select at least one VPPA profile.")
+        return
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODE A — Generate TMY profiles from registry
+    # ══════════════════════════════════════════════════════════════════════════
+    if mode == "Generate TMY Profiles":
+        st.markdown("---")
+        st.subheader("2025 TMY Model Profiles")
+        st.caption(
+            "Generating TMY profiles for each selected XLS project using registry metadata. "
+            "**No curtailment** (negative-price curtailment is ignored). "
+            "**No SCED** (pure TMY weather model). "
+            "Capacity is taken from the registry (`capacity_mw`)."
+        )
+
+        registry = _load_registry()
+        if not registry:
+            st.error(f"Registry not found at `{REGISTRY_PATH}`. Cannot generate TMY profiles.")
+            return
+
+        tmy_year = 2025
+
+        # Build model series dict: {profile_col: hourly_MWh_series}
+        model_series_map: dict[str, pd.Series] = {}
+        meta_rows = []
+
+        for proj in selected_profiles:
+            meta = _match_project_meta(proj, registry)
+            if meta is None:
+                st.warning(f"⚠️ No registry match for **{proj}** — skipping.")
+                continue
+
+            p_name   = meta.get("project_name") or meta.get("name") or proj
+            tech     = meta.get("tech", "Wind")
+            lat      = float(meta.get("lat", 32.4))
+            lon      = float(meta.get("lon", -99.7))
+            cap_mw   = float(meta.get("capacity_mw", 100.0))
+            t_model  = str(meta.get("turbine_model", "GENERIC"))
+            hub_h    = float(meta.get("hub_height_m", 80.0))
+
+            meta_rows.append({
+                "XLS Profile": proj,
+                "Registry Name": p_name,
+                "Tech": tech,
+                "Capacity (MW)": cap_mw,
+                "Lat": lat,
+                "Lon": lon,
+                "Turbine": t_model if tech == "Wind" else "—",
+            })
+
+            with st.spinner(f"Generating TMY {tmy_year} for {p_name} ({tech}, {cap_mw:.0f} MW)…"):
+                try:
+                    s = _generate_tmy_profile(
+                        project_name=p_name,
+                        tech=tech,
+                        lat=lat,
+                        lon=lon,
+                        capacity_mw=cap_mw,
+                        year=tmy_year,
+                        turbine_model=t_model,
+                        hub_height_m=hub_h,
+                    )
+                    if s.empty:
+                        st.warning(f"TMY generation returned empty series for {p_name}.")
+                    else:
+                        model_series_map[proj] = s
+                except Exception as e:
+                    st.error(f"Error generating TMY for {p_name}: {e}")
+
+        if not model_series_map:
+            st.error("No TMY profiles could be generated.")
+            return
+
+        # Show registry metadata
+        with st.expander("Registry metadata used", expanded=False):
+            st.dataframe(pd.DataFrame(meta_rows), use_container_width=True, hide_index=True)
+
+        # ── Compare each project individually ──────────────────────────────
+        st.markdown("---")
+        st.subheader("Per-Project Comparison")
+
+        all_summary_rows = []
+
+        for proj in selected_profiles:
+            if proj not in model_series_map:
+                continue
+
+            model_s = model_series_map[proj]   # hourly MWh (Gen_MW * 1h)
+            profile_s_raw = profile_df[proj]   # hourly MWh from XLS
+
+            # Align on timestamps
+            combined = pd.DataFrame({"Model_MWh": model_s, proj: profile_s_raw}).dropna()
+            if combined.empty:
+                st.warning(f"No overlapping timestamps for {proj}.")
+                continue
+
+            m_s = combined["Model_MWh"]
+            p_s = combined[proj]
+
+            row = _build_metrics(m_s, p_s)
+            row["Profile"] = proj
+            all_summary_rows.append(row)
+
+        # ── Summary metrics table ──────────────────────────────────────────
+        if all_summary_rows:
+            mdf = pd.DataFrame(all_summary_rows)[[
+                "Profile", "Hours Compared", "Model Total (MWh)",
+                "Profile Total (MWh)", "Difference (MWh)", "Difference (%)",
+                "MAE (MWh/h)", "RMSE (MWh/h)", "Correlation",
+            ]]
+            st.subheader("Summary Metrics")
+            st.dataframe(
+                mdf.style.format({
+                    "Model Total (MWh)":   "{:,.0f}",
+                    "Profile Total (MWh)": "{:,.0f}",
+                    "Difference (MWh)":    "{:+,.0f}",
+                    "Difference (%)":      "{:+.2f}%",
+                    "MAE (MWh/h)":         "{:,.2f}",
+                    "RMSE (MWh/h)":        "{:,.2f}",
+                    "Correlation":         "{:.3f}",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        # ── Monthly energy comparison table & chart ────────────────────────
+        # Build a combined compare_table with one Model_MWh column (sum of all models)
+        # and individual XLS profile columns, indexed by timestamp.
+        all_model_cols = {}
+        all_profile_cols_data = {}
+        for proj in selected_profiles:
+            if proj not in model_series_map:
+                continue
+            all_model_cols[proj] = model_series_map[proj]
+            all_profile_cols_data[proj] = profile_df[proj]
+
+        if all_model_cols:
+            # Build combined frame for monthly bar chart
+            combined_all = pd.DataFrame(all_model_cols).join(
+                pd.DataFrame(all_profile_cols_data), how="outer", lsuffix="_Model", rsuffix="_XLS"
+            )
+            combined_all.index = pd.to_datetime(combined_all.index)
+            combined_all["Month"] = combined_all.index.to_period("M").astype(str)
+
+            # Build a per-project monthly summary
+            monthly_rows_all = []
+            for proj in selected_profiles:
+                model_col = proj + "_Model" if (proj + "_Model") in combined_all.columns else proj
+                xls_col   = proj + "_XLS"   if (proj + "_XLS")   in combined_all.columns else proj
+                if model_col not in combined_all.columns or xls_col not in combined_all.columns:
+                    continue
+                ml = combined_all.groupby("Month")[model_col].sum()
+                xl = combined_all.groupby("Month")[xls_col].sum()
+                for mo in sorted(set(ml.index) | set(xl.index)):
+                    monthly_rows_all.append({
+                        "Project": proj,
+                        "Month": mo,
+                        "Model TMY (MWh)": ml.get(mo, np.nan),
+                        "XLS (MWh)": xl.get(mo, np.nan),
+                    })
+
+            if monthly_rows_all:
+                monthly_df_all = pd.DataFrame(monthly_rows_all)
+                monthly_df_all["Diff (MWh)"] = monthly_df_all["Model TMY (MWh)"] - monthly_df_all["XLS (MWh)"]
+                monthly_df_all["Diff (%)"] = np.where(
+                    monthly_df_all["XLS (MWh)"] != 0,
+                    (monthly_df_all["Diff (MWh)"] / monthly_df_all["XLS (MWh)"]) * 100.0,
+                    np.nan,
+                )
+                st.subheader("Monthly Energy Breakdown")
+                st.dataframe(
+                    monthly_df_all.style.format({
+                        "Model TMY (MWh)": "{:,.0f}",
+                        "XLS (MWh)":       "{:,.0f}",
+                        "Diff (MWh)":      "{:+,.0f}",
+                        "Diff (%)":        "{:+.2f}%",
+                    }),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                # Bar chart
+                fig = go.Figure()
+                colors = ["#3A86FF", "#FF6B6B", "#FFBE0B", "#8338EC", "#06D6A0"]
+                for i, proj in enumerate(selected_profiles):
+                    sub = monthly_df_all[monthly_df_all["Project"] == proj]
+                    if sub.empty:
+                        continue
+                    c = colors[i % len(colors)]
+                    fig.add_trace(go.Bar(
+                        name=f"{proj} — Model TMY",
+                        x=sub["Month"],
+                        y=sub["Model TMY (MWh)"],
+                        marker_color=c,
+                    ))
+                    fig.add_trace(go.Bar(
+                        name=f"{proj} — XLS",
+                        x=sub["Month"],
+                        y=sub["XLS (MWh)"],
+                        marker_color=c,
+                        marker_pattern_shape="/",
+                    ))
+                fig.update_layout(
+                    barmode="group",
+                    title="Monthly Energy: Model TMY vs XLS (MWh)",
+                    xaxis_title="Month",
+                    yaxis_title="MWh",
+                    legend_title="Series",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        return  # end TMY mode
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODE B — Compare vs Bill Validation model (original flow)
+    # ══════════════════════════════════════════════════════════════════════════
+    if "val_preview_results" not in st.session_state:
+        st.info(
+            "Run a model in **Bill Validation** first, then come back here to compare "
+            "against the VPPA 8760 profiles. Or switch Mode to **Generate TMY Profiles** above."
+        )
+        return
 
     model_sources = list(st.session_state["val_preview_results"].keys())
     if not model_sources:
@@ -436,7 +804,6 @@ def render():
             options=["Hourly", "15-min"],
             index=0,
             key="vppa_compare_interval",
-            help="Choose whether to compare at hourly or 15-minute intervals.",
         )
     with c4:
         time_alignment_label = st.selectbox(
@@ -444,7 +811,6 @@ def render():
             options=["CST (No DST)", "US/Central (DST-aware)"],
             index=0,
             key="vppa_compare_time_alignment",
-            help="VPPA 8760 profiles are usually fixed standard-time hours. Use CST (No DST) for best alignment.",
         )
     with c5:
         energy_basis_label = st.selectbox(
@@ -452,102 +818,25 @@ def render():
             options=["Settled (post-curtail)", "Potential (pre-curtail)"],
             index=1,
             key="vppa_compare_energy_basis",
-            help="Potential adds curtailed MWh back before comparison.",
         )
     time_alignment = "CST_NO_DST" if time_alignment_label == "CST (No DST)" else "US_CENTRAL_DST"
     energy_basis = "POTENTIAL" if energy_basis_label == "Potential (pre-curtail)" else "SETTLED"
 
-    if source_mode == "Local file":
-        st.caption(f"Using all local VPPA workbooks found in the directory ({len(local_workbooks)} files).")
-    elif uploaded_wb is None:
-        st.caption("No workbook uploaded yet. Use the uploader above.")
-
-    try:
-        source_map = {}
-        offtake_map = {}
-        if source_mode == "Upload":
-            if uploaded_wb is None:
-                st.error("No workbook uploaded yet. Upload an Excel file above.")
-                return
-            profile_df, profile_cols, wb_year, offtake_map = load_vppa_summary_profiles_from_bytes(
-                uploaded_wb.getvalue(),
-                int(selected_year),
-            )
-            source_name = uploaded_wb.name
-        elif local_workbooks:
-            workbook_specs = tuple(
-                (str(p), int(p.stat().st_mtime_ns))
-                for p in local_workbooks
-            )
-            profile_df, profile_cols, wb_year, source_map, offtake_map = load_local_profile_catalog(
-                workbook_specs,
-                int(selected_year),
-            )
-            source_name = f"{len(local_workbooks)} local workbook(s)"
-            if source_map:
-                unique_sources = sorted(set(source_map.values()))
-                st.caption("Loaded from: " + ", ".join(f"`{n}`" for n in unique_sources))
-        else:
-            st.error("Could not find a local workbook. Upload an Excel file above.")
-            return
-    except Exception as e:
-        st.error(f"Could not load VPPA profiles: {e}")
-        return
-
-    st.caption(
-        f"Loaded `{len(profile_df):,}` hourly rows from `{source_name}` (Summary sheet). "
-        f"Workbook default year appears to be {wb_year}."
-    )
     if compare_interval == "15-min":
         st.caption("15-min mode distributes each hourly VPPA value evenly across four quarter-hour intervals.")
     if time_alignment == "CST_NO_DST":
         st.caption("Using fixed CST (no DST) alignment for model timestamps.")
-    else:
-        st.caption("Using DST-aware US/Central alignment for model timestamps.")
     if energy_basis == "POTENTIAL":
         st.caption("Comparing against potential generation (curtailment added back).")
 
     profile_shift_hours = st.number_input(
-        "VPPA Time Shift (hours)",
-        min_value=-24,
-        max_value=24,
-        value=0,
-        step=1,
+        "VPPA Time Shift (hours)", min_value=-24, max_value=24, value=0, step=1,
         key="vppa_compare_profile_shift_hours",
-        help="Shift VPPA profile timestamps to test hour alignment (positive moves VPPA later).",
     )
-
-    def _format_profile_option(profile_name: str) -> str:
-        mw = offtake_map.get(profile_name)
-        if mw is None or pd.isna(mw):
-            return profile_name
-        mw_f = float(mw)
-        mw_str = f"{mw_f:,.0f}" if mw_f.is_integer() else f"{mw_f:,.2f}".rstrip("0").rstrip(".")
-        return f"{profile_name} ({mw_str} MW)"
-
-    selected_profiles = st.multiselect(
-        "Select VPPA profiles to compare",
-        options=profile_cols,
-        default=profile_cols[: min(2, len(profile_cols))],
-        key="vppa_compare_selected_profiles",
-        format_func=_format_profile_option,
-    )
-    include_total = st.checkbox(
-        "Include total of selected profiles",
-        value=True,
-        key="vppa_compare_include_total",
-    )
-
-    if not selected_profiles:
-        st.warning("Select at least one VPPA profile.")
-        return
 
     model_df = st.session_state["val_preview_results"][model_name]
     model_series = _extract_model_series(
-        model_df,
-        compare_interval,
-        time_alignment=time_alignment,
-        energy_basis=energy_basis,
+        model_df, compare_interval, time_alignment=time_alignment, energy_basis=energy_basis,
     )
     if model_series.empty:
         st.error("Selected model source does not include usable generation data.")
@@ -569,9 +858,9 @@ def render():
         st.error("No overlapping timestamps between model data and selected VPPA profiles.")
         return
 
-    count_label = "Hours Compared" if compare_interval == "Hourly" else "Intervals Compared"
-    error_label = "MAE (MWh/h)" if compare_interval == "Hourly" else "MAE (MWh/interval)"
-    rmse_label = "RMSE (MWh/h)" if compare_interval == "Hourly" else "RMSE (MWh/interval)"
+    count_label  = "Hours Compared" if compare_interval == "Hourly" else "Intervals Compared"
+    error_label  = "MAE (MWh/h)"    if compare_interval == "Hourly" else "MAE (MWh/interval)"
+    rmse_label   = "RMSE (MWh/h)"   if compare_interval == "Hourly" else "RMSE (MWh/interval)"
     metric_rows = []
     compare_targets = selected_profiles + (["Selected Total"] if include_total else [])
     for target in compare_targets:
@@ -581,7 +870,7 @@ def render():
         metrics = _build_metrics(joined["Model_MWh"], joined[target])
         metrics[count_label] = metrics.pop("Hours Compared")
         metrics[error_label] = metrics.pop("MAE (MWh/h)")
-        metrics[rmse_label] = metrics.pop("RMSE (MWh/h)")
+        metrics[rmse_label]  = metrics.pop("RMSE (MWh/h)")
         metrics["Profile"] = target
         metric_rows.append(metrics)
 
@@ -589,93 +878,52 @@ def render():
         st.error("No overlapping timestamps between model data and selected VPPA profiles.")
         return
 
-    if metric_rows:
-        mdf = pd.DataFrame(metric_rows)[
-            [
-                "Profile",
-                count_label,
-                "Model Total (MWh)",
-                "Profile Total (MWh)",
-                "Difference (MWh)",
-                "Difference (%)",
-                error_label,
-                rmse_label,
-                "Correlation",
-            ]
-        ]
-        st.subheader("Summary Metrics")
-        st.dataframe(
-            mdf.style.format(
-                {
-                    "Model Total (MWh)": "{:,.0f}",
-                    "Profile Total (MWh)": "{:,.0f}",
-                    "Difference (MWh)": "{:+,.0f}",
-                    "Difference (%)": "{:+.2f}%",
-                    error_label: "{:,.2f}",
-                    rmse_label: "{:,.2f}",
-                    "Correlation": "{:.3f}",
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
+    mdf = pd.DataFrame(metric_rows)[[
+        "Profile", count_label, "Model Total (MWh)", "Profile Total (MWh)",
+        "Difference (MWh)", "Difference (%)", error_label, rmse_label, "Correlation",
+    ]]
+    st.subheader("Summary Metrics")
+    st.dataframe(
+        mdf.style.format({
+            "Model Total (MWh)":   "{:,.0f}",
+            "Profile Total (MWh)": "{:,.0f}",
+            "Difference (MWh)":    "{:+,.0f}",
+            "Difference (%)":      "{:+.2f}%",
+            error_label:           "{:,.2f}",
+            rmse_label:            "{:,.2f}",
+            "Correlation":         "{:.3f}",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
 
     lag_rows = []
     for target in selected_profiles:
         joined = compare_table[["Model_MWh", target]].dropna()
         if joined.empty:
             continue
-        best = _best_lag_correlation(
-            joined["Model_MWh"],
-            joined[target],
-            interval_label=compare_interval,
-            max_hours=24,
-        )
-        lag_rows.append(
-            {
-                "Profile": target,
-                "Best Lag (hours)": best["Lag (hours)"],
-                "Best Correlation": best["Correlation"],
-                "Points": best["Points"],
-            }
-        )
+        best = _best_lag_correlation(joined["Model_MWh"], joined[target], interval_label=compare_interval, max_hours=24)
+        lag_rows.append({"Profile": target, "Best Lag (hours)": best["Lag (hours)"], "Best Correlation": best["Correlation"], "Points": best["Points"]})
 
     if lag_rows:
         with st.expander("Lag Diagnostic (best correlation within +/-24 hours)", expanded=False):
             st.dataframe(
-                pd.DataFrame(lag_rows).style.format(
-                    {
-                        "Best Lag (hours)": "{:+.2f}",
-                        "Best Correlation": "{:.3f}",
-                        "Points": "{:,.0f}",
-                    }
-                ),
-                use_container_width=True,
-                hide_index=True,
+                pd.DataFrame(lag_rows).style.format({"Best Lag (hours)": "{:+.2f}", "Best Correlation": "{:.3f}", "Points": "{:,.0f}"}),
+                use_container_width=True, hide_index=True,
             )
 
     monthly_corr_targets = selected_profiles + (["Selected Total"] if include_total else [])
     monthly_corr_count_label = "Hours Compared" if compare_interval == "Hourly" else "Intervals Compared"
-    monthly_corr_df = _build_monthly_correlation(
-        compare_table,
-        monthly_corr_targets,
-        count_label=monthly_corr_count_label,
-        corr_granularity="interval",
-    )
+    monthly_corr_df = _build_monthly_correlation(compare_table, monthly_corr_targets, count_label=monthly_corr_count_label, corr_granularity="interval")
     if not monthly_corr_df.empty:
         corr_fmt = {c: "{:.3f}" for c in monthly_corr_targets if c in monthly_corr_df.columns}
         st.subheader("Monthly Correlation (Pearson R)")
         interval_caption = "hourly" if compare_interval == "Hourly" else "15-min"
         st.caption(f"Correlation is computed from {interval_caption} MWh intervals within each month.")
-        st.dataframe(
-            monthly_corr_df.style.format(corr_fmt),
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.dataframe(monthly_corr_df.style.format(corr_fmt), use_container_width=True, hide_index=True)
 
     monthly = compare_table.copy()
     monthly["Month"] = monthly.index.to_period("M").astype(str)
-    # Keep chart focused on individual selected profiles; hide "Selected Total" from bars.
     chart_targets = selected_profiles
     agg_cols = ["Model_MWh"] + chart_targets
     monthly_agg = monthly.groupby("Month", as_index=False)[agg_cols].sum()
@@ -684,13 +932,7 @@ def render():
     fig.add_trace(go.Bar(name="Model", x=monthly_agg["Month"], y=monthly_agg["Model_MWh"]))
     for target in chart_targets:
         fig.add_trace(go.Bar(name=target, x=monthly_agg["Month"], y=monthly_agg[target]))
-    fig.update_layout(
-        barmode="group",
-        title="Monthly Energy Comparison (MWh)",
-        xaxis_title="Month",
-        yaxis_title="MWh",
-        legend_title="Series",
-    )
+    fig.update_layout(barmode="group", title="Monthly Energy Comparison (MWh)", xaxis_title="Month", yaxis_title="MWh", legend_title="Series")
     st.plotly_chart(fig, use_container_width=True)
 
     monthly_table_cols = ["Model_MWh"] + selected_profiles + (["Selected Total"] if include_total else [])
@@ -705,45 +947,33 @@ def render():
         if target not in monthly_table.columns:
             continue
         diff_col = f"{target} Diff (MWh)"
-        pct_col = f"{target} Diff (%)"
+        pct_col  = f"{target} Diff (%)"
         corr_col = f"{target} Monthly Corr (R)"
         monthly_table[diff_col] = monthly_table[target] - monthly_table["Model"]
-        monthly_table[pct_col] = np.where(
-            monthly_table["Model"] != 0,
-            (monthly_table[diff_col] / monthly_table["Model"]) * 100.0,
-            np.nan,
-        )
+        monthly_table[pct_col]  = np.where(monthly_table["Model"] != 0, (monthly_table[diff_col] / monthly_table["Model"]) * 100.0, np.nan)
         if not corr_lookup.empty and target in corr_lookup.columns:
             monthly_table[corr_col] = monthly_table["Month"].map(corr_lookup[target])
         else:
             monthly_table[corr_col] = np.nan
 
-    # Append a full-period totals row.
     total_row = {"Month": "Total", "Model": float(compare_table["Model_MWh"].sum())}
     for target in table_targets:
         if target not in compare_table.columns:
             continue
         pair = compare_table[["Model_MWh", target]].dropna()
         target_total = float(pair[target].sum()) if not pair.empty else np.nan
-        total_diff = target_total - total_row["Model"] if pd.notna(target_total) else np.nan
-        total_pct = (total_diff / total_row["Model"]) * 100.0 if total_row["Model"] != 0 else np.nan
+        total_diff   = target_total - total_row["Model"] if pd.notna(target_total) else np.nan
+        total_pct    = (total_diff / total_row["Model"]) * 100.0 if total_row["Model"] != 0 else np.nan
         total_row[target] = target_total
         total_row[f"{target} Diff (MWh)"] = total_diff
-        total_row[f"{target} Diff (%)"] = total_pct
+        total_row[f"{target} Diff (%)"]   = total_pct
         total_row[f"{target} Monthly Corr (R)"] = np.nan
 
     monthly_table = pd.concat([monthly_table, pd.DataFrame([total_row])], ignore_index=True)
 
     ordered_cols = ["Month", "Model"]
     for target in table_targets:
-        ordered_cols.extend(
-            [
-                target,
-                f"{target} Diff (MWh)",
-                f"{target} Diff (%)",
-                f"{target} Monthly Corr (R)",
-            ]
-        )
+        ordered_cols.extend([target, f"{target} Diff (MWh)", f"{target} Diff (%)", f"{target} Monthly Corr (R)"])
     monthly_table = monthly_table[[c for c in ordered_cols if c in monthly_table.columns]]
 
     fmt_map = {}
@@ -762,11 +992,8 @@ def render():
     st.subheader("Monthly Energy Table (MWh)")
     interval_caption = "hourly" if compare_interval == "Hourly" else "15-min"
     st.caption(f"`Monthly Corr (R)` columns use {interval_caption} intervals within each month.")
-    st.dataframe(
-        monthly_table.style.format(fmt_map),
-        use_container_width=True,
-        hide_index=True,
-    )
+    st.dataframe(monthly_table.style.format(fmt_map), use_container_width=True, hide_index=True)
 
     with st.expander("View hourly comparison data"):
         st.dataframe(compare_table, use_container_width=True)
+
