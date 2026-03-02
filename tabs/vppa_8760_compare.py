@@ -208,13 +208,77 @@ def _parse_summary_sheet(raw: pd.DataFrame, year: int):
     return hourly, profile_cols, default_year, offtake_map
 
 
+def _parse_single_project_sheet(path: Path, year: int):
+    """Parse a single-project workbook with Date/Hour/Gen MWh columns.
+
+    Derives the profile column name from the filename (e.g. VPPA_8760s_Liberty.xlsx → Liberty).
+    Returns (hourly_df, profile_cols, default_year, offtake_map) matching _parse_summary_sheet signature.
+    """
+    # Try common sheet names
+    for sheet in ("Hourly Generation", "Sheet1", 0):
+        try:
+            raw = pd.read_excel(path, sheet_name=sheet, header=0)
+            break
+        except Exception:
+            continue
+    else:
+        raise ValueError(f"Could not find a usable sheet in {path.name}")
+
+    # Normalise column names
+    raw.columns = [str(c).strip() for c in raw.columns]
+
+    # Identify columns
+    date_col = next((c for c in raw.columns if c.lower() in ("date", "datetime")), None)
+    hour_col = next((c for c in raw.columns if c.lower() == "hour"), None)
+    gen_col = next((c for c in raw.columns if "gen" in c.lower() or "mwh" in c.lower()), None)
+
+    if date_col is None or gen_col is None:
+        raise ValueError(f"Cannot identify Date and generation columns in {path.name}: {list(raw.columns)}")
+
+    raw = raw[raw[date_col].apply(lambda v: not isinstance(v, str))].copy()
+    raw[date_col] = pd.to_datetime(raw[date_col], errors="coerce")
+    raw = raw.dropna(subset=[date_col])
+
+    if hour_col:
+        raw[hour_col] = pd.to_numeric(raw[hour_col], errors="coerce")
+        raw = raw.dropna(subset=[hour_col])
+        # Hours are typically 1-24; convert to 0-23
+        raw["_hour"] = raw[hour_col].astype(int).clip(1, 24) - 1
+        timestamps = raw[date_col] + pd.to_timedelta(raw["_hour"], unit="h")
+    else:
+        timestamps = raw[date_col]
+
+    raw[gen_col] = pd.to_numeric(raw[gen_col], errors="coerce").fillna(0.0)
+
+    default_year = int(timestamps.dt.year.mode().iloc[0]) if not timestamps.empty else year
+
+    # Derive a friendly project name from the filename
+    stem = path.stem  # e.g. "VPPA_8760s_Liberty"
+    # Strip the VPPA_8760s_ prefix if present
+    for prefix in ("VPPA_8760s_", "VPPA_8760_"):
+        if stem.startswith(prefix):
+            stem = stem[len(prefix):]
+            break
+    profile_name = stem.replace("_", " ").strip() or path.stem
+
+    hourly = pd.DataFrame({profile_name: raw[gen_col].values}, index=timestamps)
+    hourly.index.name = "Time_Central"
+    hourly = hourly.sort_index().groupby(level=0).first()
+
+    return hourly, [profile_name], default_year, {}
+
+
 @st.cache_data(show_spinner=False)
 def load_vppa_summary_profiles_from_path(path_str: str, year: int, file_mtime_ns: int):
     path = Path(path_str)
     if not path.exists():
         raise FileNotFoundError(f"Workbook not found: {path}")
-    raw = pd.read_excel(path, sheet_name="Summary", header=None)
-    return _parse_summary_sheet(raw, year)
+    # Try Summary sheet first; fall back to single-project format
+    try:
+        raw = pd.read_excel(path, sheet_name="Summary", header=None)
+        return _parse_summary_sheet(raw, year)
+    except Exception:
+        return _parse_single_project_sheet(path, year)
 
 
 @st.cache_data(show_spinner=False)
