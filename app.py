@@ -1422,10 +1422,11 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
 
 def build_multi_source_correlation_analysis(preview_results, selected_month_numbers):
     """
-    Build pairwise monthly Pearson correlations for SCED/Model/Invoice metrics.
+    Build pairwise interval-level Pearson correlations for SCED/Model/Invoice metrics
+    across all selected months (same method as by-month tables, but over the full period).
     Returns DataFrame indexed by metric with one column per available source pair.
     """
-    monthly_by_label = {}
+    interval_by_label = {}
     source_candidates = [
         ("SCED_Actual", "SCED Actual"),
         ("Model", "Model"),
@@ -1433,20 +1434,20 @@ def build_multi_source_correlation_analysis(preview_results, selected_month_numb
         ("Invoice", "Invoice"),
     ]
     for source_key, source_label in source_candidates:
-        if source_label in monthly_by_label:
+        if source_label in interval_by_label:
             continue
         if source_key not in preview_results:
             continue
-        monthly = _compute_monthly_core_metrics(preview_results.get(source_key), selected_month_numbers)
-        if not monthly.empty:
-            monthly_by_label[source_label] = monthly
+        interval_df = _compute_interval_core_metrics(preview_results.get(source_key), selected_month_numbers)
+        if not interval_df.empty:
+            interval_by_label[source_label] = interval_df
 
     pair_defs = [
         ("SCED Actual vs Model", "SCED Actual", "Model"),
         ("SCED Actual vs Invoice", "SCED Actual", "Invoice"),
         ("Model vs Invoice", "Model", "Invoice"),
     ]
-    available_pairs = [(name, left, right) for name, left, right in pair_defs if left in monthly_by_label and right in monthly_by_label]
+    available_pairs = [(name, left, right) for name, left, right in pair_defs if left in interval_by_label and right in interval_by_label]
     if not available_pairs:
         return pd.DataFrame()
 
@@ -1463,9 +1464,9 @@ def build_multi_source_correlation_analysis(preview_results, selected_month_numb
 
     out = pd.DataFrame({"Metric": [label for _, label in metrics]})
     for pair_name, left_label, right_label in available_pairs:
-        left_df = monthly_by_label[left_label][["MonthPeriod"] + [key for key, _ in metrics]]
-        right_df = monthly_by_label[right_label][["MonthPeriod"] + [key for key, _ in metrics]]
-        merged = left_df.merge(right_df, on="MonthPeriod", how="inner", suffixes=("_left", "_right"))
+        left_df = interval_by_label[left_label][["Time_Central"] + [key for key, _ in metrics]]
+        right_df = interval_by_label[right_label][["Time_Central"] + [key for key, _ in metrics]]
+        merged = left_df.merge(right_df, on="Time_Central", how="inner", suffixes=("_left", "_right"))
 
         pair_vals = []
         for metric_key, _ in metrics:
