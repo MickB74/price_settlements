@@ -44,7 +44,7 @@ def _match_project_meta(project_name: str, registry: list[dict]) -> dict | None:
 
 
 @st.cache_data(show_spinner=False)
-def _generate_tmy_profile(
+def _generate_weather_profile(
     project_name: str,
     tech: str,
     lat: float,
@@ -53,12 +53,14 @@ def _generate_tmy_profile(
     year: int,
     turbine_model: str = "GENERIC",
     hub_height_m: float = 80.0,
+    use_actual_weather: bool = True,
 ) -> pd.Series:
     """
-    Generate a TMY profile for a single project using fetch_tmy.
-    - force_tmy=True  →  typical-year weather (no actual year data)
+    Generate an hourly generation profile for a single project.
+    - use_actual_weather=True  →  Open-Meteo historical weather for the given year
+    - use_actual_weather=False →  PVGIS TMY (typical-year average)
     - no curtailment, no SCED
-    Returns an hourly Series indexed by tz-naive local timestamps.
+    Returns an hourly Series indexed by tz-naive local (Central) timestamps.
     """
     import fetch_tmy  # local import to avoid circular
 
@@ -68,7 +70,7 @@ def _generate_tmy_profile(
         capacity_mw=capacity_mw,
         lat=lat,
         lon=lon,
-        force_tmy=True,
+        force_tmy=not use_actual_weather,
         turbine_type=turbine_model if tech == "Wind" else "GENERIC",
         hub_height=int(hub_height_m),
         efficiency=0.86,  # 14% losses
@@ -77,9 +79,9 @@ def _generate_tmy_profile(
     if series is None or series.empty:
         return pd.Series(dtype=float)
 
-    # Normalise to tz-naive hourly CST-no-DST (same basis as VPPA 8760 sheets)
+    # Normalise to tz-naive hourly Central time (same basis as VPPA 8760 sheets)
     if series.index.tz is not None:
-        series = series.tz_convert("Etc/GMT+6").tz_localize(None)
+        series = series.tz_convert("US/Central").tz_localize(None)
 
     # Resample to hourly if 15-min: use .mean() because values are
     # instantaneous MW — average MW over 1 hour equals MWh for that hour.
@@ -619,24 +621,41 @@ def render():
         return
 
     # ══════════════════════════════════════════════════════════════════════════
-    # MODE A — Generate TMY profiles from registry
+    # MODE A — Generate weather-model profiles from registry
     # ══════════════════════════════════════════════════════════════════════════
     if mode == "Generate TMY Profiles":
         st.markdown("---")
-        st.subheader("2025 TMY Model Profiles")
+
+        # Weather source toggle
+        weather_source = st.radio(
+            "Weather data source",
+            ["Actual Weather (Open-Meteo)", "TMY (PVGIS long-term average)"],
+            index=0,
+            horizontal=True,
+            help="**Actual Weather** uses real historical weather for each year in the XLS. "
+                 "**TMY** uses a typical meteorological year average.",
+        )
+        use_actual = weather_source.startswith("Actual")
+
+        # Determine which years appear in the XLS data
+        xls_years = sorted(profile_df.index.year.unique())
+        if not xls_years:
+            xls_years = [2025]
+
+        source_label = "Actual Weather" if use_actual else "TMY"
+        st.subheader(f"{source_label} Model Profiles")
         st.caption(
-            "Generating TMY profiles for each selected XLS project using registry metadata. "
+            f"Generating **{source_label.lower()}** profiles for each selected XLS project "
+            f"covering years **{', '.join(str(y) for y in xls_years)}**. "
             "**No curtailment** (negative-price curtailment is ignored). "
-            "**No SCED** (pure TMY weather model). "
+            "**No SCED** (pure weather model). "
             "Capacity is taken from the registry (`capacity_mw`)."
         )
 
         registry = _load_registry()
         if not registry:
-            st.error(f"Registry not found at `{REGISTRY_PATH}`. Cannot generate TMY profiles.")
+            st.error(f"Registry not found at `{REGISTRY_PATH}`. Cannot generate profiles.")
             return
-
-        tmy_year = 2025
 
         # Build model series dict: {profile_col: hourly_MWh_series}
         model_series_map: dict[str, pd.Series] = {}
@@ -673,30 +692,39 @@ def render():
                 "Turbine": t_model if tech == "Wind" else "—",
             })
 
-            with st.spinner(f"Generating TMY {tmy_year} for {p_name} ({tech}, {display_mw:.0f} MW)…"):
-                try:
-                    s = _generate_tmy_profile(
-                        project_name=p_name,
-                        tech=tech,
-                        lat=lat,
-                        lon=lon,
-                        capacity_mw=cap_mw,
-                        year=tmy_year,
-                        turbine_model=t_model,
-                        hub_height_m=hub_h,
-                    )
-                    if s.empty:
-                        st.warning(f"TMY generation returned empty series for {p_name}.")
-                    else:
-                        # Scale to offtake share if XLS provides an offtake MW
-                        if use_offtake and abs(scale - 1.0) > 1e-6:
-                            s = s * scale
-                        model_series_map[proj] = s
-                except Exception as e:
-                    st.error(f"Error generating TMY for {p_name}: {e}")
+            # Generate model for each year in the XLS and concatenate
+            year_series = []
+            for yr in xls_years:
+                with st.spinner(f"Generating {source_label} {yr} for {p_name} ({tech}, {display_mw:.0f} MW)…"):
+                    try:
+                        s = _generate_weather_profile(
+                            project_name=p_name,
+                            tech=tech,
+                            lat=lat,
+                            lon=lon,
+                            capacity_mw=cap_mw,
+                            year=yr,
+                            turbine_model=t_model,
+                            hub_height_m=hub_h,
+                            use_actual_weather=use_actual,
+                        )
+                        if not s.empty:
+                            year_series.append(s)
+                    except Exception as e:
+                        st.warning(f"Error generating {source_label} {yr} for {p_name}: {e}")
+
+            if year_series:
+                combined_s = pd.concat(year_series).sort_index()
+                combined_s = combined_s[~combined_s.index.duplicated(keep="first")]
+                # Scale to offtake share if XLS provides an offtake MW
+                if use_offtake and abs(scale - 1.0) > 1e-6:
+                    combined_s = combined_s * scale
+                model_series_map[proj] = combined_s
+            else:
+                st.error(f"Could not generate {source_label} for {p_name} — no data returned.")
 
         if not model_series_map:
-            st.error("No TMY profiles could be generated.")
+            st.error(f"No {source_label} profiles could be generated.")
             return
 
         # Show registry metadata
