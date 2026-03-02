@@ -255,13 +255,12 @@ st.session_state.setdefault("bench_wind_model_engine_label", "Standard (Current)
 
 
 # Create Tabs
-tab_guide, tab_validation, tab_scenarios, tab_performance, tab_azure_sky, tab_vppa_8760 = st.tabs(
+tab_guide, tab_validation, tab_scenarios, tab_performance, tab_vppa_8760 = st.tabs(
     [
         "📘 Guide & Business Context",
         "Bill Validation",
         "Scenario Analysis",
         "Model Performance",
-        "Azure Sky Analysis",
         "VPPA 8760 Compare",
     ]
 )
@@ -280,7 +279,7 @@ components.html(
             
             tabs.forEach(tab => {
                 // Check for Guide, Validation, Performance, etc.
-                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("Azure Sky Analysis") || tab.innerText.includes("VPPA 8760 Compare")) && tab.getAttribute("aria-selected") === "true") {
+                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("VPPA 8760 Compare")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
@@ -6494,11 +6493,12 @@ with tab_performance:
             st.success(f"Successfully retrieved **{len(res['df_actual'])}** interval points.")
 
 # --- Azure Sky Analysis Tab ---
-with tab_azure_sky:
-    try:
-        tab_azure.render()
-    except Exception as e:
-        st.error(f"Error loading Azure Sky Analysis: {e}")
+# Azure Sky Analysis tab hidden for now
+# with tab_azure_sky:
+#     try:
+#         tab_azure.render()
+#     except Exception as e:
+#         st.error(f"Error loading Azure Sky Analysis: {e}")
         st.code(str(e))
 
 with tab_vppa_8760:
