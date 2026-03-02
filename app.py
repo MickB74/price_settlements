@@ -6499,7 +6499,7 @@ with tab_performance:
 #         tab_azure.render()
 #     except Exception as e:
 #         st.error(f"Error loading Azure Sky Analysis: {e}")
-        st.code(str(e))
+#         st.code(str(e))
 
 with tab_vppa_8760:
     try:
