@@ -1262,7 +1262,8 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
     if df_source is None or df_source.empty or "Time_Central" not in df_source.columns:
         return pd.DataFrame(columns=[
             "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP", "Settlement_$",
-            "Settlement_$/MWh", "Implied_REC_Cost_$"
+            "Settlement_$/MWh", "Settlement_$_Uniform", "Settlement_$/MWh_Uniform",
+            "Implied_REC_Cost_$"
         ])
 
     df = df_source.copy()
@@ -1271,7 +1272,8 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
     if df.empty:
         return pd.DataFrame(columns=[
             "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP", "Settlement_$",
-            "Settlement_$/MWh", "Implied_REC_Cost_$"
+            "Settlement_$/MWh", "Settlement_$_Uniform", "Settlement_$/MWh_Uniform",
+            "Implied_REC_Cost_$"
         ])
 
     month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
@@ -1280,18 +1282,22 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
     if df.empty:
         return pd.DataFrame(columns=[
             "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP", "Settlement_$",
-            "Settlement_$/MWh", "Implied_REC_Cost_$"
+            "Settlement_$/MWh", "Settlement_$_Uniform", "Settlement_$/MWh_Uniform",
+            "Implied_REC_Cost_$"
         ])
 
     if "Gen_Energy_MWh" not in df.columns:
         df["Gen_Energy_MWh"] = 0.0
     if "Settlement_$" not in df.columns:
         df["Settlement_$"] = 0.0
+    if "Settlement_$_Uniform" not in df.columns:
+        df["Settlement_$_Uniform"] = 0.0
     if "SPP" not in df.columns:
         df["SPP"] = np.nan
 
     df["Gen_Energy_MWh"] = pd.to_numeric(df["Gen_Energy_MWh"], errors="coerce").fillna(0.0)
     df["Settlement_$"] = pd.to_numeric(df["Settlement_$"], errors="coerce").fillna(0.0)
+    df["Settlement_$_Uniform"] = pd.to_numeric(df["Settlement_$_Uniform"], errors="coerce").fillna(0.0)
     df["SPP"] = pd.to_numeric(df["SPP"], errors="coerce")
 
     if "Gen_MW" in df.columns:
@@ -1313,6 +1319,7 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
                 "Gen_Energy_MWh": "sum",
                 "SPP": "mean",
                 "Settlement_$": "sum",
+                "Settlement_$_Uniform": "sum",
             }
         )
         .sort_values("MonthPeriod")
@@ -1322,9 +1329,14 @@ def _compute_monthly_core_metrics(df_source, selected_month_numbers):
         monthly["Settlement_$"] / monthly["Gen_Energy_MWh"],
         np.nan,
     )
+    monthly["Settlement_$/MWh_Uniform"] = np.where(
+        monthly["Gen_Energy_MWh"] > 0,
+        monthly["Settlement_$_Uniform"] / monthly["Gen_Energy_MWh"],
+        np.nan,
+    )
     monthly["Implied_REC_Cost_$"] = np.where(
         monthly["Gen_Energy_MWh"] > 0,
-        -(monthly["Settlement_$"] / monthly["Gen_Energy_MWh"]),
+        -(monthly["Settlement_$_Uniform"] / monthly["Gen_Energy_MWh"]),
         np.nan,
     )
     return monthly
@@ -1335,7 +1347,8 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
     if df_source is None or df_source.empty or "Time_Central" not in df_source.columns:
         return pd.DataFrame(columns=[
             "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
-            "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+            "Settlement_$", "Settlement_$/MWh", "Settlement_$_Uniform",
+            "Settlement_$/MWh_Uniform", "Implied_REC_Cost_$"
         ])
 
     df = df_source.copy()
@@ -1344,7 +1357,8 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
     if df.empty:
         return pd.DataFrame(columns=[
             "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
-            "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+            "Settlement_$", "Settlement_$/MWh", "Settlement_$_Uniform",
+            "Settlement_$/MWh_Uniform", "Implied_REC_Cost_$"
         ])
 
     month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
@@ -1353,18 +1367,22 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
     if df.empty:
         return pd.DataFrame(columns=[
             "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
-            "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+            "Settlement_$", "Settlement_$/MWh", "Settlement_$_Uniform",
+            "Settlement_$/MWh_Uniform", "Implied_REC_Cost_$"
         ])
 
     if "Gen_Energy_MWh" not in df.columns:
         df["Gen_Energy_MWh"] = 0.0
     if "Settlement_$" not in df.columns:
         df["Settlement_$"] = 0.0
+    if "Settlement_$_Uniform" not in df.columns:
+        df["Settlement_$_Uniform"] = 0.0
     if "SPP" not in df.columns:
         df["SPP"] = np.nan
 
     df["Gen_Energy_MWh"] = pd.to_numeric(df["Gen_Energy_MWh"], errors="coerce").fillna(0.0)
     df["Settlement_$"] = pd.to_numeric(df["Settlement_$"], errors="coerce").fillna(0.0)
+    df["Settlement_$_Uniform"] = pd.to_numeric(df["Settlement_$_Uniform"], errors="coerce").fillna(0.0)
     df["SPP"] = pd.to_numeric(df["SPP"], errors="coerce")
 
     if "Gen_MW" in df.columns:
@@ -1382,9 +1400,14 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
         df["Settlement_$"] / df["Gen_Energy_MWh"],
         np.nan,
     )
+    df["Settlement_$/MWh_Uniform"] = np.where(
+        df["Gen_Energy_MWh"] > 0,
+        df["Settlement_$_Uniform"] / df["Gen_Energy_MWh"],
+        np.nan,
+    )
     df["Implied_REC_Cost_$"] = np.where(
         df["Gen_Energy_MWh"] > 0,
-        -(df["Settlement_$"] / df["Gen_Energy_MWh"]),
+        -(df["Settlement_$_Uniform"] / df["Gen_Energy_MWh"]),
         np.nan,
     )
     df["MonthPeriod"] = df["Time_Central"].dt.to_period("M")
@@ -1392,7 +1415,8 @@ def _compute_interval_core_metrics(df_source, selected_month_numbers):
 
     return df[[
         "Time_Central", "MonthPeriod", "Gen_MW", "Gen_Energy_MWh", "SPP",
-        "Settlement_$", "Settlement_$/MWh", "Implied_REC_Cost_$"
+        "Settlement_$", "Settlement_$/MWh", "Settlement_$_Uniform",
+        "Settlement_$/MWh_Uniform", "Implied_REC_Cost_$"
     ]]
 
 
@@ -1430,8 +1454,10 @@ def build_multi_source_correlation_analysis(preview_results, selected_month_numb
         ("Gen_MW", "Gen MW"),
         ("Gen_Energy_MWh", "Energy MWh"),
         ("SPP", "SPP ($/MWh)"),
-        ("Settlement_$", "Settlement $"),
-        ("Settlement_$/MWh", "Settlement $/MWh"),
+        # Use uniform (raw hub SPP) settlement columns so all three sources
+        # are on the same price basis and the Pearson R is meaningful.
+        ("Settlement_$_Uniform", "Settlement $ (Hub)"),
+        ("Settlement_$/MWh_Uniform", "Settlement $/MWh (Hub)"),
         ("Implied_REC_Cost_$", "Implied REC Cost $"),
     ]
 
@@ -1491,8 +1517,10 @@ def build_multi_source_correlation_by_month(preview_results, selected_month_numb
         ("Gen_MW", "Gen MW"),
         ("Gen_Energy_MWh", "Energy MWh"),
         ("SPP", "SPP ($/MWh)"),
-        ("Settlement_$", "Settlement $"),
-        ("Settlement_$/MWh", "Settlement $/MWh"),
+        # Use uniform (raw hub SPP) settlement columns so all three sources
+        # are on the same price basis and the Pearson R is meaningful.
+        ("Settlement_$_Uniform", "Settlement $ (Hub)"),
+        ("Settlement_$/MWh_Uniform", "Settlement $/MWh (Hub)"),
         ("Implied_REC_Cost_$", "Implied REC Cost $"),
     ]
 
@@ -4351,6 +4379,11 @@ with tab_validation:
                                             settle_p = merged['Settlement_Reference_Price'] - val_vppa_price
                                         merged['Settlement_$/MWh'] = settle_p
                                         merged['Settlement_$'] = merged['Gen_Energy_MWh'] * settle_p
+                                        # Uniform settlement uses raw hub SPP (no clip) so all sources are
+                                        # on the same price basis for cross-source correlation analysis.
+                                        settle_p_uniform = merged['SPP'] - val_vppa_price
+                                        merged['Settlement_$/MWh_Uniform'] = settle_p_uniform
+                                        merged['Settlement_$_Uniform'] = merged['Gen_Energy_MWh'] * settle_p_uniform
                                         merged['Market_Revenue_$'] = merged['Gen_Energy_MWh'] * merged['Settlement_Reference_Price']
                                         merged['VPPA_Payment_$'] = merged['Gen_Energy_MWh'] * val_vppa_price
                                         merged['VPPA_Price'] = val_vppa_price
