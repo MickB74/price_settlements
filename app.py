@@ -1040,6 +1040,161 @@ def calculate_scenario(scenario, df_rtm):
     
     return df_hub
 
+def _build_settlement_excel(results: list, df_summary: pd.DataFrame, scenarios: list) -> bytes:
+    """Build a well-formatted Excel workbook for the VPPA Settlement Estimator."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        wb = writer.book
+
+        # ── Shared formats ────────────────────────────────────────────────
+        hdr_fmt = wb.add_format({
+            "bold": True, "bg_color": "#0171BB", "font_color": "#FFFFFF",
+            "border": 1, "text_wrap": True, "valign": "vcenter",
+        })
+        dollar_fmt   = wb.add_format({"num_format": "$#,##0", "border": 1})
+        dollar2_fmt  = wb.add_format({"num_format": "$#,##0.00", "border": 1})
+        number_fmt   = wb.add_format({"num_format": "#,##0", "border": 1})
+        number1_fmt  = wb.add_format({"num_format": "#,##0.0", "border": 1})
+        pct_fmt      = wb.add_format({"num_format": "0.0%", "border": 1})
+        text_fmt     = wb.add_format({"border": 1})
+        bold_fmt     = wb.add_format({"bold": True, "border": 1})
+        title_fmt    = wb.add_format({"bold": True, "font_size": 14})
+        subtitle_fmt = wb.add_format({"bold": True, "font_size": 11, "bottom": 1})
+
+        # ══════════════════════════════════════════════════════════════════
+        # Sheet 1 — Summary
+        # ══════════════════════════════════════════════════════════════════
+        ws = wb.add_worksheet("Summary")
+        writer.sheets["Summary"] = ws
+        ws.hide_gridlines(2)
+        ws.set_column("A:A", 22)
+        ws.set_column("B:G", 18)
+
+        ws.write("A1", "VPPA Settlement Summary", title_fmt)
+        ws.write("A2", f"Generated {pd.Timestamp.now():%Y-%m-%d %H:%M}", wb.add_format({"italic": True, "font_color": "#666666"}))
+
+        row = 4
+        cols = ["Scenario", "Net Settlement ($)", "Total Gen (MWh)",
+                "Curtailed (MWh)", "Capture Price ($/MWh)", "Avg Hub Price ($/MWh)"]
+        col_fmts = [text_fmt, dollar_fmt, number_fmt, number_fmt, dollar2_fmt, dollar2_fmt]
+
+        for c, col_name in enumerate(cols):
+            ws.write(row, c, col_name, hdr_fmt)
+        for r, res_row in df_summary.iterrows():
+            row += 1
+            for c, col_name in enumerate(cols):
+                ws.write(row, c, res_row[col_name], col_fmts[c])
+
+        # ── Scenario config table below summary ──────────────────────────
+        row += 3
+        ws.write(row, 0, "Scenario Configuration", subtitle_fmt)
+        ws.merge_range(row, 0, row, 5, "Scenario Configuration", subtitle_fmt)
+        row += 1
+        cfg_cols = ["Scenario", "Year", "Hub", "Technology", "Capacity (MW)", "VPPA Price ($/MWh)"]
+        for c, col_name in enumerate(cfg_cols):
+            ws.write(row, c, col_name, hdr_fmt)
+        for scen in scenarios:
+            row += 1
+            ws.write(row, 0, scen.get("name", ""), text_fmt)
+            ws.write(row, 1, scen.get("year", ""), text_fmt)
+            ws.write(row, 2, scen.get("hub", ""), text_fmt)
+            ws.write(row, 3, scen.get("tech", ""), text_fmt)
+            ws.write(row, 4, scen.get("capacity_mw", 0), number1_fmt)
+            ws.write(row, 5, scen.get("vppa_price", 0), dollar2_fmt)
+
+        # ══════════════════════════════════════════════════════════════════
+        # Sheet 2 — Monthly Breakdown (one sub-table per scenario)
+        # ══════════════════════════════════════════════════════════════════
+        ws2 = wb.add_worksheet("Monthly")
+        writer.sheets["Monthly"] = ws2
+        ws2.hide_gridlines(2)
+        ws2.set_column("A:A", 12)
+        ws2.set_column("B:E", 18)
+
+        ws2.write("A1", "Monthly Breakdown", title_fmt)
+        row2 = 2
+
+        for res in results:
+            m_agg = res.get("monthly_agg")
+            if m_agg is None or m_agg.empty:
+                continue
+            m_agg = m_agg.sort_values("Month_Num")
+
+            ws2.write(row2, 0, res["Scenario"], subtitle_fmt)
+            ws2.merge_range(row2, 0, row2, 4, res["Scenario"], subtitle_fmt)
+            row2 += 1
+
+            m_cols = ["Month", "Settlement ($)", "Generation (MWh)", "Avg $/MWh"]
+            for c, h in enumerate(m_cols):
+                ws2.write(row2, c, h, hdr_fmt)
+
+            total_settle = 0.0
+            total_gen = 0.0
+            for _, mrow in m_agg.iterrows():
+                row2 += 1
+                settle = float(mrow.get("Settlement_Amount", 0))
+                gen = float(mrow.get("Gen_Energy_MWh", 0))
+                avg_rate = settle / gen if gen else 0
+                total_settle += settle
+                total_gen += gen
+                ws2.write(row2, 0, mrow.get("Month", ""), text_fmt)
+                ws2.write(row2, 1, settle, dollar_fmt)
+                ws2.write(row2, 2, gen, number_fmt)
+                ws2.write(row2, 3, avg_rate, dollar2_fmt)
+
+            # Totals row
+            row2 += 1
+            ws2.write(row2, 0, "Total", bold_fmt)
+            ws2.write(row2, 1, total_settle, wb.add_format({"num_format": "$#,##0", "border": 1, "bold": True, "top": 6}))
+            ws2.write(row2, 2, total_gen, wb.add_format({"num_format": "#,##0", "border": 1, "bold": True, "top": 6}))
+            avg_total = total_settle / total_gen if total_gen else 0
+            ws2.write(row2, 3, avg_total, wb.add_format({"num_format": "$#,##0.00", "border": 1, "bold": True, "top": 6}))
+            row2 += 3
+
+        # ══════════════════════════════════════════════════════════════════
+        # Sheet 3 — Daily Cumulative
+        # ══════════════════════════════════════════════════════════════════
+        ws3 = wb.add_worksheet("Daily Cumulative")
+        writer.sheets["Daily Cumulative"] = ws3
+        ws3.hide_gridlines(2)
+
+        # Build a wide-format table: Date | Scenario1 | Scenario2 | ...
+        daily_frames = {}
+        for res in results:
+            d_agg = res.get("daily_agg")
+            if d_agg is None or d_agg.empty:
+                continue
+            s = d_agg.set_index("Time_Central")["Settlement_Amount"]
+            s.name = res["Scenario"]
+            daily_frames[res["Scenario"]] = s
+
+        if daily_frames:
+            df_daily_wide = pd.DataFrame(daily_frames)
+            df_daily_wide.index.name = "Date"
+            df_daily_wide = df_daily_wide.sort_index()
+
+            ws3.write("A1", "Daily Cumulative Settlement ($)", title_fmt)
+            row3 = 2
+
+            ws3.set_column(0, 0, 14)
+            ws3.set_column(1, len(daily_frames), 18)
+
+            # Header
+            date_hdr_fmt = wb.add_format({"bold": True, "bg_color": "#0171BB", "font_color": "#FFFFFF", "border": 1, "num_format": "yyyy-mm-dd"})
+            ws3.write(row3, 0, "Date", hdr_fmt)
+            for c, scen_name in enumerate(df_daily_wide.columns, start=1):
+                ws3.write(row3, c, scen_name, hdr_fmt)
+
+            date_fmt = wb.add_format({"num_format": "yyyy-mm-dd", "border": 1})
+            for _, (dt, vals) in enumerate(df_daily_wide.iterrows()):
+                row3 += 1
+                ws3.write_datetime(row3, 0, dt.to_pydatetime(), date_fmt)
+                for c, val in enumerate(vals, start=1):
+                    ws3.write(row3, c, val if pd.notna(val) else "", dollar_fmt)
+
+    return buf.getvalue()
+
+
 def generate_pdf_report(results, df_summary):
     """Generate a simpler PDF report with summary metrics, without requiring Kaleido for charts."""
     
@@ -3320,22 +3475,13 @@ with tab_scenarios:
                     st.markdown("---")
             
                     # Download Summary as Excel
-                    if st.button("Prepare Summary Excel"):
-                        excel_buffer = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                            df_summary.to_excel(writer, sheet_name='Summary', index=False)
-                            if monthly_data:
-                                df_monthly.to_excel(writer, sheet_name='Monthly Details', index=False)
-                            # We could add daily aggregates too if useful
-                
-                        st.download_button(
-                            label="Download Summary Excel",
-                            data=excel_buffer.getvalue(),
-                            file_name="vppa_summary_results.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                
-                        st.info("Note: Detailed ZIP download is disabled to save memory. Use 'View Raw Data' to download specific scenario CSVs.")
+                    excel_buffer = _build_settlement_excel(results, df_summary, st.session_state.scenarios)
+                    st.download_button(
+                        label="Download Summary Excel",
+                        data=excel_buffer,
+                        file_name="vppa_settlement_summary.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
             
                     st.markdown("---")
             
