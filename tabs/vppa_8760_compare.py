@@ -81,9 +81,10 @@ def _generate_tmy_profile(
     if series.index.tz is not None:
         series = series.tz_convert("Etc/GMT+6").tz_localize(None)
 
-    # Resample to hourly if 15-min
+    # Resample to hourly if 15-min: use .mean() because values are
+    # instantaneous MW — average MW over 1 hour equals MWh for that hour.
     if len(series) > 9000:
-        series = series.resample("h").sum()
+        series = series.resample("h").mean()
 
     series = series[series.index.year == year]
     return series
@@ -636,7 +637,7 @@ def render():
             if proj not in model_series_map:
                 continue
 
-            model_s = model_series_map[proj]   # hourly MWh (Gen_MW * 1h)
+            model_s = model_series_map[proj]   # hourly MWh (avg MW over 1h)
             profile_s_raw = profile_df[proj]   # hourly MWh from XLS
 
             # Align on timestamps
