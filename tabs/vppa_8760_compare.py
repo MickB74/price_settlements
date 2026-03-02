@@ -43,10 +43,6 @@ def _match_project_meta(project_name: str, registry: list[dict]) -> dict | None:
     return None
 
 
-_WEATHER_PROFILE_VERSION = 3  # bump to bust st.cache_data
-
-
-@st.cache_data(show_spinner=False)
 def _generate_weather_profile(
     project_name: str,
     tech: str,
@@ -57,7 +53,6 @@ def _generate_weather_profile(
     turbine_model: str = "GENERIC",
     hub_height_m: float = 80.0,
     use_actual_weather: bool = True,
-    _version: int = _WEATHER_PROFILE_VERSION,
 ) -> pd.Series:
     """
     Generate an hourly generation profile for a single project.
@@ -529,6 +524,11 @@ def _best_lag_correlation(model_s: pd.Series, profile_s: pd.Series, interval_lab
 
 
 def render():
+    # One-time purge of stale Streamlit caches from old function signatures
+    if "weather_cache_cleared" not in st.session_state:
+        st.cache_data.clear()
+        st.session_state["weather_cache_cleared"] = True
+
     st.header("VPPA 8760 Comparison")
 
     # ── Mode picker ──────────────────────────────────────────────────────────
