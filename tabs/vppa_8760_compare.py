@@ -92,11 +92,13 @@ def _generate_tmy_profile(
 
 def _list_local_workbooks():
     root = Path(__file__).resolve().parents[1]
-    candidates = [
-        p
-        for p in sorted(root.glob(WORKBOOK_GLOB))
-        if (not p.name.startswith("~$")) and p.is_file() and (p.suffix.lower() in WORKBOOK_EXTENSIONS)
-    ]
+    # Gather workbooks matching VPPA_8760* plus standalone Liberty.xlsx
+    found = set()
+    for pattern in (WORKBOOK_GLOB, "Liberty.xlsx"):
+        for p in root.glob(pattern):
+            if (not p.name.startswith("~$")) and p.is_file() and (p.suffix.lower() in WORKBOOK_EXTENSIONS):
+                found.add(p)
+    candidates = sorted(found, key=lambda p: p.name.lower())
     # Prefer the original workbook first if present.
     candidates.sort(key=lambda p: (0 if p.name == WORKBOOK_PATH.name else 1, p.name.lower()))
     return candidates

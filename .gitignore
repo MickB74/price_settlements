@@ -20,5 +20,7 @@ ercot_assets_expanded.json
 # Data Files
 *.csv
 *.xlsx
+!VPPA_8760*.xlsx
+!Liberty.xlsx
 test data/
 ~$*
