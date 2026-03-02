@@ -525,9 +525,9 @@ def _best_lag_correlation(model_s: pd.Series, profile_s: pd.Series, interval_lab
 
 def render():
     # One-time purge of stale Streamlit caches from old function signatures
-    if "weather_cache_cleared" not in st.session_state:
+    if "weather_cache_v2" not in st.session_state:
         st.cache_data.clear()
-        st.session_state["weather_cache_cleared"] = True
+        st.session_state["weather_cache_v2"] = True
 
     st.header("VPPA 8760 Comparison")
 
