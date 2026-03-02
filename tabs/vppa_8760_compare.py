@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 # Bump this any time cached behaviour needs to be invalidated on deploy.
-_CODE_VERSION = "2026-03-02-v3"
+_CODE_VERSION = "2026-03-02-v4"
 
 
 WORKBOOK_PATH = Path(__file__).resolve().parents[1] / "VPPA_8760s.xlsx"
@@ -33,14 +33,18 @@ def _load_registry() -> list[dict]:
 def _match_project_meta(project_name: str, registry: list[dict]) -> dict | None:
     """Fuzzy-match a project name to a registry entry (case-insensitive substring)."""
     needle = project_name.strip().lower()
+    if not needle:
+        return None
     # Exact match first
     for p in registry:
         candidate = (p.get("project_name") or p.get("name") or "").strip().lower()
-        if candidate == needle:
+        if candidate and candidate == needle:
             return p
-    # Substring match
+    # Substring match — skip entries with no usable name
     for p in registry:
         candidate = (p.get("project_name") or p.get("name") or "").strip().lower()
+        if not candidate:
+            continue
         if needle in candidate or candidate in needle:
             return p
     return None
