@@ -879,6 +879,27 @@ def render():
                     (monthly_df_all["Diff (MWh)"] / monthly_df_all["XLS (MWh)"]) * 100.0,
                     np.nan,
                 )
+
+                # Append a TOTAL row per project
+                total_rows = []
+                for proj in monthly_df_all["Project"].unique():
+                    sub = monthly_df_all[monthly_df_all["Project"] == proj]
+                    m_total = sub[model_col_name].sum()
+                    x_total = sub["XLS (MWh)"].sum()
+                    diff_mwh = m_total - x_total
+                    diff_pct = (diff_mwh / x_total * 100.0) if x_total != 0 else np.nan
+                    total_rows.append({
+                        "Project": proj,
+                        "Month": "TOTAL",
+                        model_col_name: m_total,
+                        "XLS (MWh)": x_total,
+                        "Diff (MWh)": diff_mwh,
+                        "Diff (%)": diff_pct,
+                    })
+                monthly_df_all = pd.concat(
+                    [monthly_df_all, pd.DataFrame(total_rows)], ignore_index=True,
+                )
+
                 st.subheader("Monthly Energy Breakdown")
                 st.dataframe(
                     monthly_df_all.style.format({
