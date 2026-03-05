@@ -50,6 +50,20 @@ def _convert_single_bill(input_file: Path):
     df = df[pd.to_datetime(df['Date'], errors='coerce').notna()].copy()
 
     df['Time'] = pd.to_datetime(df['Date'])
+
+    # Invoice files use interval-ENDING timestamps. The closing row of a monthly
+    # invoice (e.g. "2026-02-01 00:00:00" at the end of a January invoice) belongs
+    # to the last interval of the prior month but gets grouped as February by dt.month.
+    # Drop these exact midnight month-boundary rows to avoid spurious month bleed.
+    midnight_boundary = (
+        (df['Time'].dt.day == 1) &
+        (df['Time'].dt.hour == 0) &
+        (df['Time'].dt.minute == 0) &
+        (df['Time'].dt.second == 0)
+    )
+    if midnight_boundary.any():
+        print(f"  Dropping {midnight_boundary.sum()} midnight month-boundary row(s) from {input_file.name}")
+        df = df[~midnight_boundary].copy()
     
     # Localize to Central
     # ambiguous='infer' relies on the order being correct (falling back)
