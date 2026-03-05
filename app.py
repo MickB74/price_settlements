@@ -4762,6 +4762,11 @@ with tab_validation:
                     df_month = df.copy()
                     df_month['MonthPeriod'] = pd.to_datetime(df_month['Time_Central'], errors='coerce').dt.to_period('M')
                     df_month = df_month.dropna(subset=['MonthPeriod'])
+                    # Filter to only selected months (same as computation filter)
+                    _m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+                    _sel_names = st.session_state.get("sb_months", _m_list)
+                    _sel_nums = [i+1 for i, m in enumerate(_m_list) if m in _sel_names] or list(range(1, 13))
+                    df_month = df_month[pd.to_datetime(df_month['Time_Central'], errors='coerce').dt.month.isin(_sel_nums)]
                     if not df_month.empty:
                         month_agg = (
                             df_month.groupby('MonthPeriod', as_index=False)[['Gen_Energy_MWh', 'Settlement_$', 'Market_Revenue_$']]
