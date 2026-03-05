@@ -4940,6 +4940,11 @@ with tab_validation:
             df_monthly_kpi = df_source.copy()
             df_monthly_kpi["MonthPeriod"] = pd.to_datetime(df_monthly_kpi["Time_Central"], errors="coerce").dt.to_period("M")
             df_monthly_kpi = df_monthly_kpi.dropna(subset=["MonthPeriod"])
+            # Filter to only user-selected months
+            if selected_month_numbers:
+                df_monthly_kpi = df_monthly_kpi[
+                    pd.to_datetime(df_monthly_kpi["Time_Central"], errors="coerce").dt.month.isin(selected_month_numbers)
+                ]
             if df_monthly_kpi.empty:
                 continue
 
