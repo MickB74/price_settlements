@@ -4454,9 +4454,12 @@ with tab_validation:
                                     
                                     merged = pd.merge(df_market_hub, pdf[['Time_Central', 'Gen_Energy_MWh', 'Gen_MW']], on='Time_Central', how='inner')
                                     
-                                    # Filter by selected months
+                                    # Filter by selected months (use sb_months sidebar multiselect)
                                     m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-                                    sel_m_nums = [i+1 for i, m in enumerate(m_list) if st.session_state.get(f"val_sel_{m}", True)]
+                                    selected_month_names = st.session_state.get("sb_months", m_list)
+                                    sel_m_nums = [i+1 for i, m in enumerate(m_list) if m in selected_month_names]
+                                    if not sel_m_nums:
+                                        sel_m_nums = list(range(1, 13))  # fallback: all months
                                     
                                     if sel_m_nums:
                                         merged = merged[merged['Time_Central'].dt.month.isin(sel_m_nums)].copy()
