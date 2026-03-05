@@ -5095,6 +5095,8 @@ with tab_validation:
         fig = go.Figure()
         
         for name, df in preview_results.items():
+            if selected_month_numbers:
+                df = df[df['Time_Central'].dt.month.isin(selected_month_numbers)]
             if preview_view == "Monthly":
                 df['Month'] = df['Time_Central'].dt.to_period('M').astype(str)
                 chart_df = df.groupby('Month').agg({'Settlement_$': 'sum'}).reset_index()
@@ -5103,7 +5105,7 @@ with tab_validation:
                 df['Date'] = df['Time_Central'].dt.date
                 chart_df = df.groupby('Date').agg({'Settlement_$': 'sum'}).reset_index()
                 x_col = 'Date'
-            
+
             if len(preview_results) > 1:
                 if preview_view == "Monthly":
                     # Use grouped bars for monthly comparison
@@ -5155,6 +5157,8 @@ with tab_validation:
         fig_gen = go.Figure()
         
         for name, df in preview_results.items():
+            if selected_month_numbers:
+                df = df[df['Time_Central'].dt.month.isin(selected_month_numbers)]
             if preview_view == "Monthly":
                 # derivating Month aggregator
                 df['Month'] = df['Time_Central'].dt.to_period('M').astype(str)
@@ -5210,14 +5214,18 @@ with tab_validation:
         # 4. Preview and Download for Primary
         st.markdown(f"### 📋 15-Minute Interval Data Preview ({primary_name})")
         st.caption("Showing first 100 intervals")
-        
-        df_primary['Implied_REC_Cost_$'] = df_primary['Settlement_$']
-        
-        if 'VPPA_Price' not in df_primary.columns:
-            df_primary['VPPA_Price'] = val_vppa_price
-        
+
+        df_primary_filtered = df_primary.copy()
+        if selected_month_numbers:
+            df_primary_filtered = df_primary_filtered[df_primary_filtered['Time_Central'].dt.month.isin(selected_month_numbers)]
+
+        df_primary_filtered['Implied_REC_Cost_$'] = df_primary_filtered['Settlement_$']
+
+        if 'VPPA_Price' not in df_primary_filtered.columns:
+            df_primary_filtered['VPPA_Price'] = val_vppa_price
+
         display_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$/MWh', 'Settlement_$', 'Implied_REC_Cost_$', 'VPPA_Price']
-        preview_df = df_primary[display_cols].head(100).copy()
+        preview_df = df_primary_filtered[display_cols].head(100).copy()
         preview_df['Time_Central'] = preview_df['Time_Central'].dt.strftime('%Y-%m-%d %H:%M')
         
         st.dataframe(
@@ -5235,7 +5243,7 @@ with tab_validation:
         )
         
         # Download full dataset
-        csv = df_primary[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
+        csv = df_primary_filtered[['Time_Central'] + display_cols[1:]].to_csv(index=False).encode('utf-8')
         p_tech = st.session_state.get('val_preview_tech', 'profile')
         st.download_button(
             label=f"📥 Download Full {primary_name} Intervals CSV",
@@ -5255,19 +5263,18 @@ with tab_validation:
             base_cols = ['Time_Central', 'Gen_MW', 'Gen_Energy_MWh', 'SPP', 'Settlement_$', 'Settlement_$/MWh']
             
             for name, df_scen in preview_results.items():
+                if selected_month_numbers:
+                    df_scen = df_scen[df_scen['Time_Central'].dt.month.isin(selected_month_numbers)]
                 # Ensure Implied REC Cost is calculated
                 if 'Implied_REC_Cost_$' not in df_scen.columns:
                      df_scen['Implied_REC_Cost_$'] = df_scen['Settlement_$']
-                
+
                 if 'VPPA_Price' not in df_scen.columns:
                      df_scen['VPPA_Price'] = val_vppa_price
-                
+
                 # Select columns
-                # SPP is common, but might vary if we had different price years (unlikely here)
-                # We'll include SPP for each just in case, or skipping it if redundant? 
-                # Better to include it to be safe.
                 cols_to_use = base_cols + ['Implied_REC_Cost_$', 'VPPA_Price']
-                
+
                 temp_df = df_scen[cols_to_use].copy()
                 
                 # Rename columns (except Time)
