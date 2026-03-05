@@ -5,14 +5,29 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 INPUT_FILES = [
     REPO_ROOT / "AzureSkyActuals.xlsx",
     REPO_ROOT / "AzureSkyActuals2.xlsx",
+    REPO_ROOT / "AzureSkyActualsJan2026.xlsx",
 ]
 OUTPUT_FILE = REPO_ROOT / "data_static" / "Settlement_Invoice_Actuals.parquet"
 LEGACY_OUTPUT_FILE = REPO_ROOT / "sced_cache" / "Settlement_Invoice_Actuals.parquet"
 
+def _find_header_row(input_file: Path) -> int:
+    """Scan the first 20 rows to find which row contains the 'Date' column header."""
+    try:
+        raw = pd.read_excel(input_file, header=None, nrows=20)
+    except Exception:
+        return 0
+    for i, row in raw.iterrows():
+        if any(str(v).strip() == 'Date' for v in row):
+            return i
+    return 0  # Default: first row is the header
+
 def _convert_single_bill(input_file: Path):
     print(f"Reading {input_file}...")
+    header_row = _find_header_row(input_file)
+    if header_row > 0:
+        print(f"  Detected header at row {header_row} in {input_file.name}")
     try:
-        df = pd.read_excel(input_file)
+        df = pd.read_excel(input_file, header=header_row)
     except Exception as e:
         print(f"Failed to read Excel {input_file}: {e}")
         return None
@@ -30,6 +45,9 @@ def _convert_single_bill(input_file: Path):
         df = df.sort_values(['Date', 'Settlement Interval']).reset_index(drop=True)
     else:
         df = df.sort_values('Date').reset_index(drop=True)
+
+    # Drop non-data rows (e.g. "Totals:" footer rows in newer invoice formats)
+    df = df[pd.to_datetime(df['Date'], errors='coerce').notna()].copy()
 
     df['Time'] = pd.to_datetime(df['Date'])
     
