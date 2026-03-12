@@ -599,6 +599,8 @@
         "lat": 33.88,
         "lon": -100.90,
         "county": "Motley",
+        "tracking_type": "single_axis",
+        "dc_ac_ratio": 1.3,
         "location_confidence": "high",
         "location_source": "user-provided coordinates"
     }
