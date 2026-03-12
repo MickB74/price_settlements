@@ -589,5 +589,17 @@
         "lon": -94.85048,
         "location_confidence": "high",
         "location_source": "user-provided coordinates"
+    },
+    "Stafford Solar": {
+        "resource_name": "STAFFORD_SOLAR_AGG",
+        "project_name": "Stafford Solar",
+        "tech": "Solar",
+        "capacity_mw": 250.0,
+        "hub": "West",
+        "lat": 33.88,
+        "lon": -100.90,
+        "county": "Motley",
+        "location_confidence": "high",
+        "location_source": "user-provided coordinates"
     }
 }

@@ -172,7 +172,55 @@ def get_asset_actual_gen(resource_name, date):
         df_result = _normalize_asset_cache_df(df_result)
         df_result.to_parquet(asset_cache)
         return df_result
-        
+
+    # Special handling for Stafford Solar (Buzios) aggregation
+    if resource_name == "STAFFORD_SOLAR_AGG":
+        buzi_units = ["BUZI_SLR_UNIT1", "BUZI_SLR_UNIT2", "BUZI_SLR_UNIT3", "BUZI_SLR_UNIT4"]
+        unit_dfs = []
+
+        for unit in buzi_units:
+            df_unit = get_asset_actual_gen(unit, date)
+            if not df_unit.empty:
+                unit_dfs.append(df_unit.set_index('Time'))
+
+        if not unit_dfs:
+            latest_disclosure = (datetime.now() - timedelta(days=60)).date()
+            if date <= latest_disclosure:
+                pd.DataFrame(columns=expected_cols).to_parquet(asset_cache)
+            return pd.DataFrame()
+
+        df_combined = pd.concat(unit_dfs, axis=1)
+
+        actual_mw_cols = [i for i, col in enumerate(df_combined.columns) if col == 'Actual_MW']
+        energy_cols    = [i for i, col in enumerate(df_combined.columns) if col == 'MWh_interval']
+        coverage_cols  = [i for i, col in enumerate(df_combined.columns) if col == 'coverage']
+
+        df_result = pd.DataFrame({
+            'Time': df_combined.index,
+            'Actual_MW': df_combined.iloc[:, actual_mw_cols].sum(axis=1),
+            'MWh_interval': (
+                df_combined.iloc[:, energy_cols].sum(axis=1)
+                if energy_cols
+                else (df_combined.iloc[:, actual_mw_cols].sum(axis=1) * 0.25)
+            ),
+            'coverage': (
+                df_combined.iloc[:, coverage_cols].mean(axis=1)
+                if coverage_cols
+                else 1.0
+            ),
+        }).reset_index(drop=True)
+
+        base_point_cols = [i for i, col in enumerate(df_combined.columns) if col == 'Base_Point_MW']
+        if base_point_cols:
+            bp = df_combined.iloc[:, base_point_cols].apply(pd.to_numeric, errors='coerce')
+            df_result['Base_Point_MW'] = bp.sum(axis=1, min_count=1).values
+        else:
+            df_result['Base_Point_MW'] = pd.NA
+
+        df_result = _normalize_asset_cache_df(df_result)
+        df_result.to_parquet(asset_cache)
+        return df_result
+
     # Otherwise, get the full daily disclosure (potentially from cache)
     df_full = get_daily_disclosure(date)
     if df_full.empty:
