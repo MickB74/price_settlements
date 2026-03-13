@@ -3812,12 +3812,15 @@ with tab_validation:
                         # Just display it for now.
                         pass
 
-        # Azure Sky default year in Specific Project mode.
+        # Project Specific Defaults
         prev_project = st.session_state.get("val_prev_specific_project_name")
         if val_source == "Specific Project":
-            if selected_project_name == "Azure Sky Wind":
-                if prev_source != "Specific Project" or prev_project != "Azure Sky Wind":
+            is_new_selection = (prev_source != "Specific Project" or prev_project != selected_project_name)
+            if is_new_selection:
+                if selected_project_name == "Azure Sky Wind":
                     st.session_state["val_year"] = 2025
+                elif selected_project_name == "Stafford Solar":
+                    st.session_state["val_price"] = 42.55
             st.session_state["val_prev_specific_project_name"] = selected_project_name
 
         with c2:
