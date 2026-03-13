@@ -3819,8 +3819,10 @@ with tab_validation:
             if is_new_selection:
                 if selected_project_name == "Azure Sky Wind":
                     st.session_state["val_year"] = 2025
+                    st.session_state["val_hub"] = "HB_NORTH" # Azure Sky is North
                 elif selected_project_name == "Stafford Solar":
                     st.session_state["val_price"] = 42.55
+                    st.session_state["val_hub"] = "HB_WEST" # Stafford settles West
             st.session_state["val_prev_specific_project_name"] = selected_project_name
 
         with c2:
