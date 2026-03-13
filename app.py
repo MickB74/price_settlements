@@ -3865,7 +3865,8 @@ with tab_validation:
             if val_source == "Generic / Hub":
                 preview_tech = st.selectbox("Technology", ["Solar", "Wind"], key="preview_tech")
             else:
-                st.text_input("Technology", value=default_tech, disabled=True, key="preview_tech_display")
+                st.text_input("Technology", value=default_tech, disabled=True, key=f"preview_tech_display_{selected_project_name}")
+                preview_tech = default_tech # Use project tech
                 preview_tech = default_tech # Use project tech
 
         with c6:
