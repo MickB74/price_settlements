@@ -148,6 +148,78 @@ def solar_from_ghi(ghi_series, capacity_mw, efficiency=0.85, tracking=True, dc_a
     # Clip to AC Capacity (Inverter Limit)
     return dc_gen.clip(lower=0.0, upper=capacity_mw)
 
+try:
+    import pvlib
+    from pvlib import irradiance, tracking, pvsystem, temperature
+    HAS_PVLIB = True
+except ImportError:
+    HAS_PVLIB = False
+
+def solar_from_weather_pvlib(df_weather, capacity_mw, lat, lon, dc_ac_ratio=1.3, efficiency=0.85):
+    """
+    Estimates solar generation using a physical single-axis tracking model (NX Horizon style) via pvlib.
+    Requires df_weather to have time index (tz-aware) and columns:
+        - GHI_Wm2, DNI_Wm2, DHI_Wm2
+        - Temp_C (2m temperature)
+    """
+    if not HAS_PVLIB:
+        print("Warning: pvlib not installed. Falling back to simple heuristic model.")
+        return solar_from_ghi(df_weather['GHI_Wm2'], capacity_mw, efficiency=0.85, tracking=True, dc_ac_ratio=dc_ac_ratio)
+
+    times = df_weather.index
+    
+    # Calculate Solar Position
+    solpos = pvlib.solarposition.get_solarposition(times, lat, lon)
+    
+    # Single Axis Tracker Configuration (NX Horizon typical)
+    # axis_azimuth=180 (North-South axis), max_angle=60 degrees, backtrack=True, gcr=0.35
+    tracker_data = tracking.singleaxis(
+        apparent_zenith=solpos['apparent_zenith'],
+        solar_azimuth=solpos['azimuth'],
+        axis_tilt=0,
+        axis_azimuth=180,
+        max_angle=60,
+        backtrack=True,
+        gcr=0.35
+    )
+    
+    # Calculate Plane-of-Array (POA) Irradiance
+    poa_irrad = irradiance.get_total_irradiance(
+        surface_tilt=tracker_data['surface_tilt'],
+        surface_azimuth=tracker_data['surface_azimuth'],
+        dni=df_weather['DNI_Wm2'],
+        ghi=df_weather['GHI_Wm2'],
+        dhi=df_weather['DHI_Wm2'],
+        solar_zenith=solpos['apparent_zenith'],
+        solar_azimuth=solpos['azimuth']
+    )
+    
+    # Calculate Cell Temperature using SAPM (open rack glass/polymer)
+    temp_cell = temperature.sapm_cell(
+        poa_irrad['poa_global'],
+        df_weather['Temp_C'],
+        wind_speed=df_weather.get('Wind_Speed_10m_mps', 2.0), # Default 2m/s if missing
+        a=-3.56, b=-0.075, deltaT=3  # open_rack_glass_polymer
+    )
+    
+    # PVWatts DC Power Model (Temperature corrected)
+    # Temperature coefficient of power (gamma_pdc) typically -0.004 to -0.0035 for monocrystalline
+    dc_capacity = capacity_mw * dc_ac_ratio
+    pdc = pvsystem.pvwatts_dc(
+        effective_irradiance=poa_irrad['poa_global'],
+        temp_cell=temp_cell,
+        pdc0=dc_capacity,
+        gamma_pdc=-0.004,
+        temp_ref=25.0
+    )
+    
+    # Apply system efficiency losses (soiling, shading, wiring, etc.)
+    pdc = pdc * efficiency
+    
+    # Clip to AC Inverter Capacity
+    return pdc.clip(lower=0.0, upper=capacity_mw)
+
+
 def wind_from_speed(speed_series, capacity_mw, turbine_type="GENERIC"):
     """Estimates wind generation from wind speed using specific power curve."""
     # Ensure numpy array for vectorization
@@ -177,7 +249,7 @@ def get_openmeteo_data(year, lat, lon):
         "longitude": lon,
         "start_date": f"{year}-01-01",
         "end_date": f"{year+1}-01-02", # Fetch TWO extra days to cover UTC-Central offset at year end and avoid boundary issues
-        "hourly": "shortwave_radiation,wind_speed_10m,wind_speed_100m",
+        "hourly": "shortwave_radiation,direct_radiation,diffuse_radiation,temperature_2m,wind_speed_10m,wind_speed_100m",
         "timezone": "UTC"
     }
 
@@ -189,7 +261,7 @@ def get_openmeteo_data(year, lat, lon):
     params["end_date"] = str(safe_end)
 
     
-    print(f"Fetching Open-Meteo {year} data (10m + 100m wind) for {lat}, {lon}...")
+    print(f"Fetching Open-Meteo {year} data (Solar DNI/DHI + Temp + 10m/100m wind) for {lat}, {lon}...")
     
     try:
         response = requests.get(url, params=params)
@@ -205,9 +277,12 @@ def get_openmeteo_data(year, lat, lon):
         # shortwave_radiation = GHI (W/m2)
         # wind_speed_10m is in km/h -> Convert to m/s
         df['GHI_Wm2'] = df['shortwave_radiation']
+        df['DNI_Wm2'] = df['direct_radiation']
+        df['DHI_Wm2'] = df['diffuse_radiation']
+        df['Temp_C']  = df['temperature_2m']
         df['Wind_Speed_10m_mps'] = df['wind_speed_10m'] / 3.6
 
-        out_cols = ['datetime', 'GHI_Wm2', 'Wind_Speed_10m_mps']
+        out_cols = ['datetime', 'GHI_Wm2', 'DNI_Wm2', 'DHI_Wm2', 'Temp_C', 'Wind_Speed_10m_mps']
         if 'wind_speed_100m' in df.columns:
             df['Wind_Speed_100m_mps'] = df['wind_speed_100m'] / 3.6
             out_cols.append('Wind_Speed_100m_mps')
@@ -586,16 +661,36 @@ def get_profile_for_year(
         if source_type == "Actual":
             # PVGIS: G(h) = Gb(i) + Gd(i) (approx on horizontal)
             irradiance = df_data['Gb(i)'] + df_data['Gd(i)'] + df_data.get('Gr(i)', 0)
+            mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking, efficiency=efficiency)
         elif source_type == "OpenMeteo_Actual":
-            # Open-Meteo: GHI provided directly
-            irradiance = df_data['GHI_Wm2']
+            if tracking and HAS_PVLIB and all(c in df_data.columns for c in ['DNI_Wm2', 'DHI_Wm2', 'Temp_C']):
+                # We have detailed weather data and PVLib is available: use physical tracker model
+                # Ensure the index is a timezone-aware DatetimeIndex for solarposition calculations
+                df_weather = df_data.copy()
+                df_weather.index = pd.to_datetime(df_weather['datetime'], utc=True)
+                
+                # Assume a standard DC/AC ratio for tracking setups if not otherwise specified
+                dc_ac = 1.3 
+                mw_hourly = solar_from_weather_pvlib(
+                    df_weather, 
+                    capacity_mw=capacity_mw, 
+                    lat=lat, 
+                    lon=lon, 
+                    dc_ac_ratio=dc_ac, 
+                    efficiency=efficiency
+                )
+                # Ensure the resulting Series has the same basic index formatting as the original
+                mw_hourly.index = df_data.index 
+            else:
+                # Fall back to GHI heuristic
+                irradiance = df_data['GHI_Wm2']
+                mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking, efficiency=efficiency)
         elif source_type == "TMY":
             # PVGIS TMY: G(h)
             irradiance = df_data['G(h)']
+            mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking, efficiency=efficiency)
         else:
             return pd.Series()
-            
-        mw_hourly = solar_from_ghi(irradiance, capacity_mw, tracking=tracking, efficiency=efficiency)
         
     elif tech == "Wind":
         if source_type in ["Actual", "TMY", "OpenMeteo_Actual", "HRRR_Cached"]:
