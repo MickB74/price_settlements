@@ -1024,6 +1024,24 @@ def calculate_scenario(scenario, df_rtm):
         df_hub['Settlement_Price'] = (upside * revenue_share_pct) + downside
     else:
         df_hub['Settlement_Price'] = df_hub['SPP'] - vppa_price
+        
+    # Negative Price Floor Logic
+    # If the generator stops losing money below a certain negative SPP (e.g. they curtail or have a hedge floor)
+    floor_price = scenario.get('negative_price_floor')
+    if floor_price is not None:
+        # We only apply the floor to the SPP *before* calculating the settlement against the strike
+        # Example: Strike is $40. SPP is -$20. Floor is -$3. 
+        # Without floor: Settlement = -$20 - $40 = -$60
+        # With floor: Effective SPP = -$3. Settlement = -$3 - $40 = -$43.
+        # This means the project's worst case SPP is capped at the floor.
+        effective_spp = np.maximum(df_hub['SPP'], floor_price)
+        if revenue_share_pct < 1.0:
+            upside = np.maximum(effective_spp - vppa_price, 0)
+            downside = np.minimum(effective_spp - vppa_price, 0)
+            df_hub['Settlement_Price'] = (upside * revenue_share_pct) + downside
+        else:
+            df_hub['Settlement_Price'] = effective_spp - vppa_price
+            
     
     # Curtailment
     if scenario.get('no_curtailment'):
@@ -2584,6 +2602,7 @@ with st.sidebar:
                                     "asset_name": ast_name,
                                     "asset_capacity_mw": ast_cap,
                                     "bill_file_path": bill_path,
+                                    "negative_price_floor": st.session_state.get("val_price_floor", -3.0) if st.session_state.get("val_use_price_floor", False) else None,
                             }
                             st.session_state.scenarios.append(new_scenario)
                             added_count += 1
@@ -2689,6 +2708,7 @@ with st.sidebar:
                                 "asset_name": ast_name,
                                 "asset_capacity_mw": ast_cap,
                                 "bill_file_path": bill_path,
+                                "negative_price_floor": st.session_state.get("val_price_floor", -3.0) if st.session_state.get("val_use_price_floor", False) else None,
                         }
                         st.session_state.scenarios.append(new_scenario)
                         added_count += 1
@@ -3836,6 +3856,13 @@ with tab_validation:
                 help="% of upside buyer receives when SPP > PPA price.",
                 key="val_revenue_share"
             )
+            
+        with st.expander("Advanced Settlement Options", expanded=False):
+            c_adv1, c_adv2 = st.columns(2)
+            with c_adv1:
+                val_use_price_floor = st.checkbox("Apply Negative Price Floor", value=False, help="Limits the downside of negative SPP prices if the project curtails or has a floor hedge.", key="val_use_price_floor")
+            with c_adv2:
+                val_price_floor = st.number_input("Floor SPP Price ($/MWh)", value=-3.0, step=1.0, disabled=not val_use_price_floor, key="val_price_floor")
 
         # Month selector
         _ALL_MONTHS = ["January", "February", "March", "April", "May", "June",
@@ -4541,12 +4568,22 @@ with tab_validation:
                                             pass
                                         
                                         rs_pct = val_revenue_share / 100.0
+                                        
+                                        # Apply Negative Price Floor (from UI options)
+                                        apply_floor = st.session_state.get("val_use_price_floor", False)
+                                        floor_price = st.session_state.get("val_price_floor", -3.0)
+                                        
+                                        if apply_floor:
+                                            effective_spp = np.maximum(merged['Settlement_Reference_Price'], floor_price)
+                                        else:
+                                            effective_spp = merged['Settlement_Reference_Price']
+                                            
                                         if rs_pct < 1.0:
-                                            upside = np.maximum(merged['Settlement_Reference_Price'] - val_vppa_price, 0)
-                                            downside = np.minimum(merged['Settlement_Reference_Price'] - val_vppa_price, 0)
+                                            upside = np.maximum(effective_spp - val_vppa_price, 0)
+                                            downside = np.minimum(effective_spp - val_vppa_price, 0)
                                             settle_p = (upside * rs_pct) + downside
                                         else:
-                                            settle_p = merged['Settlement_Reference_Price'] - val_vppa_price
+                                            settle_p = effective_spp - val_vppa_price
                                         merged['Settlement_$/MWh'] = settle_p
                                         merged['Settlement_$'] = merged['Gen_Energy_MWh'] * settle_p
                                         # Uniform settlement uses raw hub SPP (no clip) so all sources are
