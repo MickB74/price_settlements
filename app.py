@@ -3858,7 +3858,9 @@ with tab_validation:
             )
             
         with st.expander("Advanced Settlement Options", expanded=False):
-            c_adv1, c_adv2 = st.columns(2)
+            c_adv0, c_adv1, c_adv2 = st.columns(3)
+            with c_adv0:
+                curtail_neg = st.checkbox("Curtail when Price < $0", value=True, help="Set Generation to 0 MWh when Hub Price is negative", key="val_curtail_neg")
             with c_adv1:
                 val_use_price_floor = st.checkbox("Apply Negative Price Floor", value=False, help="Limits the downside of negative SPP prices if the project curtails or has a floor hedge.", key="val_use_price_floor")
             with c_adv2:
@@ -4116,7 +4118,6 @@ with tab_validation:
         c8, c9 = st.columns([3, 1])
         with c8:
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            curtail_neg = st.checkbox("Curtail when Price < $0", value=True, help="Set Generation to 0 MWh when Hub Price is negative", key="val_curtail_neg")
         with c9:
              if st.button("📈 Generate Preview", type="primary", use_container_width=True):
                 with st.spinner("Generating profile..."):
