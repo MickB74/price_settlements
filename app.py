@@ -3942,15 +3942,22 @@ with tab_validation:
         with c7:
             # Historical Weather Logic
             # Historical Weather Logic
-            weather_options = ["Actual Weather", "Actual SCED + Model", "Compare All (Act/TMY/P50)", "Typical Year (TMY)", "Calculated P50 (Historical)"]
+            weather_options = ["Expected Production Based on Actual Weather", "Model Based on Weather", "Typical Meteorological Year"]
             
             # --- CUSTOM: Add Settlement Invoice if Azure Sky ---
             if val_source == "Specific Project" and "Azure Sky" in selected_project_name:
                  weather_options.insert(1, "Settlement Invoice (Actuals)")
                  weather_options.insert(3, "Actual SCED + Settlement Invoice")
-                 weather_options.insert(4, "Actual SCED + Model + Settlement Invoice")
+                 weather_options.insert(4, "Actual SCED + Model Based on Weather + Settlement Invoice")
             
-            preview_weather = st.selectbox("Weather Source", weather_options, key="preview_weather")
+            preview_weather = st.selectbox("Data Source", weather_options, key="preview_weather")
+            with st.expander("Key"):
+                st.markdown("""
+                - **Expected Production Based on Actual Weather**: The estimated generation derived from observed meteorological conditions.
+                - **Model Based on Weather**: The generated model for production based on actual weather conditions, compared with actual SCED data.
+                - **Typical Meteorological Year**: A typical long-term profile of weather conditions used for baseline comparisons.
+                - **SCED**: Security Constrained Economic Dispatch, the actual realtime instructions ERCOT gives to generators.
+                """)
 
         preview_wind_weather_source = "AUTO"
         preview_hrrr_forecast_hour = 0
@@ -4157,28 +4164,13 @@ with tab_validation:
                                 )
                             
                             # Pre-calculate P50 if needed
-                            if preview_weather in ["Compare All (Act/TMY/P50)", "Calculated P50 (Historical)"]:
-                                st.toast("Simulating 20 years to find P50...")
-                                # TODO: Update historical analysis to support specific project turbines if needed
-                                # For now, it uses generic or simple turbine. 
-                                # If mixed fleet, this might be inaccurate.
-                                df_res, stats = variability_analysis.run_historical_analysis(
-                                    lat=lat, lon=lon, tech=preview_tech, 
-                                    capacity_mw=preview_capacity, losses_pct=14, 
-                                    turbine_type=project_turbine_model, progress_bar=None
-                                )
-                                p50_val = stats['P50']
-                                df_res['diff'] = (df_res['Annual_MWh'] - p50_val).abs()
-                                median_year = int(df_res.loc[df_res['diff'].idxmin(), 'Year'])
-                                st.success(f"Calculated P50 Year: {median_year}")
-
-                            if preview_weather == "Actual Weather": 
+                            if preview_weather == "Expected Production Based on Actual Weather": 
                                 weather_opts = [{"name": "Actual", "force_tmy": False, "year_override": None}]
                                 if val_source == "Specific Project" and selected_project_name == "Settlement Invoice":
                                      weather_opts = [{"name": "Invoice", "source": "BILL"}]
                             elif preview_weather == "Settlement Invoice (Actuals)":
                                 weather_opts = [{"name": "Invoice", "source": "BILL"}]
-                            elif preview_weather == "Actual SCED + Model":
+                            elif preview_weather == "Model Based on Weather":
                                 # NEW: Fetch actual SCED data + generate model for comparison
                                 weather_opts = [
                                     {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
@@ -4189,22 +4181,14 @@ with tab_validation:
                                     {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
                                     {"name": "Invoice", "source": "BILL"},
                                 ]
-                            elif preview_weather == "Actual SCED + Model + Settlement Invoice":
+                            elif preview_weather == "Actual SCED + Model Based on Weather + Settlement Invoice":
                                 weather_opts = [
                                     {"name": "SCED_Actual", "force_tmy": False, "year_override": None, "use_sced": True},
                                     {"name": "Model", "force_tmy": False, "year_override": None, "use_sced": False},
                                     {"name": "Invoice", "source": "BILL"},
                                 ]
-                            elif preview_weather == "Typical Year (TMY)": 
+                            elif preview_weather == "Typical Meteorological Year": 
                                 weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
-                            elif preview_weather == "Compare All (Act/TMY/P50)":
-                                weather_opts = [
-                                    {"name": "Actual", "force_tmy": False, "year_override": None}, 
-                                    {"name": "TMY", "force_tmy": True, "year_override": None},
-                                    {"name": f"P50 ({median_year})", "force_tmy": False, "year_override": median_year}
-                                ]
-                            elif preview_weather == "Calculated P50 (Historical)":
-                                weather_opts = [{"name": f"P50_Hist_{median_year}", "force_tmy": False, "year_override": median_year}]
 
                             sced_basepoint = pd.DataFrame(columns=["Time_Central", "Base_Point_MW"])
                             bp_headroom_factor = 1.0
@@ -4399,7 +4383,7 @@ with tab_validation:
                                     turbines_config = None
                                     
                                     # Check if this is SCED comparison mode
-                                    is_sced_comparison = preview_weather == "Actual SCED + Model"
+                                    is_sced_comparison = preview_weather == "Model Based on Weather"
                                     
                                     if val_source == "Specific Project" and 'turbines' in selected_project_meta:
                                         # Use full mixed-fleet model (now enabled even for SCED comparison for higher accuracy)
@@ -4771,14 +4755,12 @@ with tab_validation:
         # 1. Comparison Table if multiple sources
         if len(preview_results) > 1:
             # Dynamic title based on weather source
-            if preview_weather == "Actual SCED + Model":
+            if preview_weather == "Model Based on Weather":
                 comparison_title = "### 📊 Contrast: Actual SCED vs Model"
             elif preview_weather == "Actual SCED + Settlement Invoice":
                 comparison_title = "### 📊 Contrast: Actual SCED vs Settlement Invoice"
-            elif preview_weather == "Actual SCED + Model + Settlement Invoice":
+            elif preview_weather == "Actual SCED + Model Based on Weather + Settlement Invoice":
                 comparison_title = "### 📊 Contrast: SCED vs Model vs Settlement Invoice"
-            elif preview_weather == "Compare All (Act/TMY/P50)":
-                comparison_title = "### 📊 Contrast: Actual vs TMY vs P50"
             else:
                 comparison_title = "### 📊 Contrast: Actual vs Typical (TMY)"
             
