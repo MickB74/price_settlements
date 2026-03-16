@@ -389,7 +389,7 @@ with tab_scenarios:
         ### 2. **Generation Profiles (Wind/Solar)**
         - **Sources:** 
             - **[Open-Meteo](https://open-meteo.com/):** For **2024-2026 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 10m wind speeds.
-            - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Typical Meteorological Year (TMY)** data.
+            - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Expected Production Based on Typical Meteorological Year (TMY)** data.
         - **Method:**
           - **2024+:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
           - **Historical Years (2005-2023):** Uses **Actual PVGIS Data** ✅
@@ -439,7 +439,7 @@ with tab_scenarios:
         **Input Data:**
         - **2024-2026 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
         - **Historical (2005-2023):** GHI from PVGIS (calculated as Gb(i) + Gd(i) + Gr(i) for horizontal plane)
-        - **TMY:** GHI from PVGIS Typical Meteorological Year, W/m²
+        - **TMY:** GHI from PVGIS Expected Production Based on Typical Meteorological Year, W/m²
         
         **Conversion Formula:**
         ```
@@ -3942,7 +3942,7 @@ with tab_validation:
         with c7:
             # Historical Weather Logic
             # Historical Weather Logic
-            weather_options = ["Expected Production Based on Actual Weather", "Model Based on Weather", "Typical Meteorological Year"]
+            weather_options = ["Expected Production Based on Actual Weather", "Model Based on Weather", "Expected Production Based on Typical Meteorological Year"]
             
             # --- CUSTOM: Add Settlement Invoice if Azure Sky ---
             if val_source == "Specific Project" and "Azure Sky" in selected_project_name:
@@ -3955,7 +3955,7 @@ with tab_validation:
                 st.markdown("""
                 - **Expected Production Based on Actual Weather**: The estimated generation derived from observed meteorological conditions.
                 - **Model Based on Weather**: The generated model for production based on actual weather conditions, compared with actual SCED data.
-                - **Typical Meteorological Year**: A typical long-term profile of weather conditions used for baseline comparisons.
+                - **Expected Production Based on Typical Meteorological Year**: A typical long-term profile of weather conditions used for baseline comparisons.
                 - **SCED**: Security Constrained Economic Dispatch, the actual realtime instructions ERCOT gives to generators.
                 """)
 
@@ -4187,7 +4187,7 @@ with tab_validation:
                                     {"name": "Model", "force_tmy": False, "year_override": None, "use_sced": False},
                                     {"name": "Invoice", "source": "BILL"},
                                 ]
-                            elif preview_weather == "Typical Meteorological Year": 
+                            elif preview_weather == "Expected Production Based on Typical Meteorological Year": 
                                 weather_opts = [{"name": "TMY", "force_tmy": True, "year_override": None}]
 
                             sced_basepoint = pd.DataFrame(columns=["Time_Central", "Base_Point_MW"])
