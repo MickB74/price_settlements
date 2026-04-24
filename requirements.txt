@@ -3,6 +3,7 @@ pandas
 numpy
 gridstatus
 pytz
+tzdata
 plotly
 reportlab
 kaleido
