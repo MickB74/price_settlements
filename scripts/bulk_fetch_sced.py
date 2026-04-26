@@ -72,7 +72,18 @@ def main():
     print(f"Successful: {success_count}")
     print(f"Cached: {cached_count}")
     print(f"Missing/Empty: {len(tasks) - success_count - cached_count}")
-    
+
+    # Always rebuild the consolidated _full.parquet so Streamlit Cloud
+    # picks up the latest data (the app reads the full file first and
+    # short-circuits if it exists, so a stale full file hides new daily files).
+    print(f"\nRebuilding consolidated year cache for {resource} ({year})...")
+    ok = sced_fetcher.consolidate_year(resource, year)
+    if ok:
+        full_path = os.path.join(sced_fetcher.CACHE_DIR, f"{resource}_{year}_full.parquet")
+        print(f"  ✅ Rebuilt: {full_path}")
+    else:
+        print("  ⚠️  consolidate_year returned False — no daily files found to merge.")
+
     print("\nData is now cached. You can run the benchmarking tool in app.py for this range.")
 
 if __name__ == "__main__":
