@@ -603,15 +603,25 @@ def get_ercot_data(year, cache_token=None):
         raise RuntimeError(f"Error fetching data for {year}: {e}") from e
 
 
+def _file_md5(path: str) -> str:
+    """Return MD5 hex digest of a file, or empty string if it doesn't exist."""
+    import hashlib
+    try:
+        h = hashlib.md5()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return ""
+
+
 def load_market_data(year):
     """Loads ERCOT market data with cache invalidation and safe UI error reporting."""
     cache_path = f"ercot_rtm_{year}.parquet"
-    if os.path.exists(cache_path):
-        stat = os.stat(cache_path)
-        # Include nanosecond mtime + size so Streamlit cache invalidates on file updates.
-        cache_token = (int(stat.st_mtime_ns), int(stat.st_size))
-    else:
-        cache_token = (0, 0)
+    # Use content hash so cache busts when file bytes change, even on Streamlit Cloud
+    # where mtime is pinned to the git commit timestamp and never advances.
+    cache_token = _file_md5(cache_path) or "missing"
     try:
         return get_ercot_data(year, cache_token=cache_token)
     except Exception as e:
