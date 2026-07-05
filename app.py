@@ -219,25 +219,50 @@ def apply_base_point_cap(
 # Page Config
 st.set_page_config(page_title="VPPA Settlement Estimator", layout="wide")
 
-# Custom CSS to widen sidebar (50% wider than default)
+# Custom CSS for a calmer, more scannable Streamlit surface.
 st.markdown("""
 <style>
     [data-testid="stSidebar"] {
+        display: none;
         min-width: 450px;
         max-width: 450px;
+    }
+    [data-testid="collapsedControl"] {
+        display: none;
+    }
+    div[data-testid="stMetric"] {
+        background: #FFFFFF;
+        border: 1px solid #E5E7EB;
+        border-radius: 8px;
+        padding: 0.8rem 0.9rem;
+    }
+    div[data-testid="stMetric"] * {
+        color: #111827;
+    }
+    div[data-testid="stMetricLabel"] {
+        color: #4B5563;
+    }
+    .app-section-note {
+        border-left: 4px solid #2563EB;
+        background: #F8FAFC;
+        color: #111827;
+        border-radius: 6px;
+        padding: 0.8rem 1rem;
+        margin: 0.4rem 0 1rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Title
-st.title("VPPA Settlement Estimator")
-st.markdown("Compare multiple Virtual Power Purchase Agreement (VPPA) scenarios in ERCOT.")
+st.title("ERCOT VPPA Settlement Workspace")
+st.caption("Validate settlement bills, compare generation sources, and inspect ERCOT market-price behavior.")
 
-if st.button("Hard Refresh App Cache", key="hard_refresh_app_cache"):
-    st.cache_data.clear()
-    st.session_state.pop("val_preview_results", None)
-    st.session_state.pop("results", None)
-    st.rerun()
+with st.expander("App maintenance", expanded=False):
+    if st.button("Hard refresh app cache", key="hard_refresh_app_cache"):
+        st.cache_data.clear()
+        st.session_state.pop("val_preview_results", None)
+        st.session_state.pop("results", None)
+        st.rerun()
 
 # --- State Management ---
 if 'scenarios' not in st.session_state:
@@ -255,13 +280,13 @@ st.session_state.setdefault("bench_wind_model_engine_label", "Standard (Current)
 
 
 # Create Tabs
-tab_guide, tab_validation, tab_scenarios, tab_performance, tab_vppa_8760 = st.tabs(
+tab_guide, tab_validation, tab_performance, tab_vppa_8760, tab_pricing = st.tabs(
     [
-        "📘 Guide & Business Context",
+        "Guide",
         "Bill Validation",
-        "Scenario Analysis",
         "Model Performance",
-        "VPPA 8760 Compare",
+        "8760 Compare",
+        "Market Pricing",
     ]
 )
 
@@ -279,7 +304,7 @@ components.html(
             
             tabs.forEach(tab => {
                 // Check for Guide, Validation, Performance, etc.
-                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("VPPA 8760 Compare")) && tab.getAttribute("aria-selected") === "true") {
+                if ((tab.innerText.includes("Guide") || tab.innerText.includes("Bill Validation") || tab.innerText.includes("Model Performance") || tab.innerText.includes("Weather Variability") || tab.innerText.includes("8760 Compare") || tab.innerText.includes("Market Pricing")) && tab.getAttribute("aria-selected") === "true") {
                     hideSidebar = true;
                 }
             });
@@ -299,41 +324,66 @@ components.html(
     width=0,
 )
 
-# --- Tab: Guide & Business Context ---
+# --- Tab: Guide ---
 with tab_guide:
-    st.header("📘 Guide & Business Context")
+    st.header("Guide")
+    st.markdown(
+        """
+        <div class="app-section-note">
+        Start with the question in front of you, then move to the tab that has the strongest data for that decision.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    flow_a, flow_b, flow_c, flow_d = st.columns(4)
+    with flow_a:
+        st.markdown("**Validate a bill**")
+        st.caption("Compare modeled, SCED, invoice, or uploaded generation against settlement prices.")
+    with flow_b:
+        st.markdown("**Check model trust**")
+        st.caption("Use benchmark results before presenting modeled production assumptions.")
+    with flow_c:
+        st.markdown("**Compare profiles**")
+        st.caption("Review 8760 workbook profiles and settlement volumes side by side.")
+    with flow_d:
+        st.markdown("**Understand prices**")
+        st.caption("Inspect hub price level, volatility, negative-price exposure, and outliers.")
     
     # Load Guide Content from Markdown File
     guide_path = Path(__file__).resolve().parent / "docs" / "USER_GUIDE.md"
     if guide_path.exists():
         guide_text = guide_path.read_text(encoding="utf-8")
-        st.markdown(guide_text)
-        st.caption("Source of truth: docs/USER_GUIDE.md")
+        with st.expander("Full user guide", expanded=False):
+            st.markdown(guide_text)
+            st.caption("Source of truth: docs/USER_GUIDE.md")
     else:
         st.warning("User guide file not found at docs/USER_GUIDE.md.")
 
-    st.subheader("🗺️ User Workflow Chart")
+    st.subheader("Workflow Map")
     flow_labels = [
         "Start: Define Business Goal",
-        "Price or Structure VPPA",
         "Validate Model vs Actual",
         "Review Model Quality",
-        "Scenario Analysis",
+        "Compare 8760 Profiles",
         "Bill Validation",
         "Model Performance",
-        "Set Assumptions",
-        "Run Scenarios",
-        "Review Metrics & Risk",
-        "Export PDF/Excel",
+        "VPPA 8760 Compare",
         "Select Resource + Date Range",
         "Compare Model vs Actual",
         "Check Correlation/Errors",
-        "Refine Assumptions",
         "Review Regional Benchmarks",
         "Pick Higher-Confidence Hubs",
     ]
-    flow_source = [0, 0, 0, 1, 2, 3, 4, 7, 8, 9, 5, 11, 12, 13, 6, 15, 16]
-    flow_target = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 4]
+    # Connect Goals to Tabs
+    # 0->1, 0->2, 0->3
+    # Connect Tabs to Actions
+    # 1->4 (Bill Validation), 2->5 (Model Performance), 3->6 (VPPA 8760)
+    # Validation actions: 4->7, 7->8, 8->9
+    # Performance actions: 5->10, 10->11
+    
+    flow_source = [0, 0, 0, 1, 2, 3, 4, 7, 8, 5, 10]
+    flow_target = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     flow_value = [1] * len(flow_source)
 
     flow_fig = go.Figure(
@@ -345,12 +395,7 @@ with tab_guide:
                     thickness=18,
                     line=dict(color="rgba(70,70,70,0.5)", width=0.5),
                     label=flow_labels,
-                    color=[
-                        "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#4E79A7",
-                        "#E15759", "#76B7B2", "#59A14F", "#59A14F", "#59A14F",
-                        "#59A14F", "#EDC948", "#EDC948", "#EDC948", "#EDC948",
-                        "#B07AA1", "#B07AA1",
-                    ],
+                    color=["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F"] * 3,
                 ),
                 link=dict(
                     source=flow_source,
@@ -361,205 +406,38 @@ with tab_guide:
             )
         ]
     )
-    flow_fig.update_layout(height=560, margin=dict(l=10, r=10, t=10, b=10), font=dict(size=12))
+    flow_fig.update_layout(height=400, margin=dict(l=10, r=10, t=10, b=10), font=dict(size=12))
     st.plotly_chart(flow_fig, use_container_width=True, config={"displayModeBar": False})
 
-    st.success("Ready to start? Open the Scenario Analysis tab to build your first case.")
-
-with tab_scenarios:
-    st.header("Scenario Analysis")
-    st.markdown("Create and compare VPPA scenarios based on weather models. (Beta)")
-
-    # Documentation Section
-    with st.expander("📚 **Documentation: Data Sources & Methodology**", expanded=False):
-        st.markdown("""
-        ## Overview
-        This tool estimates VPPA settlements by combining **actual ERCOT market prices** with **realistic renewable generation profiles** based on meteorological data.
-        
-        ---
-        
-        ## Data Sources
-        
-        ### 1. **Market Prices (ERCOT RTM)**
-        - **Source:** [gridstatus.io](https://www.gridstatus.io/) - Real-time ERCOT data API
-        - **Data:** 15-minute Real-Time Market (RTM) prices by settlement point
-        - **Coverage:** 2020-2026 (historical actual prices)
-        - **Hubs:** HB_NORTH, HB_SOUTH, HB_WEST, HB_HOUSTON, HB_PAN
-        
-        ### 2. **Generation Profiles (Wind/Solar)**
-        - **Sources:** 
-            - **[Open-Meteo](https://open-meteo.com/):** For **2024-2026 Actuals** (ERA5 Reanalysis). High-accuracy solar irradiance and 10m wind speeds.
-            - **[PVGIS](https://re.jrc.ec.europa.eu/pvgis/):** For **History (2005-2023)** and **Expected Production Based on Typical Meteorological Year (TMY)** data.
-        - **Method:**
-          - **2024+:** Uses **Actual Open-Meteo Data** (Solar & Wind) ✅
-          - **Historical Years (2005-2023):** Uses **Actual PVGIS Data** ✅
-          - **TMY:** Only used when **"Force TMY"** checkbox is selected
-        - **Sensitivity Analysis:**
-          - Use the **"Force TMY"** checkbox to simulate "normal" weather conditions for any year, overriding actual weather data.
-        
-        ### 3. **Hub Location Coordinates**
-        Based on analysis of **ERCOT project queue data** (787 renewable projects):
-        
-        | Hub | Location | Wind Resource | Rationale |
-        |-----|----------|---------------|-----------|
-        | **HB_NORTH** | Waxahachie, TX | 4.97 m/s @ 80m | I-35 solar corridor (192 projects) |
-        | **HB_SOUTH** | Zapata, TX | 6.43 m/s @ 80m | South Texas inland wind belt (212 projects) |
-        | **HB_WEST** | Roscoe, TX | 6.50 m/s @ 80m | "Wind Energy Capital of Texas" (252 projects) |
-        | **HB_HOUSTON** | Galveston, TX | 7.47 m/s @ 80m | Coastal wind project location (6 projects) |
-        | **HB_PAN** | Amarillo, TX | 6.44 m/s @ 80m | Texas Panhandle (44 projects) |
-        
-        ---
-        
-        ## Methodology
-        
-        ### VPPA Settlement Calculation
-        ```
-        For each 15-min interval:
-        1. Generation Revenue = Generation (MWh) × Market Price ($/MWh)
-        2. VPPA Payment = Generation (MWh) × VPPA Price ($/MWh)
-        3. Net Settlement = Generation Revenue - VPPA Payment
-        
-        Monthly/Annual totals = Sum of all intervals
-        ```
-        
-        ### Generation Profile Creation
-        1. **Fetch Weather Data** from Open-Meteo (2024-2026) or PVGIS (History/TMY)
-        2. **Convert to Power:**
-           - Solar: GHI (Global Horizontal Irradiance) → DC power → inverter efficiency → AC MW
-           - Wind: Wind speed (scaled to hub height) → power curve → MW
-        3. **Resample** to 15-minute intervals
-        4. **Align** timestamps to ERCOT Central Time
-        
-        ---
-        
-        ## Technical Details: Weather-to-Power Conversion
-        
-        ### Solar Generation Model
-        
-        **Input Data:**
-        - **2024-2026 Actual:** Global Horizontal Irradiance (GHI) from Open-Meteo ERA5 reanalysis, W/m²
-        - **Historical (2005-2023):** GHI from PVGIS (calculated as Gb(i) + Gd(i) + Gr(i) for horizontal plane)
-        - **TMY:** GHI from PVGIS Expected Production Based on Typical Meteorological Year, W/m²
-        
-        **Conversion Formula:**
-        ```
-        Solar_MW = Capacity_MW × (GHI / 1000) × System_Efficiency
-        
-        Where:
-        - GHI is in W/m²
-        - System_Efficiency = 0.85 (accounts for DC-to-AC conversion, soiling, temperature losses)
-        - Output is clipped at Capacity_MW (no overgeneration)
-        ```
-        
-        **Key Assumptions:**
-        - **Panel Orientation:** Horizontal tracking (simplification - actual projects use tilted/tracking)
-        - **Performance Ratio:** 85% accounts for:
-          - Inverter losses (~3%)
-          - Temperature derating (~5%)
-          - Soiling/shading (~4%)
-          - Wiring/mismatch (~3%)
-        - **Capacity Factor:** Typical range 20-25% in Texas
-        
-        ---
-        
-        ### Wind Generation Model
-        
-        **Input Data:**
-        - **All Sources:** 10-meter wind speed (m/s) from Open-Meteo or PVGIS
-        - **Note:** We use 10m data consistently across all years for methodology alignment
-        
-        **Step 1: Extrapolate to Hub Height (80m)**
-        
-        Wind speed increases with height following a power law. We apply empirically-tuned scaling factors:
-        
-        ```
-        Wind_Speed_80m = Wind_Speed_10m × Shear_Factor
-        
-        Shear_Factor by Region:
-        - East Texas / Houston (lon > -96.0°): 1.60
-        - West / South / Panhandle (lon ≤ -96.0°): 1.95
-        ```
-        
-        **Why Regional Scaling?**
-        - **Coastal (Houston):** Lower surface roughness → lower shear exponent
-        - **Inland (West/South/Pan):** Higher terrain roughness → higher shear exponent
-        - These factors were calibrated against EIA-923 actual generation data
-        
-        **Step 2: Apply Power Curve**
-        
-        We use a simplified IEC Class 2 turbine power curve:
-        
-        ```
-        Normalized_Power = 
-            0.0                           if v < 3.0 m/s   (cut-in speed)
-            ((v - 3.0) / 9.0)³           if 3.0 ≤ v < 12.0 m/s   (cubic region)
-            1.0                           if 12.0 ≤ v < 25.0 m/s  (rated power)
-            0.0                           if v ≥ 25.0 m/s  (cut-out speed)
-        
-        Wind_MW = Normalized_Power × Capacity_MW
-        ```
-        
-        **Key Assumptions:**
-        - **Turbine Type:** Generic 2.5-3.5 MW turbine (representative of Texas fleet)
-        - **Hub Height:** 80 meters (typical for modern Texas wind farms)
-        - **Cut-in Speed:** 3 m/s (turbine starts generating)
-        - **Rated Speed:** 12 m/s (full power output)
-        - **Cut-out Speed:** 25 m/s (turbine shuts down for safety)
-        - **Capacity Factor:** Typical range 35-45% in good Texas wind sites
-        
-        **Power Curve Shape:**
-        - **Cubic relationship** in the 3-12 m/s range reflects physics: Power ∝ v³
-        - This is the most sensitive region where small wind speed errors have large generation impacts
-        
-        ---
-        
-        ### Data Processing Pipeline
-        
-        1. **Fetch:** Hourly weather data (8,760 or 8,784 points for leap years)
-        2. **Convert:** Apply solar or wind model → hourly MW profile
-        3. **Interpolate:** Resample from hourly to 15-minute intervals using linear interpolation
-        4. **Align:** Match timestamps to ERCOT market data (UTC → Central Time)
-        5. **Validate:** Ensure 35,040 or 35,136 intervals (15-min resolution for full year)
-        
-        ### Curtailment Modeling
-        - **Default:** Negative prices ($<0) are floored at $0 (curtailment)
-        - **Optional:** "No Curtailment" mode keeps negative prices (financial exposure)
-        
-        ---
-        
-        ## Validation
-        
-        **Validated against EIA-923 actual generation data (2024):**
-        - ✅ Seasonal patterns match (Spring peak, Summer low)
-        - ✅ 222 Texas wind plants: 124.3 TWh actual vs our synthetic profiles
-        - ✅ Month-to-month relative changes accurate
-        
-        ---
-        
-        ## Limitations
-        
-        - **Transmission costs not included**
-        - **Basis risk** (hub vs project location) simplified
-        - **Synthetic profiles** represent typical conditions, actual may vary ±20%
-        - **Future market prices** use historical data (not forecasts)
-        
-        ---
-        
-        ## Custom Profile Upload
-        - **Format:** CSV with `Gen_MW` column (hourly 8760 or 15-min 35,040 rows)
-        - **Timezone:** Assumes UTC if not specified, converts to Central
-        - **Leap years:** Automatically handled (8,784 hourly or 35,136 15-min rows)
-        """)
-
-    # Main Scenario View (Using the logic that was here)
-    if not st.session_state.scenarios:
-        st.info("👈 Use the sidebar to create your first scenario!")
-    
-    # ... (Rest of the main content will be processed in subsequent steps)
-
-
-
-    
+    st.subheader("Data Confidence")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Data Layer": "SCED actual generation",
+                    "Best Use": "Recent asset validation",
+                    "Watch Item": "ERCOT public disclosure delay and cache coverage",
+                },
+                {
+                    "Data Layer": "Settlement invoice actuals",
+                    "Best Use": "Azure Sky settlement reconciliation",
+                    "Watch Item": "Excel-to-parquet refresh timing and price alignment",
+                },
+                {
+                    "Data Layer": "Weather model profiles",
+                    "Best Use": "Scenario modeling and gap filling",
+                    "Watch Item": "Model bias, curtailment, and project-specific turbine assumptions",
+                },
+                {
+                    "Data Layer": "ERCOT hub prices",
+                    "Best Use": "Settlement value and market risk",
+                    "Watch Item": "YTD years are incomplete until the full market year is loaded",
+                },
+            ]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_ercot_data(year, cache_token=None):
@@ -1437,6 +1315,193 @@ def _safe_pearson_correlation(series_a, series_b):
     if np.isclose(a.std(ddof=0), 0.0) or np.isclose(b.std(ddof=0), 0.0):
         return 1.0 if np.allclose(a.values, b.values, atol=1e-12, rtol=0.0) else np.nan
     return float(a.corr(b))
+
+
+def _format_money(value, decimals=0):
+    """Currency formatting that keeps negative dollars readable."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if pd.isna(value):
+        return "-"
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.{decimals}f}"
+
+
+def _format_price(value):
+    return _format_money(value, decimals=2) + "/MWh" if pd.notna(value) else "-"
+
+
+def _format_mwh(value, decimals=0):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if pd.isna(value):
+        return "-"
+    return f"{value:,.{decimals}f} MWh"
+
+
+def _source_display_name(source_name):
+    label_map = {
+        "SCED_Actual": "SCED Actual",
+        "Settlement_Invoice": "Settlement Invoice",
+        "Invoice": "Settlement Invoice",
+        "Actual": "Actual Weather Model",
+        "Model": "Weather Model",
+        "TMY": "Typical Year",
+        "P50": "Calculated P50",
+    }
+    return label_map.get(source_name, str(source_name).replace("_", " "))
+
+
+def _quality_label(value, good=0.85, ok=0.70):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "Not enough data"
+    if pd.isna(value):
+        return "Not enough data"
+    if value >= good:
+        return "Strong"
+    if value >= ok:
+        return "Usable"
+    return "Needs review"
+
+
+def _month_filter(df, selected_month_numbers):
+    if df is None or df.empty or "Time_Central" not in df.columns:
+        return df
+    month_numbers = sorted(set(int(m) for m in (selected_month_numbers or [])))
+    if not month_numbers:
+        return df
+    time_central = pd.to_datetime(df["Time_Central"], errors="coerce")
+    return df.loc[time_central.dt.month.isin(month_numbers)].copy()
+
+
+def build_preview_source_summary(preview_results, selected_month_numbers):
+    rows = []
+    for source_name, source_df in (preview_results or {}).items():
+        if source_df is None or source_df.empty:
+            continue
+
+        df = _month_filter(source_df.copy(), selected_month_numbers)
+        if df is None or df.empty:
+            continue
+
+        time_central = pd.to_datetime(df.get("Time_Central"), errors="coerce") if "Time_Central" in df.columns else pd.Series(dtype="datetime64[ns]")
+        gen = pd.to_numeric(df.get("Gen_Energy_MWh", 0.0), errors="coerce").fillna(0.0)
+        settlement = pd.to_numeric(df.get("Settlement_$", 0.0), errors="coerce").fillna(0.0)
+        market = pd.to_numeric(df.get("Market_Revenue_$", 0.0), errors="coerce").fillna(0.0)
+        paid = pd.to_numeric(df.get("VPPA_Payment_$", 0.0), errors="coerce").fillna(0.0)
+        spp = pd.to_numeric(df.get("SPP", np.nan), errors="coerce")
+
+        total_gen = float(gen.sum())
+        total_settlement = float(settlement.sum())
+        total_market = float(market.sum())
+        rows.append(
+            {
+                "Source": source_name,
+                "Source Label": _source_display_name(source_name),
+                "Intervals": int(len(df)),
+                "Start": time_central.min().strftime("%Y-%m-%d") if not time_central.dropna().empty else "-",
+                "End": time_central.max().strftime("%Y-%m-%d") if not time_central.dropna().empty else "-",
+                "Generation (MWh)": total_gen,
+                "Net Settlement ($)": total_settlement,
+                "Total Paid ($)": float(paid.sum()),
+                "Total Received ($)": total_market,
+                "Avg Hub Price ($/MWh)": float(spp.mean()) if not spp.dropna().empty else np.nan,
+                "Capture Price ($/MWh)": (total_market / total_gen) if total_gen > 0 else np.nan,
+                "Implied REC Cost ($/MWh)": -(total_settlement / total_gen) if total_gen > 0 else np.nan,
+                "Settlement Direction": "Buyer receives" if total_settlement > 0 else ("Buyer pays" if total_settlement < 0 else "Flat"),
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
+
+
+def render_preview_takeaway(summary_df, primary_name, vppa_price, corr_df=None):
+    if summary_df is None or summary_df.empty:
+        return
+
+    primary_rows = summary_df[summary_df["Source"] == primary_name]
+    if primary_rows.empty:
+        primary_rows = summary_df.head(1)
+    row = primary_rows.iloc[0]
+
+    total_gen = row.get("Generation (MWh)", np.nan)
+    total_settlement = row.get("Net Settlement ($)", np.nan)
+    capture_price = row.get("Capture Price ($/MWh)", np.nan)
+    direction = row.get("Settlement Direction", "Flat").lower()
+
+    parts = [
+        f"Primary source: **{row.get('Source Label', primary_name)}**",
+        f"{_format_mwh(total_gen)} settled from {row.get('Start', '-')} to {row.get('End', '-')}",
+        f"net settlement is **{_format_money(total_settlement)}** ({direction})",
+    ]
+    try:
+        price_spread = float(capture_price) - float(vppa_price)
+        if pd.notna(price_spread):
+            parts.append(f"capture price is {price_spread:+.2f}/MWh vs strike")
+    except (TypeError, ValueError):
+        pass
+
+    if corr_df is not None and not corr_df.empty and "SCED Actual vs Model" in corr_df.columns:
+        gen_corr = corr_df.loc["Gen MW", "SCED Actual vs Model"] if "Gen MW" in corr_df.index else np.nan
+        parts.append(f"SCED/model shape is **{_quality_label(gen_corr).lower()}**")
+
+    st.info("; ".join(parts) + ".")
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def get_market_file_status(path_str, file_mtime_ns):
+    path = Path(path_str)
+    if not path.exists():
+        return {
+            "exists": False,
+            "rows": 0,
+            "locations": 0,
+            "start": "-",
+            "end": "-",
+            "modified": "-",
+            "lag_days": np.nan,
+        }
+
+    try:
+        cols = ["Time_Central", "Location"]
+        df = pd.read_parquet(path, columns=cols)
+        time_central = pd.to_datetime(df["Time_Central"], errors="coerce")
+        max_ts = time_central.max()
+        lag_days = np.nan
+        if pd.notna(max_ts):
+            if max_ts.tzinfo is None:
+                max_ts = max_ts.tz_localize("US/Central")
+            else:
+                max_ts = max_ts.tz_convert("US/Central")
+            lag_days = (pd.Timestamp.now(tz="US/Central") - max_ts).total_seconds() / 86400.0
+        return {
+            "exists": True,
+            "rows": int(len(df)),
+            "locations": int(df["Location"].nunique()) if "Location" in df.columns else 0,
+            "start": time_central.min().strftime("%Y-%m-%d") if not time_central.dropna().empty else "-",
+            "end": time_central.max().strftime("%Y-%m-%d") if not time_central.dropna().empty else "-",
+            "modified": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "lag_days": lag_days,
+        }
+    except Exception as exc:
+        return {
+            "exists": False,
+            "rows": 0,
+            "locations": 0,
+            "start": "-",
+            "end": "-",
+            "modified": "-",
+            "lag_days": np.nan,
+            "error": str(exc),
+        }
 
 
 def _compute_monthly_core_metrics(df_source, selected_month_numbers):
@@ -2734,895 +2799,37 @@ with st.sidebar:
         st.rerun()
 
 # Manage Scenarios
-with tab_scenarios:
-    if st.session_state.scenarios:
-        st.sidebar.markdown("---")
-        
-    
-        
-        st.sidebar.subheader("Current Scenarios")
-        for i, sc in enumerate(st.session_state.scenarios):
-            col1, col2 = st.sidebar.columns([0.85, 0.15])
-            with col1:
-                st.text(f"{i+1}. {sc['name']}")
-            with col2:
-                if st.button("❌", key=f"remove_{i}", help="Remove this scenario"):
-                    st.session_state.scenarios.pop(i)
-                    st.rerun()
-    
-    # --- Main Content ---
-    
-        if st.session_state.scenarios:
-            
-            # --- Monte Carlo Simulation Section ---
-            st.markdown("---")
-            st.subheader("🎲 Monte Carlo Simulation (Optional)")
-            st.caption("Generate probabilistic outcomes by random sampling from historical weather and price data")
-            
-            with st.expander("📊 **Monte Carlo Settings**", expanded=False):
-                mc_col1, mc_col2 = st.columns([2, 1])
-                
-                with mc_col1:
-                    enable_monte_carlo = st.checkbox(
-                        "Enable Probabilistic Analysis",
-                        value=False,
-                        help="Run thousands of scenarios by randomly sampling weather years (2005-2024) and price years (2020-2026)"
-                    )
-                
-                with mc_col2:
-                    n_iterations = st.number_input(
-                        "Number of Iterations",
-                        min_value=100,
-                        max_value=10000,
-                        value=1000,
-                        step=100,
-                        help="More iterations = smoother distribution but slower",
-                        disabled=not enable_monte_carlo
-                    )
-                
-                if enable_monte_carlo:
-                    st.info("💡 **How it works:** For each iteration, we randomly select a weather year (e.g., 2014) and a price year (e.g., 2022), then calculate the VPPA settlement. After 1,000+ runs, we show you the P10/P50/P90 outcomes.")
-                    
-                    if st.button("🎲 Run Monte Carlo Analysis", type="primary", disabled=len(st.session_state.scenarios) == 0):
-                        monte_carlo_results = {}
-                        
-                        progress_mc = st.progress(0)
-                        status_text = st.empty()
-                        
-                        # PRE-LOAD SHARED CACHES (CRITICAL: Load once for all scenarios to ensure consistency)
-                        # This ensures identical scenarios get identical Monte Carlo results
-                        status_text.text("Pre-loading price data (shared across all scenarios)...")
-                        price_cache = {}
-                        price_years = list(range(2020, 2026))  # 2020-2025 (exclude 2026 - incomplete YTD data)
-                        price_load_errors = []
-                        
-                        for price_year in price_years:
-                            try:
-                                price_cache[price_year] = load_market_data(price_year)
-                            except Exception as e:
-                                price_load_errors.append(f"{price_year}: {str(e)}")
-                                st.error(f"❌ Failed to load price data for {price_year}: {e}")
-                        
-                        if price_load_errors:
-                            st.error(f"❌ Failed to load {len(price_load_errors)} price years. Monte Carlo CANNOT run without price data!")
-                            st.code("\n".join(price_load_errors))
-                        else:
-                            st.success(f"✅ Pre-loaded all {len(price_cache)} price years (2020-2025)")
-                        
-                        # PRE-LOAD GENERATION PROFILES (scenario-specific, but cached across scenarios with same config)
-                        # Key: (tech, lat, lon, capacity_mw, turbine_type) -> {year: profile}
-                        gen_cache_by_config = {}
-                        
-                        for scenario_idx, scenario in enumerate(st.session_state.scenarios):
-                            status_text.text(f"Running Monte Carlo for: {scenario['name']}...")
-                            
-                            # Prepare scenario config for Monte Carlo
-                            mc_config = {
-                                'hub': scenario['hub'],
-                                'tech': scenario['tech'],
-                                'capacity_mw': scenario['capacity_mw'],
-                                'lat': scenario.get('custom_lat') if scenario.get('custom_lat') is not None else HUB_LOCATIONS[scenario['hub']][0],
-                                'lon': scenario.get('custom_lon') if scenario.get('custom_lon') is not None else HUB_LOCATIONS[scenario['hub']][1],
-                                'vppa_price': scenario['vppa_price'],
-                                'revenue_share': scenario.get('revenue_share_pct', 100),
-                                'curtail_neg': scenario.get('curtailment', False),
-                                'turbine_type': scenario.get('turbine', 'GENERIC'),
-                                'wind_model_engine': scenario.get('wind_model_engine', 'STANDARD'),
-                                'year': scenario['year']  # For reference
-                            }
-                            
-                            # Create cache key for this scenario's generation config
-                            cache_key = (
-                                mc_config['tech'],
-                                mc_config['lat'],
-                                mc_config['lon'],
-                                mc_config['capacity_mw'],
-                                mc_config['turbine_type'],
-                                mc_config.get('wind_model_engine', 'STANDARD'),
-                            )
-                            
-                            # Check if we already loaded profiles for this config
-                            if cache_key not in gen_cache_by_config:
-                                status_text.text(f"Pre-loading generation profiles for {scenario['name']}...")
-                                gen_cache = {}
-                                weather_years = list(range(2005, 2025))  # 2005-2024
-                                gen_load_errors = []
-                                
-                                for idx, wx_year in enumerate(weather_years):
-                                    try:
-                                        status_text.text(f"Loading generation profile {idx+1}/{len(weather_years)}: {wx_year}...")
-                                        profile = fetch_tmy.get_profile_for_year(
-                                            year=wx_year,
-                                            tech=mc_config['tech'],
-                                            lat=mc_config['lat'],
-                                            lon=mc_config['lon'],
-                                            capacity_mw=mc_config['capacity_mw'],
-                                            force_tmy=False,
-                                            turbine_type=mc_config['turbine_type'],
-                                            efficiency=0.86,
-                                            hub_name=mc_config.get('hub'),
-                                            apply_wind_calibration=(mc_config['tech'] == "Wind"),
-                                            wind_model_engine=mc_config.get('wind_model_engine', 'STANDARD'),
-                                        )
-                                        
-                                        # CRITICAL: Validate the profile is not empty
-                                        if profile is None:
-                                            error_msg = f"{wx_year}: Profile is None (fetch_tmy returned None)"
-                                            gen_load_errors.append(error_msg)
-                                            st.error(f"❌ {error_msg}")
-                                        elif len(profile) == 0:
-                                            error_msg = f"{wx_year}: Profile is empty (0 rows). Check if weather data cache is corrupt or API failed."
-                                            gen_load_errors.append(error_msg)
-                                            st.error(f"❌ {error_msg}")
-                                        else:
-                                            # Profile is valid, add to cache
-                                            gen_cache[wx_year] = profile
-                                            
-                                    except Exception as e:
-                                        gen_load_errors.append(f"{wx_year}: {str(e)}")
-                                        st.warning(f"Could not load generation profile for {wx_year}: {e}")
-                                
-                                if gen_load_errors:
-                                    st.warning(f"⚠️ Failed to load {len(gen_load_errors)} generation profiles. Monte Carlo will use on-demand fetching for those years (slower).")
-                                    st.code("\n".join(gen_load_errors[:10]))  # Show first 10 errors
-                                else:
-                                    st.success(f"✅ Pre-loaded all {len(gen_cache)} generation profiles")
-                                
-                                gen_cache_by_config[cache_key] = gen_cache # Store for reuse
-                            else:
-                                gen_cache = gen_cache_by_config[cache_key] # Reuse existing cache
-                                st.info(f"✅ Reusing pre-loaded generation profiles for {scenario['name']}")
-                            
-                            # Define progress callback
-                            def update_progress(current, total):
-                                progress_mc.progress((scenario_idx + current/total) / len(st.session_state.scenarios))
-                                status_text.text(f"Running Monte Carlo iteration {current}/{total} for {scenario['name']}...")
-                            
-                            # Run Monte Carlo simulation with cached data
-                            status_text.text(f"Running {n_iterations} Monte Carlo iterations...")
-                            
-                            # Capture debug output
-                            import io
-                            import sys
-                            debug_output = io.StringIO()
-                            old_stdout = sys.stdout
-                            sys.stdout = debug_output
-                            
-                            try:
-                                results_df, stats = monte_carlo.run_bootstrap_simulation(
-                                    scenario_config=mc_config,
-                                    n_iterations=n_iterations,
-                                    price_data_cache=price_cache,
-                                    generation_profile_cache=gen_cache,
-                                    progress_callback=update_progress
-                                )
-                                
-                                # Restore stdout and show debug output
-                                sys.stdout = old_stdout
-                                debug_text = debug_output.getvalue()
-                                if debug_text:
-                                    with st.expander("🔍 Debug Output", expanded=True):
-                                        st.code(debug_text, language="text")
-                                
-                                monte_carlo_results[scenario['name']] = (results_df, stats)
-                                
-                            except Exception as e:
-                                # Restore stdout
-                                sys.stdout = old_stdout
-                                debug_text = debug_output.getvalue()
-                                if debug_text:
-                                    st.warning("🔍 Debug output before error:")
-                                    st.code(debug_text, language="text")
-                                
-                                st.error(f"Monte Carlo failed for {scenario['name']}: {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
-                                continue
-                        
-                        progress_mc.progress(1.0)
-                        status_text.text("Monte Carlo analysis complete!")
-                        
-                        # Store results in session state
-                        st.session_state['monte_carlo_results'] = monte_carlo_results
-                        
-                        # Show success message
-                        successful_count = sum(1 for _, (_, stats) in monte_carlo_results.items() if stats)
-                        if successful_count > 0:
-                            st.success(f"✅ Completed {n_iterations} iterations for {successful_count} scenarios")
-                        else:
-                            st.error("❌ All Monte Carlo simulations failed. Check that price data is available for years 2020-2026.")
-            
-            # Display Monte Carlo Results (if available)
-            if 'monte_carlo_results' in st.session_state and st.session_state['monte_carlo_results']:
-                st.markdown("---")
-                st.subheader("📊 Monte Carlo Results")
-                
-                mc_results = st.session_state['monte_carlo_results']
-                
-                # Filter out failed simulations
-                valid_results = {name: (df, stats) for name, (df, stats) in mc_results.items() if stats}
-                
-                if not valid_results:
-                    st.warning("⚠️ No valid Monte Carlo results to display. All simulations may have failed due to missing data.")
-                else:
-                    # Comparison table
-                    st.markdown("### Probabilistic Outcome Comparison")
-                    comparison_df = monte_carlo.compare_scenarios_monte_carlo(valid_results)
-                    st.dataframe(comparison_df.style.format({
-                        'P10 ($)': '${:,.0f}',
-                        'P50 ($)': '${:,.0f}',
-                        'P90 ($)': '${:,.0f}',
-                        'Mean ($)': '${:,.0f}',
-                        'Std Dev ($)': '${:,.0f}',
-                        'P90-P10 Range ($)': '${:,.0f}'
-                    }), use_container_width=True)
-                    
-                    # Distribution plots for each scenario
-                    st.markdown("### Distribution Plots")
-                    
-                    for scenario_name, (results_df, stats) in valid_results.items():
-                        with st.expander(f"📈 {scenario_name}", expanded=True):
-                            col_chart, col_stats = st.columns([2, 1])
-                            
-                            with col_chart:
-                                # Histogram with percentile markers
-                                fig = go.Figure()
-                                
-                                # Histogram
-                                fig.add_trace(go.Histogram(
-                                    x=results_df['annual_settlement_$'],
-                                    nbinsx=50,
-                                    name='Distribution',
-                                    marker_color='lightblue',
-                                    opacity=0.7
-                                ))
-                                
-                                # Add P10, P50, P90 lines
-                                for percentile, color, label in [
-                                    (stats['P10'], 'red', 'P10 (Conservative)'),
-                                    (stats['P50'], 'green', 'P50 (Median)'),
-                                    (stats['P90'], 'blue', 'P90 (Optimistic)')
-                                ]:
-                                    fig.add_vline(
-                                        x=percentile,
-                                        line_dash="dash",
-                                        line_color=color,
-                                        annotation_text=f"{label}: ${percentile:,.0f}",
-                                        annotation_position="top"
-                                    )
-                                
-                                fig.update_layout(
-                                    title=f"Distribution of Annual Settlement - {scenario_name}",
-                                    xaxis_title="Annual Settlement ($)",
-                                    yaxis_title="Frequency",
-                                    showlegend=False,
-                                    height=400
-                                )
-                                
-                                st.plotly_chart(fig, use_container_width=True)
-                            
-                            with col_stats:
-                                st.markdown("**Percentile Summary**")
-                                percentile_table = monte_carlo.format_percentile_table(stats)
-                                st.dataframe(percentile_table, use_container_width=True, hide_index=True)
-                                
-                                st.markdown("**Additional Stats**")
-                                st.metric("Mean", f"${stats['Mean']:,.0f}")
-                                st.metric("Std Dev", f"${stats['StdDev']:,.0f}")
-                                st.metric("Range", f"${stats['Max'] - stats['Min']:,.0f}")
-            
-            st.markdown("---")
-    
-            # Calculate Results
-            results = []
-            progress_bar = st.progress(0)
-    
-            for i, scenario in enumerate(st.session_state.scenarios):
-                # Fetch Data
-                df_rtm = load_market_data(scenario['year'])
-                if df_rtm.empty:
-                    st.warning(f"Could not fetch data for {scenario['name']}")
-                    continue
-            
-                # Calculate
-                try:
-                    df_res = calculate_scenario(scenario, df_rtm)
-                except Exception as e:
-                    st.error(f"Scenario '{scenario['name']}' failed: {e}")
-                    continue
-        
-                # Aggregates
-                total_rev = df_res['Settlement_Amount'].sum()
-                total_gen = df_res['Gen_Energy_MWh'].sum()
-                total_curt = df_res['Curtailed_MWh'].sum()
-                avg_price = df_res['SPP'].mean()
-                capture_price = (df_res['SPP'] * df_res['Gen_Energy_MWh']).sum() / total_gen if total_gen > 0 else 0
-        
-                # Calculate Aggregates for Charts (Memory Optimization)
-                # 1. Daily for Cumulative Chart
-                daily_agg = df_res.set_index('Time_Central')[['Settlement_Amount']].resample('D').sum().cumsum().reset_index()
-                # Normalize Date for Seasonal Plot
-                daily_agg['Normalized_Date'] = daily_agg['Time_Central'].apply(lambda x: x.replace(year=2024))
-        
-                # 2. Monthly for Bar Charts
-                df_res['Month'] = df_res['Time_Central'].dt.strftime('%b')
-                df_res['Month_Num'] = df_res['Time_Central'].dt.month
-                # Group by Month and Year (to keep unique months if spanning years, though current use case is 1 year)
-                # Actually, we normalize monthly charts too.
-                monthly_agg = df_res.groupby(['Month', 'Month_Num'], as_index=False)[['Settlement_Amount', 'Gen_Energy_MWh']].sum()
-                monthly_agg['Normalized_Month_Date'] = pd.to_datetime(monthly_agg['Month_Num'].astype(str) + "-01-2024", format="%m-%d-%Y")
-                # Restore Month_Date for insight text (using actual year)
-                monthly_agg['Month_Date'] = pd.to_datetime(monthly_agg['Month_Num'].astype(str) + f"-01-{scenario['year']}", format="%m-%d-%Y")
-        
-                results.append({
-                    "Scenario": scenario['name'],
-                    "Year": scenario['year'],
-                    "Hub": scenario['hub'],
-                    "Tech": scenario['tech'],
-                    "Capacity (MW)": scenario['capacity_mw'],
-                    "VPPA Price ($/MWh)": scenario['vppa_price'],
-                    "duration": scenario['duration'], # Track duration type for plotting
-                    "Net Settlement ($)": total_rev,
-                    "Total Gen (MWh)": total_gen,
-                    "Curtailed (MWh)": total_curt,
-                    "Capture Price ($/MWh)": capture_price,
-                    "Avg Hub Price ($/MWh)": avg_price,
-                    # "data": df_res # DROPPED for Memory Savings
-                    "daily_agg": daily_agg,
-                    "monthly_agg": monthly_agg
-                })
-                progress_bar.progress((i + 1) / len(st.session_state.scenarios))
-    
-            progress_bar.empty()
-    
-            # ... (Visualizations Logic is generic, so no changes needed in the middle block) ...
-    
-            # ... Skip to Data Preview block adjustments manually below ...
-    
-            # --- Visualizations ---
-    
-            # Custom Color Palette based on SustainRound
-            # Primary Blue: #0171BB
-            COLOR_SEQUENCE = [
-                "#0171BB", # SustainRound Blue
-                "#FFC107", # Amber (Solar)
-                "#4CAF50", # Green (Wind/Sustainability)
-                "#9C27B0", # Purple
-                "#FF5722", # Deep Orange
-                "#607D8B", # Blue Grey
-                "#E91E63", # Pink
-                "#795548", # Brown
-            ]
-    
-    
-            # 1. Summary Metrics
-            st.subheader("Summary Metrics")
-            
-            # Check if any scenario is using month-to-date analysis and show notification
-            mtd_scenarios = [s for s in st.session_state.scenarios if 'date_range_note' in s]
-            if mtd_scenarios:
-                note_text = mtd_scenarios[0]['date_range_note']
-                st.info(f"ℹ️ **Current Month Analysis**: {note_text} (limited to available data)")
-    
-            # Filter results for display
-            display_cols = ["Scenario", "Net Settlement ($)", "Total Gen (MWh)", "Curtailed (MWh)", "Capture Price ($/MWh)", "Avg Hub Price ($/MWh)"]
-            df_summary = pd.DataFrame(results)[display_cols]
-    
-            # Format columns
-            st.dataframe(
-                df_summary.style.format({
-                    "Net Settlement ($)": "${:,.0f}",
-                    "Total Gen (MWh)": "{:,.0f}",
-                    "Curtailed (MWh)": "{:,.0f}",
-                    "Capture Price ($/MWh)": "${:.2f}",
-                    "Avg Hub Price ($/MWh)": "${:.2f}"
-                })
-            )
-    
-            # Prepare Data for Plotly
-            # We need long-format dataframes for Plotly Express
-    
-            st.subheader("Cumulative Settlement ($)")
-    
-            # Insight for Cumulative (using existing data from results)
-            # Re-calculate best/worst based on final totals
-            final_settlements = {r['Scenario']: r['Net Settlement ($)'] for r in results}
-            best_scen = max(final_settlements, key=final_settlements.get)
-            best_val = final_settlements[best_scen]
-            worst_scen = min(final_settlements, key=final_settlements.get)
-            worst_val = final_settlements[worst_scen]
-    
-            if len(final_settlements) > 1:
-                st.markdown(
-                    f"**Insight:** The **{best_scen}** scenario leads with a total settlement of "
-                    f"**${best_val:,.0f}**, while **{worst_scen}** trails at **${worst_val:,.0f}**."
-                )
-            else:
-                st.markdown(
-                    f"**Insight:** The **{best_scen}** scenario has a total settlement of **${best_val:,.0f}**."
-                )
-    
-            # Initialize Plotly Graph Object for improved flexibility
-            fig_cum = go.Figure()
-    
-            for i, res in enumerate(results):
-                # Use pre-calculated daily aggregate
-                daily = res['daily_agg']
-                scenario_name = res['Scenario']
-                duration_type = res['duration']
-                color = COLOR_SEQUENCE[i % len(COLOR_SEQUENCE)]
-        
-                if duration_type == "Specific Month":
-                    # Plot as a "Pin" (Marker + Text) at the end of the month
-                    if not daily.empty:
-                        last_point = daily.iloc[-1]
-                
-                        fig_cum.add_trace(go.Scatter(
-                            x=[last_point['Normalized_Date']],
-                            y=[last_point['Settlement_Amount']],
-                            mode='markers+text',
-                            name=scenario_name,
-                            marker=dict(color=color, size=12, symbol='circle'),
-                            text=[f"${last_point['Settlement_Amount']:,.0f}"],
-                            textposition="top center",
-                            hovertemplate=f"<b>{scenario_name}</b><br>Month Total: ${{y:,.0f}}<extra></extra>"
-                        ))
-                else:
-                    # Plot as a Line for Full Year
-                    fig_cum.add_trace(go.Scatter(
-                        x=daily['Normalized_Date'],
-                        y=daily['Settlement_Amount'],
-                        mode='lines',
-                        name=scenario_name,
-                        line=dict(color=color, width=3),
-                        hovertemplate="<b>%{x|%b %d}</b><br>Cumulative: $%{y:,.0f}<extra></extra>"
-                    ))
-    
-            fig_cum.update_layout(
-                title="Cumulative Settlement Over Time (Seasonal Comparison)",
-                legend_title="Scenario",
-                hovermode="x unified"
-            )
-    
-            fig_cum.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
-    
-            # Format x-axis to show only Month (e.g., Jan, Feb)
-            # Force range to full year (2024)
-            fig_cum.update_xaxes(
-                title="Month", 
-                tickformat="%b",
-                dtick="M1",
-                range=["2024-01-01", "2024-12-31"]
-            )
-    
-            st.plotly_chart(fig_cum, use_container_width=True)
-    
-            # Monthly Data
-            monthly_data = []
-            for res in results:
-                m_agg = res['monthly_agg'].copy()
-                m_agg['Scenario'] = res['Scenario']
-                monthly_data.append(m_agg)
-    
-            if monthly_data:
-                df_monthly = pd.concat(monthly_data, ignore_index=True)
-        
-        
-                # Toggle for Monthly vs Annual view
-                settle_view_mode = st.radio("View Mode", ["Monthly", "Annual"], horizontal=True, key="settle_view_mode")
-        
-                if settle_view_mode == "Annual":
-                    st.subheader("Annual Net Settlement ($)")
-            
-                    # Annual view: Sum by scenario
-                    df_annual_settle = df_monthly.groupby('Scenario').agg({
-                        'Settlement_Amount': 'sum'
-                    }).reset_index()
-            
-                    # Insight for Annual
-                    best_scen = df_annual_settle.loc[df_annual_settle['Settlement_Amount'].idxmax(), 'Scenario']
-                    best_val = df_annual_settle['Settlement_Amount'].max()
-            
-                    st.markdown(
-                        f"**Insight:** **{best_scen}** led with a total settlement of **${best_val:,.0f}**."
-                    )
-            
-                    fig_settle = px.bar(
-                        df_annual_settle,
-                        x='Scenario',
-                        y='Settlement_Amount',
-                        color='Scenario',
-                        title="Annual Net Settlement Comparison",
-                        color_discrete_sequence=COLOR_SEQUENCE,
-                        text='Settlement_Amount'
-                    )
-                    fig_settle.update_traces(texttemplate='$%{text:,.0f}', textposition='outside', cliponaxis=False)
-                    fig_settle.update_yaxes(title="Total Settlement ($)")
-                    fig_settle.update_xaxes(title="Scenario")
-                    fig_settle.update_layout(
-                        showlegend=True, 
-                        legend_title_text="Scenario",
-                        margin=dict(t=60, b=60, l=60, r=60)
-                    )
-            
-                    st.plotly_chart(fig_settle, use_container_width=True)
-            
-                else:
-                    # Chart 2: Monthly Net Settlement
-                    st.subheader("Monthly Net Settlement ($)")
-            
-                    # Insight for Monthly Settlement
-                    best_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmax()]
-                    worst_month_row = df_monthly.loc[df_monthly['Settlement_Amount'].idxmin()]
-            
-                    best_amount = best_month_row['Settlement_Amount']
-                    best_month = best_month_row['Month_Date'].strftime('%B %Y')
-                    best_scenario = best_month_row['Scenario']
-                    
-                    worst_amount = worst_month_row['Settlement_Amount']
-                    worst_month = worst_month_row['Month_Date'].strftime('%B %Y')
-                    worst_scenario = worst_month_row['Scenario']
-            
-                    st.markdown(
-                        f"**Insight:** The highest monthly return was **${best_amount:,.0f}** "
-                        f"in **{best_month}** ({best_scenario}), "
-                        f"whereas the lowest was **${worst_amount:,.0f}** "
-                        f"in **{worst_month}** ({worst_scenario})."
-                    )
-        
-                    fig_settle = px.bar(
-                        df_monthly, 
-                        x='Normalized_Month_Date', 
-                        y='Settlement_Amount', 
-                        color='Scenario', 
-                        barmode='group',
-                        title="Monthly Net Settlement (Seasonal Comparison)",
-                        color_discrete_sequence=COLOR_SEQUENCE,
-                        hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
-                    )
-                    fig_settle.update_yaxes(tickprefix="$", title="Settlement Amount ($)")
-                    fig_settle.update_xaxes(
-                        title="Month", 
-                        tickformat="%b", 
-                        dtick="M1" # Force monthly ticks
-                    )
-                    st.plotly_chart(fig_settle, use_container_width=True)
-        
-        
-                # Chart 3: Monthly Generation
-                st.subheader("Monthly Generation (MWh)")
-        
-                # Toggle for Monthly vs Annual view
-                view_mode = st.radio("View Mode", ["Monthly", "Annual"], horizontal=True, key="gen_view_mode")
-        
-                if view_mode == "Annual":
-                    # Annual view: Sum by scenario
-                    df_annual = df_monthly.groupby('Scenario').agg({
-                        'Gen_Energy_MWh': 'sum'
-                    }).reset_index()
-            
-                    # Extract Year from scenario name (assumes format "YYYY ...")
-                    df_annual['Year'] = df_annual['Scenario'].str.extract(r'(\d{4})')[0]
-            
-                    # Create formatted text labels based on value magnitude
-                    def format_mwh(value):
-                        if value >= 1_000_000:
-                            return f"{value/1_000_000:.1f}M"
-                        elif value >= 100_000:
-                            return f"{value/1000:.0f}k"
-                        elif value >= 10_000:
-                            return f"{value/1000:.1f}k"
-                        else:
-                            return f"{value:,.0f}"
-            
-                    df_annual['Text_Label'] = df_annual['Gen_Energy_MWh'].apply(format_mwh)
-            
-                    # Insight for Annual
-                    max_gen_scen = df_annual.loc[df_annual['Gen_Energy_MWh'].idxmax(), 'Scenario']
-                    max_gen_val = df_annual['Gen_Energy_MWh'].max()
-            
-                    st.markdown(
-                        f"**Insight:** **{max_gen_scen}** was the top producer, generating **{max_gen_val:,.0f} MWh** annually.\n"
-                    )
-            
-                    # Annual bar chart - Year on X-axis
-                    fig_gen = px.bar(
-                        df_annual,
-                        x='Year',
-                        y='Gen_Energy_MWh',
-                        color='Scenario',
-                        title="Annual Energy Generation Comparison",
-                        color_discrete_sequence=COLOR_SEQUENCE,
-                        text='Text_Label',  # Use formatted labels
-                        barmode='group'
-                    )
-            
-                    # Style the text
-                    fig_gen.update_traces(
-                        textposition='outside',
-                        textfont=dict(size=12, family="Arial, sans-serif"),
-                        marker_line_width=0,
-                        cliponaxis=False
-                    )
-            
-                    # Format Y-axis with thousands separator
-                    fig_gen.update_yaxes(
-                        title="Annual Generation (MWh)",
-                        tickformat=",.0f",
-                        gridcolor='rgba(128, 128, 128, 0.2)'
-                    )
-            
-                    fig_gen.update_xaxes(
-                        title="Year", 
-                        type='category',
-                        tickfont=dict(size=13)
-                    )
-            
-                    # Improve overall layout
-                    fig_gen.update_layout(
-                        showlegend=True, 
-                        legend_title_text="Scenario",
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        font=dict(size=12),
-                        height=550,
-                        bargap=0.15,
-                        bargroupgap=0.1,
-                        margin=dict(t=80, b=60, l=60, r=60)
-                    )
-            
-                else:
-                    # Monthly view (original)
-                    # Insight for Generation
-                    total_gen_by_scen = df_monthly.groupby('Scenario')['Gen_Energy_MWh'].sum()
-                    max_gen_scen = total_gen_by_scen.idxmax()
-                    max_gen_val = total_gen_by_scen.max()
-            
-                    st.markdown(
-                        f"**Insight:** **{max_gen_scen}** was the top producer, generating **{max_gen_val:,.0f} MWh**.\n"
-                    )
-    
-                    fig_gen = px.bar(
-                        df_monthly, 
-                        x='Normalized_Month_Date', 
-                        y='Gen_Energy_MWh', 
-                        color='Scenario', 
-                        barmode='group',
-                        title="Monthly Energy Generation (Seasonal Comparison)",
-                        color_discrete_sequence=COLOR_SEQUENCE,
-                        hover_data={"Normalized_Month_Date": False, "Month_Date": "|%b %Y"}
-                    )
-                    fig_gen.update_yaxes(title="Generation (MWh)")
-                    fig_gen.update_xaxes(
-                        title="Month", 
-                        tickformat="%b", 
-                        dtick="M1"
-                    )
-        
-                st.plotly_chart(fig_gen, use_container_width=True)
-    
-            # Data Preview
-            with st.expander("Downloads"):
-                if results:
-                    # Scenario Selection
-                    scenario_names = [res['Scenario'] for res in results]
-                    selected_scenario_name = st.selectbox("Select Scenario", scenario_names)
-            
-                    st.info("Generating detailed data on demand to save memory...")
-            
-                    # Find selected result metadata
-                    # We need to re-find the original scenario config from session_state
-                    # because 'results' only has aggregates now.
-                    selected_scenario_config = next(s for s in st.session_state.scenarios if s['name'] == selected_scenario_name)
-            
-                    # Re-calculate on demand
-                    year_val = selected_scenario_config['year']
-                    df_rtm = load_market_data(year_val)
-                    if not df_rtm.empty:
-                        try:
-                            df_display = calculate_scenario(selected_scenario_config, df_rtm)
-                        except Exception as e:
-                            st.error(f"Could not generate detailed data for {selected_scenario_name}: {e}")
-                            df_display = None
-                        if df_display is None:
-                            st.warning("Detailed interval export is unavailable for this scenario.")
-                            df_display = pd.DataFrame()
-                
-                        st.markdown(f"**Showing data for: {selected_scenario_name}**")
-                
-                        # 1. Scenario Configuration Table
-                        st.subheader("1. Scenario Configuration")
-                        config_data = {
-                            "Parameter": ["Year", "Hub", "Technology", "Capacity (MW)", "VPPA Price ($/MWh)", "Duration"],
-                            "Value": [
-                                selected_scenario_config.get('year'),
-                                selected_scenario_config.get('hub'),
-                                selected_scenario_config.get('tech'),
-                                f"{selected_scenario_config.get('capacity_mw', 0):.1f}",
-                                f"${selected_scenario_config.get('vppa_price', 0):.2f}",
-                                selected_scenario_config.get('duration')
-                            ]
-                        }
-                        st.table(pd.DataFrame(config_data))
-                
-                        # 2. Monthly Performance Table
-                        st.subheader("2. Monthly Performance Details")
-                
-                        # We need to find the monthly aggregate for this scenario from the 'results' list
-                        # The 'results' list has the 'monthly_agg' dataframe inside it
-                        selected_res = next((r for r in results if r['Scenario'] == selected_scenario_name), None)
-                
-                        if selected_res and 'monthly_agg' in selected_res:
-                            monthly_df = selected_res['monthly_agg'].copy().sort_values('Month_Num')
-                            # Format columns for display
-                            display_monthly = monthly_df[['Month', 'Settlement_Amount', 'Gen_Energy_MWh']].copy()
-                            display_monthly.columns = ['Month', 'Net Settlement ($)', 'Generation (MWh)']
-                    
-                            # Add formatting
-                            st.dataframe(display_monthly.style.format({
-                                'Net Settlement ($)': '${:,.0f}',
-                                'Generation (MWh)': '{:,.0f}'
-                            }))
-                        else:
-                            st.info("Monthly aggregation data not available.")
-    
-                        # 3. Detailed Interval Data
-                        st.subheader("3. Detailed Interval Data (Top 1000 Rows)")
-                        st.dataframe(df_display.head(1000)) # Limit display rows
-                
-                        # Download CSV
-                        csv = df_display.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="Download Detailed CSV",
-                            data=csv,
-                            file_name=f"{selected_scenario_name}.csv",
-                            mime="text/csv",
-                        )
-                    else:
-                        st.error("Could not load data.")
-                
-                    st.markdown("---")
-            
-                    # Download Summary as Excel
-                    excel_buffer = _build_settlement_excel(results, df_summary, st.session_state.scenarios)
-                    st.download_button(
-                        label="Download Summary Excel",
-                        data=excel_buffer,
-                        file_name="vppa_settlement_summary.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-            
-                    st.markdown("---")
-            
-                    # Download PDF Report
-                    st.subheader("📄 PDF Report")
-                    st.markdown("Generate a comprehensive PDF report with summary metrics and all visualizations.")
-            
-                    if st.button("Generate PDF Report"):
-                        with st.spinner("Generating PDF report..."):
-                            try:
-                                # Store the current chart figures
-                                # We need to ensure charts are in Annual view mode for the PDF
-                        
-                                # Cumulative chart (already created above as fig_cum)
-                                # Settlement chart - create annual version
-                                df_annual_settle = df_monthly.groupby('Scenario').agg({
-                                    'Settlement_Amount': 'sum'
-                                }).reset_index()
-                        
-                                fig_settle_pdf = px.bar(
-                                    df_annual_settle,
-                                    x='Scenario',
-                                    y='Settlement_Amount',
-                                    color='Scenario',
-                                    title="Annual Net Settlement Comparison",
-                                    color_discrete_sequence=COLOR_SEQUENCE,
-                                    text='Settlement_Amount'
-                                )
-                                fig_settle_pdf.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
-                                fig_settle_pdf.update_yaxes(title="Total Settlement ($)")
-                                fig_settle_pdf.update_xaxes(title="Scenario")
-                                fig_settle_pdf.update_layout(showlegend=True, legend_title_text="Scenario")
-                        
-                                # Generation chart - create annual version
-                                df_annual_gen = df_monthly.groupby('Scenario').agg({
-                                    'Gen_Energy_MWh': 'sum'
-                                }).reset_index()
-                                df_annual_gen['Year'] = df_annual_gen['Scenario'].str.extract(r'(\d{4})')[0]
-                        
-                                def format_mwh(value):
-                                    if value >= 1_000_000:
-                                        return f"{value/1_000_000:.1f}M"
-                                    elif value >= 100_000:
-                                        return f"{value/1000:.0f}k"
-                                    elif value >= 10_000:
-                                        return f"{value/1000:.1f}k"
-                                    else:
-                                        return f"{value:,.0f}"
-                        
-                                df_annual_gen['Text_Label'] = df_annual_gen['Gen_Energy_MWh'].apply(format_mwh)
-                        
-                                fig_gen_pdf = px.bar(
-                                    df_annual_gen,
-                                    x='Year',
-                                    y='Gen_Energy_MWh',
-                                    color='Scenario',
-                                    title="Annual Energy Generation Comparison",
-                                    color_discrete_sequence=COLOR_SEQUENCE,
-                                    text='Text_Label',
-                                    barmode='group'
-                                )
-                                fig_gen_pdf.update_traces(
-                                    textposition='outside',
-                                    textfont=dict(size=12, family="Arial, sans-serif"),
-                                    marker_line_width=0
-                                )
-                                fig_gen_pdf.update_yaxes(
-                                    title="Annual Generation (MWh)",
-                                    tickformat=",.0f",
-                                    gridcolor='rgba(128, 128, 128, 0.2)'
-                                )
-                                fig_gen_pdf.update_xaxes(
-                                    title="Year",
-                                    type='category',
-                                    tickfont=dict(size=13)
-                                )
-                                fig_gen_pdf.update_layout(
-                                    showlegend=True,
-                                    legend_title_text="Scenario",
-                                    plot_bgcolor='rgba(0,0,0,0)',
-                                    paper_bgcolor='rgba(0,0,0,0)',
-                                    font=dict(size=12),
-                                    height=550,
-                                    bargap=0.15,
-                                    bargroupgap=0.1,
-                                    margin=dict(t=80, b=60, l=60, r=20)
-                                )
-                        
-                                # Generate PDF
-                                pdf_buffer = generate_pdf_report(results, df_summary)
-                        
-                                # Download button
-                                report_date = datetime.now().strftime('%Y%m%d_%H%M%S')
-                                st.download_button(
-                                    label="📥 Download PDF Report",
-                                    data=pdf_buffer.getvalue(),
-                                    file_name=f"vppa_report_{report_date}.pdf",
-                                    mime="application/pdf"
-                                )
-                        
-                                st.success("✅ PDF report generated successfully!")
-                        
-                            except Exception as e:
-                                st.error(f"Error generating PDF: {str(e)}")
-                                st.info("Make sure all required dependencies are installed: `pip install reportlab kaleido Pillow`")
-    
 with tab_validation:
     st.header("Bill Validation")
-    st.markdown("Create settlement bills based on weather models or validate incoming bills against official market prices. (Beta)")
+    st.caption("Reconcile modeled, SCED, invoice, and uploaded generation against ERCOT settlement prices.")
+
+    status_year = int(st.session_state.get("val_year", 2026))
+    status_path = REPO_ROOT / f"ercot_rtm_{status_year}.parquet"
+    status_mtime = int(status_path.stat().st_mtime_ns) if status_path.exists() else -1
+    market_status = get_market_file_status(str(status_path), status_mtime)
+    coverage_start = market_status.get("start", "-")
+    coverage_end = market_status.get("end", "-")
+    if coverage_start != "-" and coverage_end != "-":
+        coverage_value = f"{coverage_start[5:]} to {coverage_end[5:]}"
+        coverage_help = f"{coverage_start} to {coverage_end}"
+    else:
+        coverage_value = "-"
+        coverage_help = "No local coverage found."
+    health_cols = st.columns(4)
+    health_cols[0].metric("Market Data Year", str(status_year))
+    health_cols[1].metric("Coverage", coverage_value, help=coverage_help)
+    health_cols[2].metric("Rows", f"{market_status.get('rows', 0):,}")
+    lag_days = market_status.get("lag_days", np.nan)
+    health_cols[3].metric(
+        "Freshness",
+        f"{lag_days:.1f} days" if pd.notna(lag_days) else "-",
+        help="Days between now and the latest timestamp in the local ERCOT RTM cache.",
+    )
+    if market_status.get("error"):
+        st.warning(f"Could not summarize market file: {market_status['error']}")
 
     # --- Debug / Diagnostics ---
-    with st.expander("🔧 Data Diagnostics (Troubleshooting)", expanded=True):
+    with st.expander("Data health and refresh tools", expanded=False):
         c_dbg1, c_dbg2 = st.columns([0.5, 0.5])
         with c_dbg1:
             col_btn1, col_btn2 = st.columns(2)
@@ -3631,7 +2838,7 @@ with tab_validation:
                     st.cache_data.clear()
                     st.rerun()
             with col_btn2:
-                if st.button("Fetch Updates", key="btn_fetch_ercot", help="Download latest data from ERCOT"):
+                if st.button("Fetch 2026 Updates", key="btn_fetch_ercot", help="Download latest 2026 data from ERCOT"):
                     with st.spinner("Updating..."):
                         try:
                             repo_dir = str(Path(__file__).resolve().parent)
@@ -3679,11 +2886,11 @@ with tab_validation:
                             st.error(f"Failed: {e}")
         with c_dbg2:
             try:
-                fpath = "ercot_rtm_2026.parquet"
+                fpath = f"ercot_rtm_{status_year}.parquet"
                 if os.path.exists(fpath):
                     mtime = os.path.getmtime(fpath)
                     dt = datetime.fromtimestamp(mtime)
-                    st.write(f"**File:** `{fpath}` | **Modified:** {dt.strftime('%H:%M:%S')}")
+                    st.write(f"**File:** `{fpath}` | **Modified:** {dt.strftime('%Y-%m-%d %H:%M')}")
                     # Peek at file
                     meta_df = pd.read_parquet(fpath, columns=['Time_Central', 'date'])
                     date_range = f"{meta_df['date'].min()} to {meta_df['date'].max()}" if 'date' in meta_df.columns else f"{meta_df['Time_Central'].min().date()} to {meta_df['Time_Central'].max().date()}"
@@ -4761,6 +3968,8 @@ with tab_validation:
     # --- Display Results Section (Cached) ---
     if 'val_preview_results' in st.session_state:
         preview_results = st.session_state['val_preview_results']
+        source_summary_df = build_preview_source_summary(preview_results, selected_month_numbers)
+        corr_df = build_multi_source_correlation_analysis(preview_results, selected_month_numbers)
         
         # 1. Comparison Table if multiple sources
         if len(preview_results) > 1:
@@ -4798,10 +4007,8 @@ with tab_validation:
                     df_month = df.copy()
                     df_month['MonthPeriod'] = pd.to_datetime(df_month['Time_Central'], errors='coerce').dt.to_period('M')
                     df_month = df_month.dropna(subset=['MonthPeriod'])
-                    # Filter to only selected months (same as computation filter)
-                    _m_list = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-                    _sel_names = st.session_state.get("sb_months", _m_list)
-                    _sel_nums = [i+1 for i, m in enumerate(_m_list) if m in _sel_names] or list(range(1, 13))
+                    # Filter to the same months selected in the validation controls.
+                    _sel_nums = selected_month_numbers or list(range(1, 13))
                     df_month = df_month[pd.to_datetime(df_month['Time_Central'], errors='coerce').dt.month.isin(_sel_nums)]
                     if not df_month.empty:
                         month_agg = (
@@ -4823,7 +4030,34 @@ with tab_validation:
                                 "Implied REC Cost ($/MWh)": m_rec_cost,
                                 "Net Settlement ($)": m_settle,
                             })
-            st.table(pd.DataFrame(comp_summary))
+            if not source_summary_df.empty:
+                summary_display = source_summary_df[
+                    [
+                        "Source Label",
+                        "Intervals",
+                        "Start",
+                        "End",
+                        "Generation (MWh)",
+                        "Capture Price ($/MWh)",
+                        "Implied REC Cost ($/MWh)",
+                        "Net Settlement ($)",
+                        "Settlement Direction",
+                    ]
+                ].rename(columns={"Source Label": "Source"})
+                st.dataframe(
+                    summary_display,
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Intervals": st.column_config.NumberColumn("Intervals", format="%d"),
+                        "Generation (MWh)": st.column_config.NumberColumn("Generation (MWh)", format="%.0f"),
+                        "Capture Price ($/MWh)": st.column_config.NumberColumn("Capture Price ($/MWh)", format="$%.2f"),
+                        "Implied REC Cost ($/MWh)": st.column_config.NumberColumn("Implied REC Cost ($/MWh)", format="$%.2f"),
+                        "Net Settlement ($)": st.column_config.NumberColumn("Net Settlement ($)", format="$%.0f"),
+                    },
+                )
+            else:
+                st.table(pd.DataFrame(comp_summary))
             if comp_monthly_metrics:
                 st.markdown("#### By Month")
                 df_comp_monthly = pd.DataFrame(comp_monthly_metrics).sort_values(
@@ -4951,12 +4185,16 @@ with tab_validation:
         avg_spp = df_primary['SPP'].mean()
         capture_price = total_market_revenue / total_gen if total_gen > 0 else 0
         implied_rec_cost = -(total_settlement / total_gen) if total_gen > 0 else 0
+
+        st.markdown(f"#### Primary Result: {_source_display_name(primary_name)}")
+        render_preview_takeaway(source_summary_df, primary_name, val_vppa_price, corr_df)
         
-        col1, col2, col3, col4, col5, col6, col7, col8 = st.columns(8)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Generation", f"{total_gen:,.0f} MWh")
         col2.metric(curtail_metric_label, f"{curtail_metric_val:,.0f} MWh", help=curtail_metric_help)
         col3.metric("Total Settlement", f"${total_settlement:,.0f}")
         col4.metric("Total Paid", f"${total_paid:,.0f}", help="Total fixed amount paid (Generation × VPPA Price)")
+        col5, col6, col7, col8 = st.columns(4)
         col5.metric("Total Received", f"${total_received:,.0f}", help="Total market revenue received (Generation × Market Price)")
         col6.metric("Avg Hub Price", f"${avg_spp:.2f}/MWh")
         col7.metric("Capture Price", f"${capture_price:.2f}/MWh", 
@@ -5073,7 +4311,6 @@ with tab_validation:
                 use_container_width=True,
             )
 
-        corr_df = build_multi_source_correlation_analysis(preview_results, selected_month_numbers)
         if not corr_df.empty:
             context_label = selected_project_name if (val_source == "Specific Project" and selected_project_name) else val_hub
             st.markdown("#### Multi-Source Correlation Analysis")
@@ -5831,22 +5068,25 @@ with tab_performance:
     with coll1:
         st.subheader("Wind Model Benchmarking (Dec '24 - Nov '25)")
         
-        # Metrics Overview
-        # Filter for Advanced model
-        wind_advanced = wind_res[wind_res['Model'].str.contains('Advanced')]
-        avg_r_wind = wind_advanced['R'].mean()
-        max_r_wind = wind_advanced['R'].max()
-        
+        # Metrics Overview — prefer V3 rows when present, otherwise fall back to Advanced.
+        wind_best = wind_res[wind_res['Model'].str.contains('V3')]
+        wind_best_label = "V3 Model"
+        if wind_best.empty:
+            wind_best = wind_res[wind_res['Model'].str.contains('Advanced')]
+            wind_best_label = "Advanced Model"
+        avg_r_wind = wind_best['R'].mean()
+        max_r_wind = wind_best['R'].max()
+
         m1, m2 = st.columns(2)
         m1.metric(
             "Avg Correlation (R)",
             f"{avg_r_wind:.2f}" if pd.notna(avg_r_wind) else "N/A",
-            help="Correlation between synthetic and actual generation"
+            help=f"Correlation between synthetic and actual generation ({wind_best_label})"
         )
         m2.metric("Top Correlation", f"{max_r_wind:.2f}" if pd.notna(max_r_wind) else "N/A")
 
-        st.markdown("### 🏆 Wind Leaderboard (Advanced Model)")
-        top_wind = wind_advanced.sort_values('R', ascending=False).head(10)
+        st.markdown(f"### 🏆 Wind Leaderboard ({wind_best_label})")
+        top_wind = wind_best.sort_values('R', ascending=False).head(10)
         
         # Prepare columns for display, ensuring new metrics exist
         display_cols = ['Project', 'R', 'MBE (MW)', 'RMSE (MW)']
@@ -6563,6 +5803,202 @@ with tab_vppa_8760:
     except Exception as e:
         st.error(f"Error loading VPPA 8760 Compare: {e}")
         st.code(str(e))
+
+# --- Market Pricing Data Tab ---
+with tab_pricing:
+    st.header("📈 Market Pricing Data")
+    st.markdown("Explore historical ERCOT Real-Time Market prices.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_years = st.multiselect("Select Year(s)", [2020, 2021, 2022, 2023, 2024, 2025, 2026], default=[2025, 2026])
+    
+    if not selected_years:
+        st.warning("Please select at least one year.")
+    else:
+        # Load data for selected years
+        dfs = []
+        for year in selected_years:
+            df_year = get_ercot_data(year)
+            if not df_year.empty:
+                dfs.append(df_year)
+        
+        if not dfs:
+            st.error("No data found for selected years.")
+        else:
+            df_all = pd.concat(dfs, ignore_index=True)
+            
+            with col2:
+                available_locations = sorted(df_all['Location'].dropna().unique())
+                default_loc = "HB_NORTH" if "HB_NORTH" in available_locations else available_locations[0]
+                selected_location = st.selectbox("Settlement Point", available_locations, index=available_locations.index(default_loc))
+            
+            df_loc = df_all[df_all['Location'] == selected_location].copy()
+            
+            if df_loc.empty:
+                st.warning(f"No data available for {selected_location} in the selected years.")
+            else:
+                # Calculate KPIs
+                df_loc['Time_Central'] = pd.to_datetime(df_loc['Time_Central'])
+                df_loc['Date'] = df_loc['Time_Central'].dt.date
+                df_loc['Year_Str'] = df_loc['Time_Central'].dt.year.astype(str)
+                df_loc['Month'] = df_loc['Time_Central'].dt.month
+                df_loc['Month_Name'] = df_loc['Time_Central'].dt.strftime('%b')
+
+                avg_price = df_loc['SPP'].mean()
+                median_price = df_loc['SPP'].median()
+                p05_price = df_loc['SPP'].quantile(0.05)
+                p95_price = df_loc['SPP'].quantile(0.95)
+                min_price = df_loc['SPP'].min()
+                max_price = df_loc['SPP'].max()
+                total_intervals = len(df_loc)
+                neg_intervals = len(df_loc[df_loc['SPP'] < 0])
+                neg_percent = (neg_intervals / total_intervals) * 100 if total_intervals > 0 else 0
+                scarcity_intervals = len(df_loc[df_loc['SPP'] >= 1000])
+                scarcity_percent = (scarcity_intervals / total_intervals) * 100 if total_intervals > 0 else 0
+                
+                # Display KPIs in two rows so labels stay readable.
+                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                kpi1.metric("Average Price", f"${avg_price:.2f}/MWh")
+                kpi2.metric("Median Price", f"${median_price:.2f}/MWh")
+                kpi3.metric("P95 Price", f"${p95_price:.2f}/MWh", help="95th percentile. Useful for upside and scarcity sensitivity.")
+                kpi4.metric("Negative Intervals", f"{neg_intervals:,}", delta=f"{neg_percent:.2f}%")
+
+                kpi5, kpi6, kpi7, kpi8 = st.columns(4)
+                kpi5.metric("Minimum Price", f"${min_price:.2f}/MWh")
+                kpi6.metric("Maximum Price", f"${max_price:.2f}/MWh")
+                kpi7.metric("Scarcity Intervals", f"{scarcity_intervals:,}", delta=f"{scarcity_percent:.2f}%")
+                kpi8.metric("Total Intervals", f"{total_intervals:,}")
+
+                st.info(
+                    f"{selected_location} averaged \\${avg_price:,.2f}/MWh with "
+                    f"{neg_percent:.2f}% negative-price intervals and "
+                    f"{scarcity_percent:.2f}% intervals at or above \\$1,000/MWh."
+                )
+
+                tab_trends, tab_distribution, tab_monthly = st.tabs(["Trends", "Distribution", "Monthly Table"])
+
+                with tab_trends:
+                    df_daily = df_loc.groupby(['Date', 'Year_Str'])['SPP'].mean().reset_index()
+                    fig_daily = px.line(
+                        df_daily,
+                        x='Date',
+                        y='SPP',
+                        color='Year_Str',
+                        title=f"Daily Average Price - {selected_location}",
+                    )
+                    fig_daily.update_yaxes(title="Average Price ($/MWh)")
+                    fig_daily.update_layout(hovermode="x unified", height=420)
+                    st.plotly_chart(fig_daily, use_container_width=True)
+
+                    df_monthly = df_loc.groupby(['Year_Str', 'Month'])['SPP'].mean().reset_index()
+                    fig_monthly = px.bar(
+                        df_monthly,
+                        x='Month',
+                        y='SPP',
+                        color='Year_Str',
+                        barmode='group',
+                        title=f"Monthly Average Price - {selected_location}",
+                        labels={'SPP': 'Average Price ($/MWh)'},
+                    )
+                    fig_monthly.update_layout(height=420)
+                    st.plotly_chart(fig_monthly, use_container_width=True)
+
+                with tab_distribution:
+                    fig_hist = px.histogram(
+                        df_loc,
+                        x="SPP",
+                        nbins=100,
+                        color="Year_Str",
+                        barmode="overlay",
+                        opacity=0.65,
+                        title=f"Interval Price Distribution - {selected_location}",
+                        labels={"SPP": "Price ($/MWh)"},
+                    )
+                    fig_hist.update_layout(height=420)
+                    st.plotly_chart(fig_hist, use_container_width=True)
+
+                    duration_df = df_loc[["SPP"]].dropna().sort_values("SPP", ascending=False).reset_index(drop=True)
+                    duration_df["Percentile"] = (duration_df.index + 1) / len(duration_df) * 100.0
+                    fig_duration = go.Figure()
+                    fig_duration.add_trace(
+                        go.Scatter(
+                            x=duration_df["Percentile"],
+                            y=duration_df["SPP"],
+                            mode="lines",
+                            name="Price duration",
+                        )
+                    )
+                    fig_duration.update_layout(
+                        title=f"Price Duration Curve - {selected_location}",
+                        xaxis_title="Intervals sorted from highest to lowest price (%)",
+                        yaxis_title="Price ($/MWh)",
+                        height=420,
+                    )
+                    st.plotly_chart(fig_duration, use_container_width=True)
+
+                with tab_monthly:
+                    monthly_summary = (
+                        df_loc.groupby(["Year_Str", "Month", "Month_Name"], as_index=False)
+                        .agg(
+                            Avg_Price=("SPP", "mean"),
+                            Median_Price=("SPP", "median"),
+                            P05_Price=("SPP", lambda s: s.quantile(0.05)),
+                            P95_Price=("SPP", lambda s: s.quantile(0.95)),
+                            Min_Price=("SPP", "min"),
+                            Max_Price=("SPP", "max"),
+                            Negative_Intervals=("SPP", lambda s: int((s < 0).sum())),
+                            Intervals=("SPP", "size"),
+                        )
+                        .sort_values(["Year_Str", "Month"])
+                    )
+                    monthly_summary["Negative %"] = np.where(
+                        monthly_summary["Intervals"] > 0,
+                        monthly_summary["Negative_Intervals"] / monthly_summary["Intervals"] * 100.0,
+                        0.0,
+                    )
+                    monthly_summary = monthly_summary.rename(
+                        columns={
+                            "Year_Str": "Year",
+                            "Month": "Month Number",
+                            "Month_Name": "Month",
+                            "Avg_Price": "Avg Price",
+                            "Median_Price": "Median Price",
+                            "P05_Price": "P05 Price",
+                            "P95_Price": "P95 Price",
+                            "Min_Price": "Min Price",
+                            "Max_Price": "Max Price",
+                            "Negative_Intervals": "Negative Intervals",
+                        }
+                    )
+                    st.dataframe(
+                        monthly_summary[
+                            [
+                                "Year",
+                                "Month",
+                                "Avg Price",
+                                "Median Price",
+                                "P05 Price",
+                                "P95 Price",
+                                "Min Price",
+                                "Max Price",
+                                "Negative Intervals",
+                                "Negative %",
+                                "Intervals",
+                            ]
+                        ],
+                        hide_index=True,
+                        use_container_width=True,
+                        column_config={
+                            "Avg Price": st.column_config.NumberColumn("Avg Price", format="$%.2f"),
+                            "Median Price": st.column_config.NumberColumn("Median Price", format="$%.2f"),
+                            "P05 Price": st.column_config.NumberColumn("P05 Price", format="$%.2f"),
+                            "P95 Price": st.column_config.NumberColumn("P95 Price", format="$%.2f"),
+                            "Min Price": st.column_config.NumberColumn("Min Price", format="$%.2f"),
+                            "Max Price": st.column_config.NumberColumn("Max Price", format="$%.2f"),
+                            "Negative %": st.column_config.NumberColumn("Negative %", format="%.2f%%"),
+                        },
+                    )
 
 st.markdown("---")
 st.caption("Claude Project: [Open link](https://claude.ai/project/019c8810-9a99-7236-a14f-64b8e10f853a)")

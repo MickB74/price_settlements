@@ -155,32 +155,36 @@ try:
 except ImportError:
     HAS_PVLIB = False
 
-def solar_from_weather_pvlib(df_weather, capacity_mw, lat, lon, dc_ac_ratio=1.3, efficiency=0.85):
+def solar_from_weather_pvlib(df_weather, capacity_mw, lat, lon, dc_ac_ratio=1.3, efficiency=0.85, gcr=0.35, max_angle=60):
     """
     Estimates solar generation using a physical single-axis tracking model (NX Horizon style) via pvlib.
     Requires df_weather to have time index (tz-aware) and columns:
         - GHI_Wm2, DNI_Wm2, DHI_Wm2
         - Temp_C (2m temperature)
+
+    Parameters:
+        gcr: Ground coverage ratio (default 0.35). Lower = less backtracking = more afternoon output.
+        max_angle: Maximum tracker rotation angle in degrees (default 60). Higher = better morning/evening capture.
     """
     if not HAS_PVLIB:
         print("Warning: pvlib not installed. Falling back to simple heuristic model.")
         return solar_from_ghi(df_weather['GHI_Wm2'], capacity_mw, efficiency=0.85, tracking=True, dc_ac_ratio=dc_ac_ratio)
 
     times = df_weather.index
-    
+
     # Calculate Solar Position
     solpos = pvlib.solarposition.get_solarposition(times, lat, lon)
-    
+
     # Single Axis Tracker Configuration (NX Horizon typical)
-    # axis_azimuth=180 (North-South axis), max_angle=60 degrees, backtrack=True, gcr=0.35
+    # axis_azimuth=180 (North-South axis), backtrack=True
     tracker_data = tracking.singleaxis(
         apparent_zenith=solpos['apparent_zenith'],
         solar_azimuth=solpos['azimuth'],
         axis_tilt=0,
         axis_azimuth=180,
-        max_angle=60,
+        max_angle=max_angle,
         backtrack=True,
-        gcr=0.35
+        gcr=gcr
     )
     
     # Calculate Plane-of-Array (POA) Irradiance
@@ -448,6 +452,9 @@ def get_profile_for_year(
     wind_weather_source="AUTO",
     hrrr_forecast_hour=0,
     wind_model_engine=WIND_MODEL_ENGINE_STANDARD,
+    dc_ac_ratio=None,  # Solar DC/AC ratio override (default: lookup from registry or 1.3)
+    solar_gcr=None,     # Solar ground coverage ratio override (default: 0.35)
+    solar_max_angle=None,  # Solar tracker max angle override (default: 60)
 ):
     """
     Generates a full year profile.
@@ -669,18 +676,75 @@ def get_profile_for_year(
                 df_weather = df_data.copy()
                 df_weather.index = pd.to_datetime(df_weather['datetime'], utc=True)
                 
-                # Assume a standard DC/AC ratio for tracking setups if not otherwise specified
-                dc_ac = 1.3 
+                # DC/AC ratio: use explicit override, then registry lookup, then default 1.3
+                if dc_ac_ratio is not None:
+                    dc_ac = dc_ac_ratio
+                else:
+                    # Try to look up from asset registry
+                    try:
+                        import json as _json
+                        _reg_path = os.path.join(os.path.dirname(__file__), "ercot_assets.json")
+                        if os.path.exists(_reg_path):
+                            with open(_reg_path) as _f:
+                                _reg = _json.load(_f)
+                            _match = None
+                            for _k, _v in _reg.items():
+                                if _v.get("resource_name") == resource_id or _k == project_name:
+                                    _match = _v
+                                    break
+                            dc_ac = _match.get("dc_ac_ratio", 1.3) if _match else 1.3
+                        else:
+                            dc_ac = 1.3
+                    except Exception:
+                        dc_ac = 1.3
+
+                # Tracker params: use explicit overrides, then registry, then defaults
+                _gcr = solar_gcr if solar_gcr is not None else 0.35
+                _max_angle = solar_max_angle if solar_max_angle is not None else 60
+
+                _reg_match = locals().get('_match')
+                if _reg_match:
+                    if solar_gcr is None and 'solar_gcr' in _reg_match:
+                        _gcr = _reg_match['solar_gcr']
+                    if solar_max_angle is None and 'solar_max_angle' in _reg_match:
+                        _max_angle = _reg_match['solar_max_angle']
+
                 mw_hourly = solar_from_weather_pvlib(
-                    df_weather, 
-                    capacity_mw=capacity_mw, 
-                    lat=lat, 
-                    lon=lon, 
-                    dc_ac_ratio=dc_ac, 
-                    efficiency=efficiency
+                    df_weather,
+                    capacity_mw=capacity_mw,
+                    lat=lat,
+                    lon=lon,
+                    dc_ac_ratio=dc_ac,
+                    efficiency=efficiency,
+                    gcr=_gcr,
+                    max_angle=_max_angle,
                 )
                 # Ensure the resulting Series has the same basic index formatting as the original
-                mw_hourly.index = df_data.index 
+                mw_hourly.index = df_data.index
+
+                # Apply SCED month-hour bias correction if available
+                try:
+                    _cal_path = os.path.join(os.path.dirname(__file__), "solar_calibration.json")
+                    if os.path.exists(_cal_path):
+                        import json as _json2
+                        with open(_cal_path) as _cf:
+                            _solar_cal = _json2.load(_cf)
+                        _cal_entry = None
+                        for _ck, _cv in _solar_cal.items():
+                            if _cv.get("resource_id") == resource_id or _ck == project_name:
+                                _cal_entry = _cv
+                                break
+                        if _cal_entry and "sced_month_hour_bias" in _cal_entry:
+                            _bias_table = _cal_entry["sced_month_hour_bias"]
+                            _idx_utc = pd.to_datetime(df_data["datetime"], utc=True)
+                            # Convert to Central Prevailing Time for month/hour lookup
+                            _idx_cpt = _idx_utc.dt.tz_convert("America/Chicago")
+                            _bias_factors = _idx_cpt.map(
+                                lambda t: _bias_table.get(f"{t.month:02d}_{t.hour:02d}", 1.0)
+                            )
+                            mw_hourly = (mw_hourly * _bias_factors.values).clip(lower=0.0, upper=capacity_mw)
+                except Exception as _e:
+                    pass  # Silently skip calibration if anything goes wrong
             else:
                 # Fall back to GHI heuristic
                 irradiance = df_data['GHI_Wm2']

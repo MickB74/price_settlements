@@ -137,7 +137,7 @@
         "county": "Hidalgo"
     },
     "Maryneal Wind": {
-        "resource_name": "MROW_SLR_SOLAR1",
+        "resource_name": "MARYNEAL_UNIT1",
         "project_name": "Maryneal Wind",
         "tech": "Wind",
         "capacity_mw": 182.4,
@@ -193,12 +193,27 @@
     },
     "Wildwind": {
         "resource_name": "WILDWIND_UNIT1",
+        "sced_units": ["WILDWIND_UNIT1", "WILDWIND_UNIT2", "WILDWIND_UNIT3", "WILDWIND_UNIT4", "WILDWIND_UNIT5"],
         "tech": "Wind",
         "capacity_mw": 180.08,
         "hub": "West",
         "lat": 33.1678,
         "lon": -101.4086,
         "county": "Brazoria"
+    },
+    "Markham Solar": {
+        "resource_name": "MRKM_SLR_PV1",
+        "project_name": "Markham Solar",
+        "tech": "Solar",
+        "capacity_mw": 161.0,
+        "hub": "North",
+        "lat": 33.15,
+        "lon": -99.28,
+        "county": "Throckmorton",
+        "tracking_type": "single_axis",
+        "dc_ac_ratio": 1.45,
+        "solar_gcr": 0.28,
+        "solar_max_angle": 65
     },
     "Maryneal Solar": {
         "resource_name": "MROW_SLR_SOLAR1",
@@ -312,6 +327,7 @@
     },
     "Los Mirasoles Wind": {
         "resource_name": "MIRASOLE_MIR11",
+        "sced_units": ["MIRASOLE_MIR11", "MIRASOLE_MIR12", "MIRASOLE_MIR13", "MIRASOLE_MIR21"],
         "project_name": "Los Mirasoles Wind Farm",
         "tech": "Wind",
         "capacity_mw": 300.0,
@@ -337,7 +353,8 @@
         "turbine_model": "Vestas V100-2.0"
     },
     "Capricorn Ridge": {
-        "resource_name": "CAPRIDG4_BB_PV",
+        "resource_name": "CAPRIDGE_WIND_AGG",
+        "sced_units": ["CAPRIDGE_CR1", "CAPRIDGE_CR2", "CAPRIDGE_CR3", "CAPRIDG4_CR4"],
         "tech": "Wind",
         "capacity_mw": 663.0,
         "hub": "West",
@@ -362,6 +379,7 @@
     },
     "South Plains": {
         "resource_name": "SPLAIN1_WIND1",
+        "sced_units": ["SPLAIN1_WIND1", "SPLAIN1_WIND2", "SPLAIN2_WIND21", "SPLAIN2_WIND22"],
         "tech": "Wind",
         "capacity_mw": 500.0,
         "hub": "Pan",
@@ -386,6 +404,7 @@
     },
     "Hereford Wind": {
         "resource_name": "HRFDWIND_WIND_G",
+        "sced_units": ["HRFDWIND_WIND_G", "HRFDWIND_WIND_V"],
         "tech": "Wind",
         "capacity_mw": 200.0,
         "hub": "Pan",
@@ -486,6 +505,7 @@
     },
     "Vera Wind": {
         "resource_name": "VERAWIND_UNIT1",
+        "sced_units": ["VERAWIND_UNIT1", "VERAWIND_UNIT2", "VERAWIND_UNIT3", "VERAWIND_UNIT4", "VERAWIND_UNIT5"],
         "tech": "Wind",
         "capacity_mw": 240.0,
         "hub": "North",
@@ -499,6 +519,7 @@
     },
     "Azure Sky Wind": {
         "resource_name": "AZURE_SKY_WIND_AGG",
+        "sced_units": ["VORTEX_WIND1", "VORTEX_WIND2", "VORTEX_WIND3", "VORTEX_WIND4"],
         "tech": "Wind",
         "capacity_mw": 350.0,
         "hub": "North",

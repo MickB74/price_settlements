@@ -63,8 +63,8 @@ def calculate_metrics(actual, modeled, capacity_mw=None):
         'R_Daily': r_daily,
         'MBE': mbe,
         'RMSE': rmse,
-        'Capacity Factor (Actual)': actual_filtered.mean() / actual_filtered.max() if actual_filtered.max() > 0 else 0,
-        'Capacity Factor (Modeled)': modeled_filtered.mean() / modeled_filtered.max() if modeled_filtered.max() > 0 else 0
+        'Capacity Factor (Actual)': actual_filtered.mean() / capacity_mw if capacity_mw else np.nan,
+        'Capacity Factor (Modeled)': modeled_filtered.mean() / capacity_mw if capacity_mw else np.nan,
     }
 
 def run_benchmark():

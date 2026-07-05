@@ -5,26 +5,30 @@ import os
 from datetime import datetime
 import fetch_tmy
 import sced_fetcher
+from utils.wind_calibration import get_offline_threshold_mw
 
-def calculate_metrics(actual, modeled):
+def calculate_metrics(actual, modeled, capacity_mw=None):
     """Calculate R, MBE, and RMSE between actual and modeled series."""
     combined = pd.DataFrame({'actual': actual, 'modeled': modeled}).dropna()
     if combined.empty:
         return {'R': np.nan, 'R_Hourly': np.nan, 'R_Daily': np.nan, 'MBE': np.nan, 'RMSE': np.nan}
-        
+
     actual = combined['actual']
     modeled = combined['modeled']
-    
-    # --- FILTER: Exclude "Offline" periods ---
-    # User concern: "Offline actual project skewing numbers"
-    # If Actual is ~0 but Model predicts significant generation (>5 MW), assume outage/maintenance.
-    # Exclude these from R/Bias calc as they reflect operational status, not model accuracy.
-    
-    threshold_mw = 5.0 # Assume 5 MW is minimal active generation for utility scale
-    # Mask: Keep only points where (Actual > 0) OR (Model is also low)
-    # i.e. Throw away points where (Actual == 0 AND Model > 5)
-    
-    valid_mask = ~((actual < 0.5) & (modeled > threshold_mw))
+
+    # Capacity-aware threshold (same helper used by wind benchmark).
+    threshold_mw = get_offline_threshold_mw(capacity_mw)
+
+    # Daytime gate: keep intervals where either side thinks the sun is up.
+    # Without this, the long nighttime stretch of agreeing zeros dominates the
+    # Pearson R and pushes scores artificially toward 1.0.
+    daytime_mask = (modeled > threshold_mw) | (actual > threshold_mw)
+
+    # Offline filter: drop intervals where actual ~ 0 but model predicts real
+    # generation — those reflect plant outages, not model error.
+    offline_mask = (actual < 0.5) & (modeled > threshold_mw)
+
+    valid_mask = daytime_mask & ~offline_mask
     
     actual_filtered = actual[valid_mask]
     modeled_filtered = modeled[valid_mask]
@@ -122,8 +126,8 @@ def run_benchmark():
             print("  ! Warning: No Base Point data found. Using unconstrained physics model.")
         
         # E. Calculate Metrics
-        metrics_fixed = calculate_metrics(df_actual_full['Actual_MW'], fixed_aligned)
-        metrics_tracking = calculate_metrics(df_actual_full['Actual_MW'], tracking_aligned)
+        metrics_fixed = calculate_metrics(df_actual_full['Actual_MW'], fixed_aligned, capacity_mw=capacity)
+        metrics_tracking = calculate_metrics(df_actual_full['Actual_MW'], tracking_aligned, capacity_mw=capacity)
         
         results.append({
             'Project': p_name,

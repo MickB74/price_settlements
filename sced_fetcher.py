@@ -243,7 +243,15 @@ def get_asset_actual_gen(resource_name, date):
         
     # --- Rigorous Time-Weighted Average (TWA) Logic ---
     # 1. Clean and Prepare
-    df_asset['Time'] = pd.to_datetime(df_asset['Interval Start'], utc=True)
+    # ERCOT changed the timestamp column name from 'Interval Start' (pre-2025)
+    # to 'SCED Timestamp' (2025+). Handle both formats.
+    if 'Interval Start' in df_asset.columns:
+        time_col = 'Interval Start'
+    elif 'SCED Timestamp' in df_asset.columns:
+        time_col = 'SCED Timestamp'
+    else:
+        raise KeyError(f"No timestamp column found. Available: {list(df_asset.columns)}")
+    df_asset['Time'] = pd.to_datetime(df_asset[time_col], utc=True)
     df_asset = df_asset.sort_values('Time').drop_duplicates('Time')
     
     # 2. Create boundary timestamps to ensure segments don't cross 15-min boundaries

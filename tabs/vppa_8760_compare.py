@@ -723,7 +723,7 @@ def render():
                 "Registry Name": p_name,
                 "Tech": tech,
                 "Capacity (MW)": cap_mw,
-                "Offtake (MW)": float(offtake_mw) if use_offtake else "—",
+                "Offtake (MW)": float(offtake_mw) if use_offtake else np.nan,
                 "Lat": lat,
                 "Lon": lon,
                 "Turbine": t_model if tech == "Wind" else "—",
@@ -1178,4 +1178,3 @@ def render():
 
     with st.expander("View hourly comparison data"):
         st.dataframe(compare_table, use_container_width=True)
-
